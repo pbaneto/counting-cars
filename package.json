@@ -1,0 +1,11 @@
+{
+  "name": "counting-cars",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gestión de albaranes, trabajos, piezas y abonos de un taller sobre Google Sheets + Apps Script",
+  "scripts": {
+    "test": "node --test tests/",
+    "push": "clasp push"
+  },
+  "license": "MIT"
+}

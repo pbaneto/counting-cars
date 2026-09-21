@@ -1,0 +1,12 @@
+# Secretos y datos privados: NUNCA al repo
+.clasp.json
+.clasprc.json
+.env
+*.key
+data/
+src/private.js
+node_modules/
+*.xlsx
+*.csv
+*.pdf
+tests/fixtures-private.js
