@@ -91,7 +91,7 @@ function escribirDiagnostico_(problemas, ss) {
   sh.setTabColor('#cc0000');
 }
 
-/** Comprueba, sin escribir nada, que esta cuenta puede abrir la hoja, las carpetas de Drive y que hay API key. Devuelve el informe. */
+/** Comprueba, sin escribir nada, que esta cuenta puede abrir la hoja, las carpetas de Drive y que hay API key. Muestra el informe en el registro de ejecución (editor) o en un cuadro (hoja). */
 function probarAcceso() {
   const out = [];
   const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || (typeof PRIVATE !== 'undefined' && PRIVATE.SPREADSHEET_ID) || '';
@@ -102,5 +102,8 @@ function probarAcceso() {
     try { out.push(`${k}: OK "${DriveApp.getFolderById(carpetas[k]).getName()}"`); } catch (e) { out.push(`${k}: NO accesible (${e.message})`); }
   });
   out.push(`API key de Gemini: ${PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') ? 'guardada' : 'FALTA'}`);
-  return out.join('\n');
+  const informe = out.join('\n');
+  Logger.log(informe);  // en el editor: se ve en "Registro de ejecución" (abajo)
+  avisar_(informe, 'Comprobación de acceso');  // desde la hoja: cuadro emergente
+  return informe;
 }

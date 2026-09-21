@@ -60,9 +60,3 @@ tools/          probar-gemini.js (probar el prompt con un PDF real), generar-pri
 npm test                                        # lógica + flujos simulados
 GEMINI_API_KEY=... node tools/probar-gemini.js albaran ruta/albaran.pdf
 ```
-
-## Seguridad
-
-- La API key de Gemini vive sólo en las *propiedades del script* (nunca en la hoja ni en el repo).
-- IDs de hoja y carpetas, matrículas, clientes e importes están en `src/private.js` y `data/` (ignorados por git).
-- `.clasp.json` y `.clasprc.json` están ignorados.
