@@ -231,3 +231,19 @@ test('diagnóstico lista problemas con enlaces', () => {
   assert.ok(textos.some(t => /ZZZ9999 no está en Coches/.test(t)), textos.join('|'));
   assert.ok(textos.some(t => /Sin nº de trabajo/.test(t)));
 });
+
+test('con hoja en español (es_ES) TODAS las fórmulas y reglas se escriben con ";"', () => {
+  let e = crearEntorno({ privado: true, privadoRuta: PRIV, locale: 'es_ES', gemini: () => ({}) });
+  e.run('setup()');
+  const alb = e.ss.getSheetByName('Albaranes');
+  assert.equal(alb.cell(2, 3).f, '=IF(B2="";"";IF(DAY(B2)<=15;1;2))');
+  const separadorIngles = f => /(?:^|[^\d]),|,(?:[^\d]|$)/.test(f.replace(/"[^"]*"/g, '""'));  // una coma que no sea decimal (entre dígitos)
+  assert.ok(!separadorIngles(alb.cell(2, 13).f), 'sin comas de argumento fuera de comillas');
+  for (const [hoja, col, fila] of [['Trabajos', 6, 2], ['Piezas', 11, 2], ['Líneas RM', 13, 2], ['Abonos', 3, 4], ['Abonos', 8, 4], ['Abonos', 10, 4], ['Resumen', 2, 13]]) {
+    const f = e.ss.getSheetByName(hoja).cell(fila, col).f;
+    assert.ok(f && !separadorIngles(f), `${hoja} ${fila},${col}: ${f}`);
+  }
+  e.run('cargarDatosIniciales()');
+  e.mkFolder('ENT', 'E'); e.mkFolder('PROC', 'P');
+  assert.equal(e.run("enlacePdf_({ getId: () => 'abc' })"), '=HYPERLINK("https://drive.google.com/file/d/abc/view";"Ver PDF")');
+});

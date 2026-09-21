@@ -1,6 +1,6 @@
 /** Acceso a hojas: todo por nombre de cabecera. Errores con mensajes que dicen qué hacer. */
 
-let _ss = null, _cfg = null, _letras = {};
+let _ss = null, _cfg = null, _letras = {}, _pyc = null;
 
 function ss_() {
   if (_ss) return _ss;
@@ -9,6 +9,13 @@ function ss_() {
   if (!_ss) throw new Error('No encuentro la hoja de cálculo. Ejecuta "setup" una vez desde la hoja o guarda SPREADSHEET_ID en las propiedades del script.');
   return _ss;
 }
+
+/** Fórmula en el formato regional de la hoja (";" en España). TODA fórmula que se escribe pasa por aquí. */
+function loc_(f) {
+  if (_pyc === null) _pyc = usaPuntoYComa(ss_().getSpreadsheetLocale());
+  return localizarFormula(f, _pyc);
+}
+function locFila_(fila) { return fila.map(v => (typeof v === 'string' && v.charAt(0) === '=' ? loc_(v) : v)); }
 
 function hoja_(nombre) {
   const sh = ss_().getSheetByName(nombre);
@@ -70,7 +77,7 @@ function agregarFilas_(tabla, objs) {
     const arr = new Array(ancho).fill('');
     for (const h in tabla.map) {
       if (o[h] !== undefined) arr[tabla.map[h] - 1] = o[h];
-      else if (formulas && formulas[h]) arr[tabla.map[h] - 1] = formulas[h](inicio + k);
+      else if (formulas && formulas[h]) arr[tabla.map[h] - 1] = loc_(formulas[h](inicio + k));
     }
     return arr;
   });
@@ -101,7 +108,7 @@ function asegurarFormulasFila_(tabla, fila) {
   if (!formulas) return;
   for (const h in formulas) if (tabla.map[h]) {
     const c = tabla.sh.getRange(fila, tabla.map[h]);
-    if (!c.getFormula()) c.setFormula(formulas[h](fila));
+    if (!c.getFormula()) c.setFormula(loc_(formulas[h](fila)));
   }
 }
 

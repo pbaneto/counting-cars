@@ -61,7 +61,7 @@ function montarResumen_() {
     const rec = enVivo ? `=${suma('Recambios facturables')}` : (s[0] || 0);
     const ing = enVivo ? `=${suma('Factura')}` : (s[2] || 0);
     const mor = enVivo ? `=D${r}-SUMIFS(Trabajos!$${t['Factura']}:$${t['Factura']},${rango},Trabajos!$${t['Pagado']}:$${t['Pagado']},TRUE)` : (s[1] || 0);
-    sh.getRange(r, 1, 1, 8).setValues([[MESES[m - 1], rec, mor, ing, s[3] || 0, `=D${r}-B${r}`, `=F${r}-E${r}-${TOT_FIJOS}`, `=${BANCO}+E${r}`]]);
+    sh.getRange(r, 1, 1, 8).setValues([locFila_([MESES[m - 1], rec, mor, ing, s[3] || 0, `=D${r}-B${r}`, `=F${r}-E${r}-${TOT_FIJOS}`, `=${BANCO}+E${r}`])]);
   }
   sh.getRange(RES.total, 6, 1, 2).setValues([['Total año', `=SUM(G${RES.ini}:G${RES.ini + 11})`]]).setFontWeight('bold');
   sh.getRange(RES.ini, 2, 12, 7).setNumberFormat(FMT.euro);

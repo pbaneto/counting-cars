@@ -32,6 +32,6 @@ function moverAErrores_(archivo) {
   archivo.moveTo(DriveApp.getFolderById(id));
 }
 
-function enlacePdf_(archivo) { return `=HYPERLINK("https://drive.google.com/file/d/${archivo.getId()}/view","Ver PDF")`; }
+function enlacePdf_(archivo) { return loc_(`=HYPERLINK("https://drive.google.com/file/d/${archivo.getId()}/view","Ver PDF")`); }
 
 function idDeEnlace_(texto) { const m = /\/d\/([\w-]+)/.exec(String(texto || '')); return m ? m[1] : ''; }

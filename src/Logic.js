@@ -250,11 +250,39 @@ function buscarFilaManual(rows, plate, total) {
   return rows.find(r => !r.albaran && !r.pdf && normPlate(r.plate) === p && Math.abs(parseNumber(r.total) - total) < 0.02) || null;
 }
 
+/**
+ * Apps Script escribe las fórmulas con la sintaxis de la configuración regional de la hoja.
+ * En España (es_ES) los argumentos se separan con ";" y los decimales llevan ",": =SI(A1>0,5;1;2).
+ * Convierte una fórmula escrita con "," y "." (formato inglés) al formato con ";" y "," decimal. Respeta el texto entre comillas.
+ */
+function localizarFormula(f, puntoYComa) {
+  if (!puntoYComa || typeof f !== 'string' || f.charAt(0) !== '=') return f;
+  let out = '', enTexto = false;
+  for (let i = 0; i < f.length; i++) {
+    const ch = f.charAt(i);
+    if (ch === '"') { enTexto = !enTexto; out += ch; continue; }
+    if (enTexto) { out += ch; continue; }
+    if (ch === ',') out += ';';
+    else if (ch === '.' && /\d/.test(f.charAt(i - 1)) && /\d/.test(f.charAt(i + 1))) out += ',';
+    else out += ch;
+  }
+  return out;
+}
+
+/** ¿Este locale (p. ej. "es_ES", "en_US", "de_CH") usa ";" como separador de argumentos? */
+function usaPuntoYComa(locale) {
+  const [lang, pais] = String(locale || 'en_US').split(/[_-]/);
+  const idiomas = ['es', 'de', 'fr', 'it', 'pt', 'nl', 'ru', 'pl', 'tr', 'sv', 'da', 'nb', 'no', 'fi', 'cs', 'sk', 'hu', 'ro', 'bg', 'el', 'uk', 'hr', 'sl', 'sr', 'lt', 'lv', 'et', 'id', 'vi', 'ca', 'eu', 'gl'];
+  if (idiomas.indexOf(lang) < 0) return false;
+  const excepciones = { es: ['MX', 'US', 'PR', 'DO', 'GT', 'HN', 'NI', 'PA', 'SV'], de: ['CH', 'LI'] };
+  return !(excepciones[lang] && excepciones[lang].indexOf(pais) >= 0);
+}
+
 /** Ordena/actualiza: fila en el Resumen para un mes (1-12). */
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran,
-    validarFactura, periodoFactura, construirAbonos, aplicarReembolsos, buscarFilaManual };
+    validarFactura, periodoFactura, construirAbonos, aplicarReembolsos, buscarFilaManual, localizarFormula, usaPuntoYComa };
 }

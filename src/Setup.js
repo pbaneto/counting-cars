@@ -33,7 +33,7 @@ function repararFormulas() {
   }));
 }
 
-function reiniciarCaches_() { _ss = null; _cfg = null; _letras = {}; }
+function reiniciarCaches_() { _ss = null; _cfg = null; _letras = {}; _pyc = null; }
 
 function crearHojas_() {
   const ss = ss_();
@@ -90,7 +90,7 @@ function escribirFormulas_(nombre) {
   Object.keys(FORMULAS[nombre]).forEach(h => {
     const col = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].indexOf(h) + 1;
     const filas = [];
-    for (let r = 2; r <= n + 1; r++) filas.push([FORMULAS[nombre][h](r)]);
+    for (let r = 2; r <= n + 1; r++) filas.push([loc_(FORMULAS[nombre][h](r))]);
     sh.getRange(2, col, n, 1).setFormulas(filas);
   });
 }
@@ -116,7 +116,7 @@ function limpiarProtecciones_(sh) {
 }
 
 function regla_(sh, a1, formula, color) {
-  return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(formula).setBackground(color).setRanges([sh.getRange(a1)]).build();
+  return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(loc_(formula)).setBackground(color).setRanges([sh.getRange(a1)]).build();
 }
 
 const FMT = { fecha: 'dd/mm/yyyy', fechaHora: 'dd/mm/yyyy hh:mm', euro: '#,##0.00 "€"', texto: '@', pct: '0.##%' };
@@ -268,7 +268,7 @@ function montarAbonos_() {
       `IF(ABS(C${r}-E${r}-G${r})>TOL_CUADRE,"⚠ La factura no cuadra con los albaranes (dif. "&TEXT(G${r}-(C${r}-E${r}),"0.00")&" €): ¿falta algún albarán o hay un error de escaneo?",` +
       `IF(ABS(D${r}-E${r})>TOL_CUADRE,IF(D${r}>E${r},"⚠ Abono pendiente de RM: "&TEXT(D${r}-E${r},"0.00")&" €","⚠ Abonado sin solicitar: "&TEXT(E${r}-D${r},"0.00")&" €"),"✔ Cuadra")))`;
     const desde = `=DATE($B$1,${mes},${q === 1 ? 1 : 16})`, hasta = q === 1 ? `=DATE($B$1,${mes},15)` : `=EOMONTH(DATE($B$1,${mes},1),0)`;
-    sh.getRange(r, 2, 1, 10).setValues([[q, C, D, E, `=C${r}-D${r}`, G, H, '', desde, hasta]]);
+    sh.getRange(r, 2, 1, 10).setValues([locFila_([q, C, D, E, `=C${r}-D${r}`, G, H, '', desde, hasta])]);
     if (sh.getRange(r, 9).getValue() === '') sh.getRange(r, 9).setValue(false);
   }
   sh.getRange(ini, 2, ABONOS.filas, 1).setHorizontalAlignment('center');

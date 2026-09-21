@@ -80,7 +80,7 @@ function escribirDiagnostico_(problemas, ss) {
   if (problemas.length) {
     const filas = problemas.map(p => {
       const dest = ss.getSheetByName(p[1]);
-      const enlace = dest && p[2] ? `=HYPERLINK("#gid=${dest.getSheetId()}&range=A${p[2]}","Ir a fila ${p[2]}")` : (p[2] || '');
+      const enlace = dest && p[2] ? loc_(`=HYPERLINK("#gid=${dest.getSheetId()}&range=A${p[2]}","Ir a fila ${p[2]}")`) : (p[2] || '');
       return [p[0], p[1], enlace, p[3]];
     });
     sh.getRange(2, 1, filas.length, 4).setValues(filas);

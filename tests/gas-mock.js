@@ -50,7 +50,7 @@ class Hoja {
   put(r, c, v) {
     if (r > this.maxRows) this.maxRows = r;
     if (typeof v === 'string' && v.startsWith('=')) {
-      const h = /^=HYPERLINK\("([^"]*)","([^"]*)"\)$/.exec(v);
+      const h = /^=HYPERLINK\("([^"]*)"[,;]"([^"]*)"\)$/.exec(v);
       this.grid.set(r + ',' + c, { v: h ? h[2] : '', f: v });
     } else if (v === '' || v == null) this.grid.delete(r + ',' + c);
     else this.grid.set(r + ',' + c, { v, f: '' });
@@ -69,7 +69,7 @@ class Hoja {
 function crearEntorno(opts = {}) {
   const log = { toasts: [], alerts: [], logger: [], fetch: [] };
   let idSeq = 1;
-  const ss = { sheets: [], toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {}, setNamedRange() {}, setActiveSheet() {}, moveActiveSheet() {} };
+  const ss = { sheets: [], getSpreadsheetLocale: () => opts.locale || 'en_US', toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {}, setNamedRange() {}, setActiveSheet() {}, moveActiveSheet() {} };
   ss.getSheets = () => ss.sheets;
   ss.getSheetByName = n => ss.sheets.find(s => s.name === n) || null;
   ss.insertSheet = n => { const s = new Hoja(ss, n, idSeq++); ss.sheets.push(s); return s; };

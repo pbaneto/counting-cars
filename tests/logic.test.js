@@ -158,3 +158,14 @@ test('construirAbonos empareja por importe si la referencia no coincide', () => 
   assert.equal(f.length, 1);
   assert.equal(f[0].estado, 'Abonada');
 });
+
+test('localizarFormula: ";" y decimal con coma fuera de las comillas (Sheets en español)', () => {
+  assert.equal(L.localizarFormula('=IF(A1="a,b",0.05,2)', true), '=IF(A1="a,b";0,05;2)');
+  assert.equal(L.localizarFormula('=HYPERLINK("https://x.y/d/1","Ver PDF")', true), '=HYPERLINK("https://x.y/d/1";"Ver PDF")');
+  assert.equal(L.localizarFormula('=SUMIFS(A:A,B:B,">="&C1)', false), '=SUMIFS(A:A,B:B,">="&C1)');
+  assert.equal(L.localizarFormula('texto, 1.5', true), 'texto, 1.5');
+  assert.equal(L.usaPuntoYComa('es_ES'), true);
+  assert.equal(L.usaPuntoYComa('es_MX'), false);
+  assert.equal(L.usaPuntoYComa('en_US'), false);
+  assert.equal(L.usaPuntoYComa('de_CH'), false);
+});
