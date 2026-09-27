@@ -4,7 +4,10 @@ let _buffer = [];
 
 function log_(nivel, funcion, referencia, mensaje) {
   _buffer.push([new Date(), nivel, funcion, referencia || '', String(mensaje).slice(0, 1500)]);
-  Logger.log(`[${nivel}] ${funcion} ${referencia || ''} ${mensaje}`);
+  const linea = `[${nivel}] ${funcion} ${referencia || ''} ${mensaje}`;
+  Logger.log(linea);
+  // console.* (no Logger.log) es lo que aparece en el detalle de cada ejecución en Apps Script ▸ Ejecuciones.
+  (nivel === 'ERROR' ? console.error : nivel === 'AVISO' ? console.warn : console.log)(linea);
 }
 
 function volcarLog_() {
@@ -30,6 +33,7 @@ function toast_(msg, titulo, seg) {
 
 /** Envuelve un punto de entrada: captura cualquier error, lo anota en Registro y se lo cuenta al usuario. */
 function ejecutar_(nombre, fn, silencioso) {
+  console.log(`▶ ${nombre}`);
   try { return fn(); }
   catch (e) {
     log_('ERROR', nombre, '', (e && e.stack) || e);

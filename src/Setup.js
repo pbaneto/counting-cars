@@ -247,6 +247,9 @@ function montarAbonos_() {
   limpiarProtecciones_(sh);
   const cab = ABONOS.cabResumen, ini = ABONOS.filaIni, tb = ABONOS.filaTabla, fin = tb + ABONOS.maxTabla - 1;
   if (sh.getMaxRows() < fin) sh.insertRowsAfter(sh.getMaxRows(), fin - sh.getMaxRows());
+  // Quita validaciones de una versión anterior del diseño (p. ej. la casilla "Reescanear factura" cuando vivía en otra columna):
+  // si no, una columna que ahora es de fecha puede seguir exigiendo un checkbox y la celda se marca como "infringe la regla de validación".
+  sh.getRange(1, 1, fin, 20).clearDataValidations();
   sh.getRange('A1').setValue('Año').setFontWeight('bold').setHorizontalAlignment('right');
   if (sh.getRange(ABONOS.celdaAnio).getValue() === '') sh.getRange(ABONOS.celdaAnio).setValue(2026);
   sh.getRange(ABONOS.celdaAnio).setFontWeight('bold').setBackground(COLORES.amarillo).setNumberFormat('0');
