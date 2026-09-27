@@ -76,12 +76,29 @@ function prepararTablas_() {
   const ss = ss_();
   ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'].forEach(nombre => {
     const sh = ss.getSheetByName(nombre), esq = ESQUEMA[nombre], n = esq.cabeceras.length;
-    sh.getRange(1, 1, 1, n).setValues([esq.cabeceras]);
+    escribirCabeceras_(sh, esq.cabeceras);
     estiloCabecera_(sh, n);
   });
   _letras = {};
   ['Albaranes', 'Trabajos', 'Piezas', 'Líneas RM'].forEach(escribirFormulas_);
   formatoAlbaranes_(); formatoTrabajos_(); formatoPiezas_(); formatoCoches_(); formatoFacturas_(); formatoLineas_(); formatoRegistro_();
+}
+
+/**
+ * Escribe cada cabecera sólo si esa columna ya la tiene (no hace nada) o está vacía (la rellena).
+ * Si la columna tiene OTRA cabecera distinta, no la pisa: lanza un error claro en vez de desalinear en
+ * silencio los datos de las filas de abajo con el nombre nuevo (p. ej. una columna "Quincena" heredada
+ * de una versión anterior del esquema, que ya no existe en ESQUEMA pero seguía teniendo datos reales).
+ */
+function escribirCabeceras_(sh, cabeceras) {
+  const ancho = Math.max(sh.getLastColumn(), cabeceras.length);
+  const actual = ancho > 0 ? sh.getRange(1, 1, 1, ancho).getValues()[0] : [];
+  cabeceras.forEach((h, i) => {
+    if (actual[i] === h) return;
+    if (actual[i]) throw new Error(`"${sh.getName()}": la columna ${colLetra_(i + 1)} tiene la cabecera "${actual[i]}" en vez de "${h}". ` +
+      'Corrígelo a mano (renombra o mueve esa columna) antes de reparar, para no desalinear los datos de las filas de abajo.');
+    sh.getRange(1, i + 1).setValue(h);
+  });
 }
 
 function escribirFormulas_(nombre) {
