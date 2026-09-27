@@ -72,25 +72,3 @@ function vaciarTabla_(tabla) {
   tabla.filas = [];
   tabla.libre = 2;
 }
-
-/** Botón "Reescanear factura" de la pestaña Abonos: vuelve a leer con Gemini la(s) factura(s) de esa quincena. */
-function reescanearPeriodo_(anio, mes, q) {
-  ejecutar_('reescanearFactura', () => conBloqueo_(20, () => {
-    const tabF = leerTabla_(HOJA.FACT);
-    const filas = tabF.filas.filter(f => Number(f.v['Año']) === anio && Number(f.v['Mes']) === mes && Number(f.v['Quincena']) === q);
-    if (!filas.length) { avisar_(`No hay ninguna factura RM registrada para ${MESES[mes - 1]} ${anio}, quincena ${q}.`); return; }
-    const out = [];
-    filas.forEach(f => {
-      const id = idDeEnlace_(tabF.sh.getRange(f.fila, tabF.map['Ver PDF']).getFormula());
-      if (!id) { out.push(`${f.v['Nº factura']}: no encuentro el PDF (columna Ver PDF)`); return; }
-      const archivo = DriveApp.getFileById(id);
-      toast_(`Volviendo a leer ${f.v['Nº factura']} con Gemini…`, 'Reescanear factura', 60);
-      const r = leerConGemini_([archivo], false)[0];
-      if (!r.ok) { if (r.config) throw new Error(r.error); out.push(`${f.v['Nº factura']}: ${r.error}`); return; }
-      const res = registrarFactura_(archivo, r.doc, r.truncado);
-      out.push(res.fatal ? `${f.v['Nº factura']}: ilegible (${res.estado})` : `${res.numero}: ${res.estado}`);
-    });
-    reconstruirAbonos_();
-    avisar_(out.join('\n'), 'Reescanear factura');
-  }));
-}

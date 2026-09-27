@@ -78,7 +78,7 @@ const CONFIG_DEFECTO = [
 const ABONOS = {
   celdaAnio: 'B1', filaCabResumen: 3, filaIni: 4, filas: 24, filaTitulo: 29, filaCabTabla: 30, filaTabla: 31, maxTabla: 3000,
   panelCol: 11, // K (etiqueta) / L (valor): panel "Pendientes de RM", no depende de la quincena en que se pidió el reembolso
-  cabResumen: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso abonado', 'Total factura RM', 'Estado', 'Reescanear factura', 'Desde', 'Hasta'],
+  cabResumen: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso abonado', 'Total factura RM', 'Estado', 'Desde', 'Hasta'],
   cabTabla: ['Fecha abono', 'Descripción pieza', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia', 'Matrícula',
     'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente'],
 };

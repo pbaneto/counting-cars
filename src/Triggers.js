@@ -18,7 +18,6 @@ function alAbrir() {
 function alEditar(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet(), nombre = sh.getName();
-  if (nombre === HOJA.ABONOS) { editarAbonos_(e.range); return; }
   if ([HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.COCHES].indexOf(nombre) < 0) return;
   ejecutar_('alEditar', () => {
     const lock = LockService.getScriptLock();
@@ -127,19 +126,5 @@ function editarCoches_(r0, n) {
     const p = normPlate(v);
     if (String(v) !== p) c.setValue(p);
     if (tab.filas.filter(f => normPlate(f.v['Matrícula']) === p).length > 1) toast_(`La matrícula ${p} está repetida en Coches.`, '⚠ Duplicada', 8);
-  }
-}
-
-/** Casilla "Reescanear factura" del resumen de Abonos. */
-function editarAbonos_(rango) {
-  const c = ABONOS.cabResumen.indexOf('Reescanear factura') + 1;
-  if (rango.getColumn() > c || rango.getColumn() + rango.getNumColumns() - 1 < c) return;
-  const sh = rango.getSheet();
-  for (let r = Math.max(rango.getRow(), ABONOS.filaIni); r < rango.getRow() + rango.getNumRows() && r < ABONOS.filaIni + ABONOS.filas; r++) {
-    const celda = sh.getRange(r, c);
-    if (celda.getValue() !== true) continue;
-    celda.setValue(false);
-    const k = r - ABONOS.filaIni, anio = Number(sh.getRange(ABONOS.celdaAnio).getValue());
-    reescanearPeriodo_(anio, Math.floor(k / 2) + 1, (k % 2) + 1);
   }
 }
