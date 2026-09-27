@@ -266,7 +266,7 @@ function montarAbonos_() {
   const cab = ABONOS.cabResumen, ini = ABONOS.filaIni, tb = ABONOS.filaTabla, fin = tb + ABONOS.maxTabla - 1;
   if (sh.getMaxRows() < fin) sh.insertRowsAfter(sh.getMaxRows(), fin - sh.getMaxRows());
   // Limpia la zona de resumen+panel (filas 1..27) antes de reescribirla: si una versión anterior tenía más o menos
-  // columnas (p. ej. "Reescanear factura"/"Desde"/"Hasta" en otra posición), no se queda una cabecera o validación fantasma.
+  // columnas, no se queda una cabecera, fórmula o validación fantasma en una columna que ya no se reescribe.
   sh.getRange(1, 1, fin, 20).clearDataValidations();
   sh.getRange(1, 1, ini + ABONOS.filas - 1, 20).clearContent().clearFormat();
   sh.getRange('A1').setValue('Año').setFontWeight('bold').setHorizontalAlignment('right');
@@ -277,26 +277,25 @@ function montarAbonos_() {
   sh.getRange(ABONOS.filaCabResumen, 1, 1, cab.length).setValues([cab]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   // Rangos de la tabla grande (piezas/abonos), usados tanto por el cuadre por quincena como por el panel de pendientes.
   const rg = col => `$${col}$${tb}:$${col}$${fin}`, ESTADO_ = rg('E'), CONIVA_ = rg('D'), DIAS_ = rg('L');
-  const rangoFecha = (col, r) => `${col},">="&$G${r},${col},"<="&$H${r}`;
   for (let k = 0; k < ABONOS.filas; k++) {
     const r = ini + k, mes = Math.floor(k / 2) + 1, q = (k % 2) + 1;
     if (q === 1) { sh.getRange(r, 1, 2, 1).merge().setValue(MESES[mes - 1]).setVerticalAlignment('middle').setHorizontalAlignment('center').setFontWeight('bold'); }
+    const desde = `DATE($B$1,${mes},${q === 1 ? 1 : 16})`, hasta = q === 1 ? `DATE($B$1,${mes},15)` : `EOMONTH(DATE($B$1,${mes},1),0)`;
+    const rangoFecha = col => `${col},">="&${desde},${col},"<="&${hasta}`;
     const fA = `Albaranes!$${a['Fecha albarán']}:$${a['Fecha albarán']}`;
-    const recambios = `=SUMIFS(Albaranes!$${a['Precio con IVA']}:$${a['Precio con IVA']},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"RM",${rangoFecha(fA, r)})`;
-    const abonado = `=SUMIFS(${CONIVA_},${ESTADO_},"Abonada",${rangoFecha(rg('A'), r)})+SUMIFS(${CONIVA_},${ESTADO_},"Sin solicitar",${rangoFecha(rg('A'), r)})`;
+    const recambios = `=SUMIFS(Albaranes!$${a['Precio con IVA']}:$${a['Precio con IVA']},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"RM",${rangoFecha(fA)})`;
+    const abonado = `=SUMIFS(${CONIVA_},${ESTADO_},"Abonada",${rangoFecha(rg('A'))})+SUMIFS(${CONIVA_},${ESTADO_},"Sin solicitar",${rangoFecha(rg('A'))})`;
     const crit = `'Facturas RM'!$${f['Año']}:$${f['Año']},$B$1,'Facturas RM'!$${f['Mes']}:$${f['Mes']},${mes},'Facturas RM'!$${f['Quincena']}:$${f['Quincena']},${q}`;
     const totalFactura = `=IF(COUNTIFS(${crit})=0,"",SUMIFS('Facturas RM'!$${f['Total']}:$${f['Total']},${crit}))`;
     // Sólo compara la factura de esta quincena con lo que ELLA MISMA contiene (compras + sus propios abonos): no depende de cuándo se pidió el reembolso.
     const estado = `=IF(E${r}="",IF(AND(C${r}=0,D${r}=0),"","· Sin factura escaneada"),` +
       `IF(ABS(C${r}-D${r}-E${r})>TOL_CUADRE,"⚠ La factura no cuadra con los albaranes (dif. "&TEXT(E${r}-(C${r}-D${r}),"0.00")&" €): ¿falta algún albarán o hay un error de escaneo?","✔ Cuadra"))`;
-    const desde = `=DATE($B$1,${mes},${q === 1 ? 1 : 16})`, hasta = q === 1 ? `=DATE($B$1,${mes},15)` : `=EOMONTH(DATE($B$1,${mes},1),0)`;
-    sh.getRange(r, 2, 1, 7).setValues([locFila_([q, recambios, abonado, totalFactura, estado, desde, hasta])]);
+    sh.getRange(r, 2, 1, 5).setValues([locFila_([q, recambios, abonado, totalFactura, estado])]);
   }
   sh.getRange(ini, 2, ABONOS.filas, 1).setHorizontalAlignment('center');
   sh.getRange(ini, 3, ABONOS.filas, 3).setNumberFormat(FMT.euro).setBackground(COLORES.gris);
   sh.getRange(ini, 6, ABONOS.filas, 1).setBackground(COLORES.gris);
-  sh.getRange(ini, 7, ABONOS.filas, 2).setNumberFormat(FMT.fecha).setBackground(COLORES.gris).setFontColor('#888888');
-  proteger_(sh.getRange(ini, 1, ABONOS.filas, 8));
+  proteger_(sh.getRange(ini, 1, ABONOS.filas, cab.length));
 
   // ---- Panel "Pendientes de RM": piezas 'Sin abonar' de toda la tabla, no atadas a la quincena en que se pidieron ----
   const pc = ABONOS.panelCol, pv = pc + 1;
@@ -327,7 +326,7 @@ function montarAbonos_() {
   sh.setColumnWidth(2, 260); sh.setColumnWidth(8, 420); sh.setColumnWidth(11, 260);
   sh.setFrozenRows(ABONOS.filaCabResumen);
   sh.setConditionalFormatRules([
-    regla_(sh, `A${ini}:H${ini + ABONOS.filas - 1}`, `=LEFT($F${ini},1)="⚠"`, COLORES.naranja),
+    regla_(sh, `A${ini}:${colLetra_(cab.length)}${ini + ABONOS.filas - 1}`, `=LEFT($F${ini},1)="⚠"`, COLORES.naranja),
     regla_(sh, `${colLetra_(pv)}4`, `=${colLetra_(pv)}4>0`, COLORES.naranja),
     regla_(sh, `A${tb}:L${fin}`, `=AND($E${tb}="Sin abonar",$L${tb}>DIAS_AVISO_REEMB)`, COLORES.naranja),
     regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Abonada"`, COLORES.verde),
