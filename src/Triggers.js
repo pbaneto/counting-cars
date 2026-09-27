@@ -20,14 +20,18 @@ function alEditar(e) {
   const sh = e.range.getSheet(), nombre = sh.getName();
   if ([HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.COCHES].indexOf(nombre) < 0) return;
   ejecutar_('alEditar', () => {
+    const crono = cronometro_(`alEditar (${nombre})`);
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) { toast_('Counting Cars está ocupado con otro proceso. Repite la edición en un momento.', '⚠'); return; }
+    crono.paso('esperar bloqueo');
     try {
       const r0 = e.range.getRow(), n = Math.min(e.range.getNumRows(), 300), c0 = e.range.getColumn(), nc = e.range.getNumColumns();
       if (nombre === HOJA.ALB) editarAlbaranes_(r0, n, c0, nc);
       else if (nombre === HOJA.TRAB) editarTrabajos_(r0, n, c0, nc);
       else if (nombre === HOJA.PIEZAS) editarPiezas_(r0, n, c0, nc);
       else editarCoches_(r0, n);
+      crono.paso(`editar ${nombre}`);
+      crono.fin();
     } finally { lock.releaseLock(); }
   }, true);
 }
@@ -95,7 +99,9 @@ function editarTrabajos_(r0, n, c0, nc) {
 }
 
 function editarPiezas_(r0, n, c0, nc) {
+  const crono = cronometro_('editarPiezas_');
   const tab = leerTabla_(HOJA.PIEZAS), hoy = hoyISO_(), ancho = anchoTabla_(tab);
+  crono.paso(`leer Piezas (${tab.filas.length} filas)`);
   let toca = false;
   for (let r = Math.max(r0, 2); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
@@ -115,7 +121,9 @@ function editarPiezas_(r0, n, c0, nc) {
     if (!g('Origen') && (num || g('Descripción') || g('Precio descontado sin IVA') !== '')) set('Origen', 'Manual');
     asegurarFormulasFila_(tab, r);
   }
-  if (toca) reconstruirAbonos_();
+  crono.paso(`revisar ${n} fila(s) editada(s)`);
+  if (toca) { reconstruirAbonos_(); crono.paso('reconstruir Abonos'); }
+  crono.fin(toca ? '' : 'sin cambios en reembolsos: Abonos no se toca');
 }
 
 function editarCoches_(r0, n) {

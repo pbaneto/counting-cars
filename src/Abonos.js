@@ -6,12 +6,16 @@
  */
 
 function reconstruirAbonos_() {
-  const tabP = leerTabla_(HOJA.PIEZAS), tabL = leerTabla_(HOJA.LINEAS), tabA = leerTabla_(HOJA.ALB);
-  const hoy = hoyISO_(), iva = cfgNum_('IVA');
+  const crono = cronometro_('reconstruirAbonos_');
+  const tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${tabP.filas.length} filas)`);
+  const tabL = leerTabla_(HOJA.LINEAS); crono.paso(`leer Líneas RM (${tabL.filas.length})`);
+  const tabA = leerTabla_(HOJA.ALB); crono.paso(`leer Albaranes (${tabA.filas.length})`);
+  const hoy = hoyISO_(), iva = cfgNum_('IVA'); crono.paso('leer Config');
   const plateDe = {};
   tabA.filas.forEach(f => { const n = normAlbaran(f.v['Nº albarán']); if (n) plateDe[n] = f.v['Matrícula']; });
 
   const marcadas = [], todas = [];
+  let fechasEscritas = 0;
   tabP.filas.forEach(p => {
     if (String(p.v['Proveedor'] || 'RM') === 'Otros') return;
     const alb = normAlbaran(p.v['Nº albarán']);
@@ -19,10 +23,11 @@ function reconstruirAbonos_() {
       fechaReembolso: aISO_(p.v['Fecha reembolso']), matricula: p.v['Matrícula'] || plateDe[alb] || '' };
     todas.push(item);
     if (p.v['Reembolso'] === true && alb) {
-      if (!item.fechaReembolso) { item.fechaReembolso = hoy; actualizarFila_(tabP, p.fila, { 'Fecha reembolso': aFecha_(hoy) }); }
+      if (!item.fechaReembolso) { item.fechaReembolso = hoy; actualizarFila_(tabP, p.fila, { 'Fecha reembolso': aFecha_(hoy) }); fechasEscritas++; }
       marcadas.push(item);
     }
   });
+  crono.paso(`preparar piezas (${marcadas.length} marcadas, ${fechasEscritas} fechas escritas)`);
 
   const abonos = tabL.filas.filter(f => f.v['Tipo'] === 'Abono').map(f => ({
     factura: f.v['Nº factura'], fecha: aISO_(f.v['Fecha albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']),
@@ -30,9 +35,11 @@ function reconstruirAbonos_() {
   }));
 
   const filas = construirAbonos(marcadas, todas, abonos, iva);
+  crono.paso(`cruce (${abonos.length} abonos)`);
   const sh = hoja_(HOJA.ABONOS), ini = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
   const ult = Math.max(sh.getLastRow(), ini);
   sh.getRange(ini, 1, ult - ini + 1, ncol).clearContent();
+  crono.paso(`borrar (${ult - ini + 1} filas)`);
   if (filas.length) {
     const necesarias = ini + filas.length - 1;
     if (necesarias > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), necesarias - sh.getMaxRows() + 50);
@@ -43,6 +50,8 @@ function reconstruirAbonos_() {
         aFecha_(f.fechaSolicitud), f.factura, f.nota, loc_(`=IF($E${r}="Sin abonar",TODAY()-$I${r},"")`)];
     }));
   }
+  crono.paso(`escribir (${filas.length} filas)`);
+  crono.fin();
   log_('INFO', 'reconstruirAbonos', '', `${filas.length} filas: ${ESTADOS_ABONO.map(e => e + ' ' + filas.filter(f => f.estado === e).length).join(', ')}`);
   return filas;
 }

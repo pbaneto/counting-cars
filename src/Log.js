@@ -34,13 +34,28 @@ function toast_(msg, titulo, seg) {
 /** Envuelve un punto de entrada: captura cualquier error, lo anota en Registro y se lo cuenta al usuario. */
 function ejecutar_(nombre, fn, silencioso) {
   console.log(`▶ ${nombre}`);
+  const t0 = Date.now();
   try { return fn(); }
   catch (e) {
     log_('ERROR', nombre, '', (e && e.stack) || e);
     const msg = e && e.message ? e.message : String(e);
     if (silencioso) toast_(`${msg} (detalle en la pestaña Registro)`, '⚠ Error', 10);
     else avisar_(`Ha fallado "${nombre}":\n${msg}\n\nDetalle en la pestaña Registro.`, 'Error');
-  } finally { volcarLog_(); }
+  } finally {
+    const t1 = Date.now();
+    volcarLog_();
+    console.log(`■ ${nombre}: ${Date.now() - t0}ms (escribir en Registro ${Date.now() - t1}ms)`);
+  }
+}
+
+/** Cronómetro por pasos: c.paso('leer Piezas') mide desde el paso anterior; c.fin() escribe UNA línea en Ejecuciones. */
+function cronometro_(nombre) {
+  const t0 = Date.now(), pasos = [];
+  let t = t0;
+  return {
+    paso(etiqueta) { const ahora = Date.now(); pasos.push(`${etiqueta} ${ahora - t}ms`); t = ahora; },
+    fin(extra) { console.log(`⏱ ${nombre}: ${pasos.join(', ')} | total ${Date.now() - t0}ms${extra ? ' | ' + extra : ''}`); },
+  };
 }
 
 function conBloqueo_(segundos, fn) {

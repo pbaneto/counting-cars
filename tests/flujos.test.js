@@ -194,7 +194,14 @@ test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; re
   e.ctx.__p = p.getRange(2, 1); e.run('alEditar({ range: __p })');
   assert.equal(p.valor(2, 1), false, 'sin nº de albarán se desmarca');
   p.put(2, 3, '123456'); p.put(2, 1, true);
+  e.log.console.length = 0;
   e.ctx.__p2 = p.getRange(2, 1); e.run('alEditar({ range: __p2 })');
+  // Tiempos en Apps Script ▸ Ejecuciones: una línea por paso del camino "marcar pieza"
+  const linea = pre => e.log.console.find(l => l.startsWith(pre)) || '';
+  assert.match(linea('⏱ alEditar (Piezas)'), /esperar bloqueo \d+ms, editar Piezas \d+ms \| total \d+ms/);
+  assert.match(linea('⏱ editarPiezas_'), /leer Piezas \(1 filas\) \d+ms, revisar 1 fila\(s\) editada\(s\) \d+ms, reconstruir Abonos \d+ms/);
+  assert.match(linea('⏱ reconstruirAbonos_'), /leer Piezas .*leer Líneas RM .*leer Albaranes .*leer Config .*preparar piezas \(1 marcadas.*cruce .*borrar .*escribir \(1 filas\)/);
+  assert.match(linea('■ alEditar'), /^■ alEditar: \d+ms \(escribir en Registro \d+ms\)$/);
   assert.equal(p.valor(2, 1), true);
   assert.ok(esFecha(p.valor(2, 12)), 'fecha de reembolso');
   assert.equal(p.valor(2, 14), 'Manual');

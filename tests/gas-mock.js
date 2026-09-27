@@ -75,7 +75,7 @@ class Hoja {
 }
 
 function crearEntorno(opts = {}) {
-  const log = { toasts: [], alerts: [], logger: [], fetch: [] };
+  const log = { toasts: [], alerts: [], logger: [], fetch: [], console: [] };
   let idSeq = 1;
   const ss = { sheets: [], namedRanges: {}, getSpreadsheetLocale: () => opts.locale || 'en_US', toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {},
     setNamedRange(nombre, rango) { ss.namedRanges[nombre] = rango.getSheet().getName(); }, setActiveSheet() {}, moveActiveSheet() {} };
@@ -108,7 +108,8 @@ function crearEntorno(opts = {}) {
 
   const props = {};
   const ctx = {
-    console, Logger: { log: m => log.logger.push(m) },
+    console: { log: m => log.console.push(String(m)), warn: m => log.console.push(String(m)), error: m => log.console.push(String(m)) },
+    Logger: { log: m => log.logger.push(m) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: chain, newConditionalFormatRule: reglaCF,
       ProtectionType: { RANGE: 'RANGE' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
     DriveApp: { getFolderById: id => { if (!carpetas[id]) throw new Error('carpeta inexistente ' + id); return carpetas[id]; },
