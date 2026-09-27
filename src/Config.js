@@ -64,6 +64,7 @@ const CONFIG_DEFECTO = [
   ['IVA', 0.21, 'IVA aplicado a las piezas (0,21 = 21 %)'],
   ['DIAS_AVISO_TRABAJO', 30, 'Avisar si un albarán se suma a un trabajo sin pagar abierto hace más de estos días'],
   ['TOLERANCIA_CUADRE', 0.5, 'Diferencia máxima (€) para dar por cuadrada una quincena de Abonos (redondeos de IVA)'],
+  ['DIAS_AVISO_REEMBOLSO', 45, 'Avisar en Abonos si una pieza pedida lleva más de estos días sin que RM la abone'],
   ['PARALELISMO', 8, 'Nº de PDFs que se envían a Gemini a la vez'],
   ['MAX_ARCHIVOS', 30, 'Máximo de albaranes que se procesan por ejecución (límite de 6 min de Apps Script)'],
   ['CARPETA_ENTRADA', '', 'ID de la carpeta de Drive con los albaranes escaneados'],
@@ -73,13 +74,13 @@ const CONFIG_DEFECTO = [
   ['CARPETA_ERRORES', '', 'ID de la carpeta de PDFs que no se han podido leer (se crea sola)'],
 ];
 
-/** Posiciones fijas de la pestaña Abonos (resumen arriba, tabla grande debajo). */
+/** Posiciones fijas de la pestaña Abonos (resumen arriba, panel de pendientes, tabla grande debajo). */
 const ABONOS = {
   celdaAnio: 'B1', filaCabResumen: 3, filaIni: 4, filas: 24, filaTitulo: 29, filaCabTabla: 30, filaTabla: 31, maxTabla: 3000,
-  cabResumen: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso solicitado', 'Reembolso abonado', 'Recambios − solicitado',
-    'Total factura RM', 'Estado', 'Reescanear factura', 'Desde', 'Hasta'],
+  panelCol: 11, // K (etiqueta) / L (valor): panel "Pendientes de RM", no depende de la quincena en que se pidió el reembolso
+  cabResumen: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso abonado', 'Total factura RM', 'Estado', 'Reescanear factura', 'Desde', 'Hasta'],
   cabTabla: ['Fecha abono', 'Descripción pieza', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia', 'Matrícula',
-    'Fecha solicitud', 'Factura RM', 'Nota'],
+    'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente'],
 };
 
 const ESTADOS_ABONO = ['Abonada', 'Sin abonar', 'Sin solicitar'];

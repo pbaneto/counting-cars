@@ -63,7 +63,7 @@ function prepararConfig_() {
     else { if (f.v['Valor'] === '' && inicial !== '') actualizarFila_(t, f.fila, { 'Valor': inicial }); actualizarFila_(t, f.fila, { 'Descripción': desc }); }
   });
   const t2 = leerTabla_(HOJA.CONFIG), ss = ss_();
-  [['IVA', 'IVA'], ['DIAS_AVISO', 'DIAS_AVISO_TRABAJO'], ['TOL_CUADRE', 'TOLERANCIA_CUADRE']].forEach(([nombre, clave]) => {
+  [['IVA', 'IVA'], ['DIAS_AVISO', 'DIAS_AVISO_TRABAJO'], ['TOL_CUADRE', 'TOLERANCIA_CUADRE'], ['DIAS_AVISO_REEMB', 'DIAS_AVISO_REEMBOLSO']].forEach(([nombre, clave]) => {
     const f = t2.filas.find(x => String(x.v['Clave']).trim() === clave);
     ss.setNamedRange(nombre, sh.getRange(f.fila, t2.map['Valor']));
   });
@@ -241,7 +241,7 @@ function formatoRegistro_() {
   ]);
 }
 
-/** Resumen por quincena (arriba) + tabla grande de piezas reembolsadas y abonos (debajo). */
+/** Resumen por quincena (arriba) + panel "Pendientes de RM" + tabla grande de piezas reembolsadas y abonos (debajo). */
 function montarAbonos_() {
   const sh = hoja_(HOJA.ABONOS), a = letras_(HOJA.ALB), f = letras_(HOJA.FACT);
   limpiarProtecciones_(sh);
@@ -250,36 +250,48 @@ function montarAbonos_() {
   sh.getRange('A1').setValue('Año').setFontWeight('bold').setHorizontalAlignment('right');
   if (sh.getRange(ABONOS.celdaAnio).getValue() === '') sh.getRange(ABONOS.celdaAnio).setValue(2026);
   sh.getRange(ABONOS.celdaAnio).setFontWeight('bold').setBackground(COLORES.amarillo).setNumberFormat('0');
-  sh.getRange('D1').setValue('Cuadre: (Recambios − Abonado) = Total factura  ·  Solicitado = Abonado  ·  Naranja = revisar').setFontStyle('italic').setFontColor('#666666');
+  sh.getRange('D1').setValue('Cuadre: (Recambios − Abonado) = Total factura  ·  Naranja = revisar la factura').setFontStyle('italic').setFontColor('#666666');
 
   sh.getRange(ABONOS.filaCabResumen, 1, 1, cab.length).setValues([cab]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
-  const rg = col => `$${col}$${tb}:$${col}$${fin}`, A_ = rg('A'), D_ = rg('D'), E_ = rg('E'), I_ = rg('I');
-  const rangoFecha = (col, r) => `${col},">="&$J${r},${col},"<="&$K${r}`;
+  // Rangos de la tabla grande (piezas/abonos), usados tanto por el cuadre por quincena como por el panel de pendientes.
+  const rg = col => `$${col}$${tb}:$${col}$${fin}`, ESTADO_ = rg('E'), CONIVA_ = rg('D'), DIAS_ = rg('L');
+  const rangoFecha = (col, r) => `${col},">="&$H${r},${col},"<="&$I${r}`;
   for (let k = 0; k < ABONOS.filas; k++) {
     const r = ini + k, mes = Math.floor(k / 2) + 1, q = (k % 2) + 1;
     if (q === 1) { sh.getRange(r, 1, 2, 1).merge().setValue(MESES[mes - 1]).setVerticalAlignment('middle').setHorizontalAlignment('center').setFontWeight('bold'); }
     const fA = `Albaranes!$${a['Fecha albarán']}:$${a['Fecha albarán']}`;
-    const C = `=SUMIFS(Albaranes!$${a['Precio con IVA']}:$${a['Precio con IVA']},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"RM",${rangoFecha(fA, r)})`;
-    const D = `=SUMIFS(${D_},${E_},"Abonada",${rangoFecha(A_, r)})+SUMIFS(${D_},${E_},"Sin abonar",${rangoFecha(I_, r)})`;
-    const E = `=SUMIFS(${D_},${E_},"Abonada",${rangoFecha(A_, r)})+SUMIFS(${D_},${E_},"Sin solicitar",${rangoFecha(A_, r)})`;
+    const recambios = `=SUMIFS(Albaranes!$${a['Precio con IVA']}:$${a['Precio con IVA']},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"RM",${rangoFecha(fA, r)})`;
+    const abonado = `=SUMIFS(${CONIVA_},${ESTADO_},"Abonada",${rangoFecha(rg('A'), r)})+SUMIFS(${CONIVA_},${ESTADO_},"Sin solicitar",${rangoFecha(rg('A'), r)})`;
     const crit = `'Facturas RM'!$${f['Año']}:$${f['Año']},$B$1,'Facturas RM'!$${f['Mes']}:$${f['Mes']},${mes},'Facturas RM'!$${f['Quincena']}:$${f['Quincena']},${q}`;
-    const G = `=IF(COUNTIFS(${crit})=0,"",SUMIFS('Facturas RM'!$${f['Total']}:$${f['Total']},${crit}))`;
-    const H = `=IF(G${r}="",IF(AND(C${r}=0,D${r}=0,E${r}=0),"","· Sin factura escaneada"),` +
-      `IF(ABS(C${r}-E${r}-G${r})>TOL_CUADRE,"⚠ La factura no cuadra con los albaranes (dif. "&TEXT(G${r}-(C${r}-E${r}),"0.00")&" €): ¿falta algún albarán o hay un error de escaneo?",` +
-      `IF(ABS(D${r}-E${r})>TOL_CUADRE,IF(D${r}>E${r},"⚠ Abono pendiente de RM: "&TEXT(D${r}-E${r},"0.00")&" €","⚠ Abonado sin solicitar: "&TEXT(E${r}-D${r},"0.00")&" €"),"✔ Cuadra")))`;
+    const totalFactura = `=IF(COUNTIFS(${crit})=0,"",SUMIFS('Facturas RM'!$${f['Total']}:$${f['Total']},${crit}))`;
+    // Sólo compara la factura de esta quincena con lo que ELLA MISMA contiene (compras + sus propios abonos): no depende de cuándo se pidió el reembolso.
+    const estado = `=IF(E${r}="",IF(AND(C${r}=0,D${r}=0),"","· Sin factura escaneada"),` +
+      `IF(ABS(C${r}-D${r}-E${r})>TOL_CUADRE,"⚠ La factura no cuadra con los albaranes (dif. "&TEXT(E${r}-(C${r}-D${r}),"0.00")&" €): ¿falta algún albarán o hay un error de escaneo?","✔ Cuadra"))`;
     const desde = `=DATE($B$1,${mes},${q === 1 ? 1 : 16})`, hasta = q === 1 ? `=DATE($B$1,${mes},15)` : `=EOMONTH(DATE($B$1,${mes},1),0)`;
-    sh.getRange(r, 2, 1, 10).setValues([locFila_([q, C, D, E, `=C${r}-D${r}`, G, H, '', desde, hasta])]);
-    if (sh.getRange(r, 9).getValue() === '') sh.getRange(r, 9).setValue(false);
+    sh.getRange(r, 2, 1, 8).setValues([locFila_([q, recambios, abonado, totalFactura, estado, '', desde, hasta])]);
+    if (sh.getRange(r, 7).getValue() === '') sh.getRange(r, 7).setValue(false);
   }
   sh.getRange(ini, 2, ABONOS.filas, 1).setHorizontalAlignment('center');
-  sh.getRange(ini, 3, ABONOS.filas, 5).setNumberFormat(FMT.euro).setBackground(COLORES.gris);
-  sh.getRange(ini, 8, ABONOS.filas, 1).setBackground(COLORES.gris);
-  sh.getRange(ini, 9, ABONOS.filas, 1).setDataValidation(checkbox_()).setHorizontalAlignment('center');
-  sh.getRange(ini, 10, ABONOS.filas, 2).setNumberFormat(FMT.fecha).setBackground(COLORES.gris).setFontColor('#888888');
-  sh.getRange(ini, 3, ABONOS.filas, 1).setNumberFormat(FMT.euro);
-  sh.getRange(ini, 3, ABONOS.filas, 5).setBackground(COLORES.gris);
-  sh.getRange(ini, 7, ABONOS.filas, 1).setNumberFormat(FMT.euro);
-  proteger_(sh.getRange(ini, 1, ABONOS.filas, 8));
+  sh.getRange(ini, 3, ABONOS.filas, 3).setNumberFormat(FMT.euro).setBackground(COLORES.gris);
+  sh.getRange(ini, 6, ABONOS.filas, 1).setBackground(COLORES.gris);
+  sh.getRange(ini, 7, ABONOS.filas, 1).setDataValidation(checkbox_()).setHorizontalAlignment('center');
+  sh.getRange(ini, 8, ABONOS.filas, 2).setNumberFormat(FMT.fecha).setBackground(COLORES.gris).setFontColor('#888888');
+  proteger_(sh.getRange(ini, 1, ABONOS.filas, 6));
+
+  // ---- Panel "Pendientes de RM": piezas 'Sin abonar' de toda la tabla, no atadas a la quincena en que se pidieron ----
+  const pc = ABONOS.panelCol, pv = pc + 1;
+  sh.getRange(1, pc, 1, 2).merge().setValue('Pendientes de RM').setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
+  sh.getRange(2, pc).setValue('Piezas sin abonar');
+  sh.getRange(2, pv).setValue(loc_(`=COUNTIF(${ESTADO_},"Sin abonar")`));
+  sh.getRange(3, pc).setValue('Importe pendiente');
+  sh.getRange(3, pv).setValue(loc_(`=SUMIF(${ESTADO_},"Sin abonar",${CONIVA_})`)).setNumberFormat(FMT.euro);
+  sh.getRange(4, pc).setValue(loc_(`="> "&DIAS_AVISO_REEMB&" días"`));
+  sh.getRange(4, pv).setValue(loc_(`=COUNTIFS(${ESTADO_},"Sin abonar",${DIAS_},">"&DIAS_AVISO_REEMB)`));
+  sh.getRange(5, pc).setValue('Más antigua (días)');
+  sh.getRange(5, pv).setValue(loc_(`=IFERROR(MAXIFS(${DIAS_},${ESTADO_},"Sin abonar"),0)`));
+  sh.getRange(2, pc, 4, 1).setFontWeight('bold');
+  sh.getRange(2, pv, 4, 1).setHorizontalAlignment('center');
+  sh.setColumnWidth(pc, 170); sh.setColumnWidth(pv, 90);
 
   sh.getRange(ABONOS.filaTitulo, 1).setValue('Piezas reembolsadas y abonos de RM — se rellena sola desde Piezas (Reembolso ✓) y las facturas RM. No editar a mano.').setFontWeight('bold').setFontSize(11);
   const ct = ABONOS.cabTabla;
@@ -290,14 +302,17 @@ function montarAbonos_() {
   sh.getRange(tb, 5, n, 1).setDataValidation(listaValidacion_(ESTADOS_ABONO));
   sh.getRange(tb, 6, n, 1).setNumberFormat(FMT.texto);
   sh.getRange(tb, 9, n, 1).setNumberFormat(FMT.fecha);
-  [90, 80, 130, 130, 130, 150, 110, 110, 120, 110, 120].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.getRange(tb, 12, n, 1).setNumberFormat('0');
+  [90, 80, 130, 130, 130, 150, 110, 110, 120, 110, 120, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
   sh.setColumnWidth(2, 260); sh.setColumnWidth(8, 420); sh.setColumnWidth(11, 260);
   sh.setFrozenRows(ABONOS.filaCabResumen);
   sh.setConditionalFormatRules([
-    regla_(sh, `A${ini}:K${ini + ABONOS.filas - 1}`, `=LEFT($H${ini},1)="⚠"`, COLORES.naranja),
-    regla_(sh, `A${tb}:K${fin}`, `=$E${tb}="Abonada"`, COLORES.verde),
-    regla_(sh, `A${tb}:K${fin}`, `=$E${tb}="Sin abonar"`, COLORES.rojo),
-    regla_(sh, `A${tb}:K${fin}`, `=$E${tb}="Sin solicitar"`, COLORES.amarillo),
+    regla_(sh, `A${ini}:I${ini + ABONOS.filas - 1}`, `=LEFT($F${ini},1)="⚠"`, COLORES.naranja),
+    regla_(sh, `${colLetra_(pv)}4`, `=${colLetra_(pv)}4>0`, COLORES.naranja),
+    regla_(sh, `A${tb}:L${fin}`, `=AND($E${tb}="Sin abonar",$L${tb}>DIAS_AVISO_REEMB)`, COLORES.naranja),
+    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Abonada"`, COLORES.verde),
+    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin abonar"`, COLORES.rojo),
+    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin solicitar"`, COLORES.amarillo),
   ]);
 }
 

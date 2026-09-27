@@ -36,8 +36,12 @@ function reconstruirAbonos_() {
   if (filas.length) {
     const necesarias = ini + filas.length - 1;
     if (necesarias > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), necesarias - sh.getMaxRows() + 50);
-    sh.getRange(ini, 1, filas.length, ncol).setValues(filas.map(f => [aFecha_(f.fechaAbono), f.descripcion, f.sinIva, f.conIva, f.estado,
-      f.albaran, f.referencia, f.matricula, aFecha_(f.fechaSolicitud), f.factura, f.nota]));
+    // 'Días pendiente' es una fórmula (no un valor calculado aquí) para que se actualice sola día a día sin rehacer Abonos.
+    sh.getRange(ini, 1, filas.length, ncol).setValues(filas.map((f, i) => {
+      const r = ini + i;
+      return [aFecha_(f.fechaAbono), f.descripcion, f.sinIva, f.conIva, f.estado, f.albaran, f.referencia, f.matricula,
+        aFecha_(f.fechaSolicitud), f.factura, f.nota, loc_(`=IF($E${r}="Sin abonar",TODAY()-$I${r},"")`)];
+    }));
   }
   log_('INFO', 'reconstruirAbonos', '', `${filas.length} filas: ${ESTADOS_ABONO.map(e => e + ' ' + filas.filter(f => f.estado === e).length).join(', ')}`);
   return filas;

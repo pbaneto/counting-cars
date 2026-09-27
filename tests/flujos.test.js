@@ -57,7 +57,8 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.equal(cfg.find(x => x.Clave === 'MODELO_GEMINI').Valor, 'gemini-3.5-flash-lite');
   const abonos = e.ss.getSheetByName('Abonos');
   assert.match(abonos.cell(4, 3).f, /SUMIFS\(Albaranes!/);
-  assert.match(abonos.cell(4, 8).f, /TOL_CUADRE/);
+  assert.match(abonos.cell(4, 6).f, /TOL_CUADRE/);          // Estado (cuadre factura vs albaranes)
+  assert.match(abonos.cell(4, 12).f, /COUNTIFS/);           // panel "Pendientes de RM" > DIAS_AVISO_REEMB días
 });
 
 test('cargarDatosIniciales: coches y piloto (un trabajo por matrícula) y no pisa datos', () => {
@@ -102,6 +103,7 @@ test('procesarAlbaranes: nuevo, segundo escaneo con R, duplicado sin R y no-alba
   assert.equal(ab.valor(31, 5), 'Sin abonar');
   assert.equal(ab.valor(31, 3), 11.31);
   assert.equal(ab.valor(31, 4), 13.69);
+  assert.match(ab.cell(31, 12).f, /TODAY\(\)/);  // Días pendiente: fórmula viva, no un valor fijo
   // Drive: 3 en Procesados, el no-albarán en Errores
   assert.equal(e.carpetas.PROC.ficheros.length, 3);
   assert.equal(e.carpetas.ENT.ficheros.length, 0);
@@ -239,7 +241,7 @@ test('con hoja en español (es_ES) TODAS las fórmulas y reglas se escriben con 
   assert.equal(alb.cell(2, 3).f, '=IF(B2="";"";IF(DAY(B2)<=15;1;2))');
   const separadorIngles = f => /(?:^|[^\d]),|,(?:[^\d]|$)/.test(f.replace(/"[^"]*"/g, '""'));  // una coma que no sea decimal (entre dígitos)
   assert.ok(!separadorIngles(alb.cell(2, 13).f), 'sin comas de argumento fuera de comillas');
-  for (const [hoja, col, fila] of [['Trabajos', 6, 2], ['Piezas', 11, 2], ['Líneas RM', 13, 2], ['Abonos', 3, 4], ['Abonos', 8, 4], ['Abonos', 10, 4], ['Resumen', 2, 13]]) {
+  for (const [hoja, col, fila] of [['Trabajos', 6, 2], ['Piezas', 11, 2], ['Líneas RM', 13, 2], ['Abonos', 3, 4], ['Abonos', 6, 4], ['Abonos', 8, 4], ['Abonos', 12, 3], ['Resumen', 2, 13]]) {
     const f = e.ss.getSheetByName(hoja).cell(fila, col).f;
     assert.ok(f && !separadorIngles(f), `${hoja} ${fila},${col}: ${f}`);
   }
