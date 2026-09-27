@@ -62,6 +62,14 @@ class Hoja {
   getLastColumn() { let m = 0; this.grid.forEach((x, k) => { const c = Number(k.split(',')[1]); if (c > m) m = c; }); return m; }
   getRange(a, b, c, d) { if (typeof a === 'string') { const [r, cc, nr, nc] = parseA1(a); return new Rango(this, r, cc, nr, nc); } return new Rango(this, a, b, c || 1, d || 1); }
   getProtections() { return []; } getCharts() { return []; } newChart() { return chain(); } insertChart() {} removeChart() {}
+  /** Como Sheets: una regla de formato condicional no puede leer otra pestaña, ni directamente ni con un rango con nombre. */
+  setConditionalFormatRules(reglas) {
+    reglas.forEach(({ formula }) => {
+      const f = String(formula).replace(/"[^"]*"/g, '""');
+      const ajeno = Object.keys(this.ss.namedRanges).filter(n => this.ss.namedRanges[n] !== this.name && new RegExp(`\\b${n}\\b`).test(f));
+      if (f.includes('!') || ajeno.length) throw new Error(`La regla de formato condicional no puede hacer referencia a una hoja diferente. (${this.name}: ${formula})`);
+    });
+  }
   clear() { this.grid.clear(); }
   valor(r, c) { const x = this.cell(r, c); return x ? x.v : ''; }
 }
@@ -69,7 +77,12 @@ class Hoja {
 function crearEntorno(opts = {}) {
   const log = { toasts: [], alerts: [], logger: [], fetch: [] };
   let idSeq = 1;
-  const ss = { sheets: [], getSpreadsheetLocale: () => opts.locale || 'en_US', toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {}, setNamedRange() {}, setActiveSheet() {}, moveActiveSheet() {} };
+  const ss = { sheets: [], namedRanges: {}, getSpreadsheetLocale: () => opts.locale || 'en_US', toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {},
+    setNamedRange(nombre, rango) { ss.namedRanges[nombre] = rango.getSheet().getName(); }, setActiveSheet() {}, moveActiveSheet() {} };
+  const reglaCF = () => {
+    const b = { formula: '', whenFormulaSatisfied(f) { b.formula = f; return b; }, setBackground() { return b; }, setRanges() { return b; }, build() { return { formula: b.formula }; } };
+    return b;
+  };
   ss.getSheets = () => ss.sheets;
   ss.getSheetByName = n => ss.sheets.find(s => s.name === n) || null;
   ss.insertSheet = n => { const s = new Hoja(ss, n, idSeq++); ss.sheets.push(s); return s; };
@@ -96,7 +109,7 @@ function crearEntorno(opts = {}) {
   const props = {};
   const ctx = {
     console, Logger: { log: m => log.logger.push(m) },
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: chain, newConditionalFormatRule: chain,
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: chain, newConditionalFormatRule: reglaCF,
       ProtectionType: { RANGE: 'RANGE' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
     DriveApp: { getFolderById: id => { if (!carpetas[id]) throw new Error('carpeta inexistente ' + id); return carpetas[id]; },
       getFileById: id => archivos[id], getRootFolder: () => carpetas.PADRE },

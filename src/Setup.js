@@ -298,18 +298,21 @@ function montarAbonos_() {
   proteger_(sh.getRange(ini, 1, ABONOS.filas, cab.length));
 
   // ---- Panel "Pendientes de RM": piezas 'Sin abonar' de toda la tabla, no atadas a la quincena en que se pidieron ----
-  const pc = ABONOS.panelCol, pv = pc + 1;
+  // El umbral se copia a una celda de ESTA pestaña (UMBRAL_): una regla de formato condicional no puede leer Config.
+  const pc = ABONOS.panelCol, pv = pc + 1, UMBRAL_ = `$${colLetra_(pv)}$4`;
   sh.getRange(1, pc, 1, 2).merge().setValue('Pendientes de RM').setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
   sh.getRange(2, pc).setValue('Piezas sin abonar');
   sh.getRange(2, pv).setValue(loc_(`=COUNTIF(${ESTADO_},"Sin abonar")`));
   sh.getRange(3, pc).setValue('Importe pendiente');
   sh.getRange(3, pv).setValue(loc_(`=SUMIF(${ESTADO_},"Sin abonar",${CONIVA_})`)).setNumberFormat(FMT.euro);
-  sh.getRange(4, pc).setValue(loc_(`="> "&DIAS_AVISO_REEMB&" días"`));
-  sh.getRange(4, pv).setValue(loc_(`=COUNTIFS(${ESTADO_},"Sin abonar",${DIAS_},">"&DIAS_AVISO_REEMB)`));
-  sh.getRange(5, pc).setValue('Más antigua (días)');
-  sh.getRange(5, pv).setValue(loc_(`=IFERROR(MAXIFS(${DIAS_},${ESTADO_},"Sin abonar"),0)`));
-  sh.getRange(2, pc, 4, 1).setFontWeight('bold');
-  sh.getRange(2, pv, 4, 1).setHorizontalAlignment('center');
+  sh.getRange(4, pc).setValue('Aviso a partir de (días)');
+  sh.getRange(4, pv).setValue('=DIAS_AVISO_REEMB');
+  sh.getRange(5, pc).setValue('Fuera de plazo');
+  sh.getRange(5, pv).setValue(loc_(`=COUNTIFS(${ESTADO_},"Sin abonar",${DIAS_},">"&${UMBRAL_})`));
+  sh.getRange(6, pc).setValue('Más antigua (días)');
+  sh.getRange(6, pv).setValue(loc_(`=IFERROR(MAXIFS(${DIAS_},${ESTADO_},"Sin abonar"),0)`));
+  sh.getRange(2, pc, 5, 1).setFontWeight('bold');
+  sh.getRange(2, pv, 5, 1).setHorizontalAlignment('center');
   sh.setColumnWidth(pc, 170); sh.setColumnWidth(pv, 90);
 
   sh.getRange(ABONOS.filaTitulo, 1).setValue('Piezas reembolsadas y abonos de RM — se rellena sola desde Piezas (Reembolso ✓) y las facturas RM. No editar a mano.').setFontWeight('bold').setFontSize(11);
@@ -327,8 +330,8 @@ function montarAbonos_() {
   sh.setFrozenRows(ABONOS.filaCabResumen);
   sh.setConditionalFormatRules([
     regla_(sh, `A${ini}:${colLetra_(cab.length)}${ini + ABONOS.filas - 1}`, `=LEFT($F${ini},1)="⚠"`, COLORES.naranja),
-    regla_(sh, `${colLetra_(pv)}4`, `=${colLetra_(pv)}4>0`, COLORES.naranja),
-    regla_(sh, `A${tb}:L${fin}`, `=AND($E${tb}="Sin abonar",$L${tb}>DIAS_AVISO_REEMB)`, COLORES.naranja),
+    regla_(sh, `${colLetra_(pc)}5:${colLetra_(pv)}5`, `=${colLetra_(pv)}5>0`, COLORES.naranja),
+    regla_(sh, `A${tb}:L${fin}`, `=AND($E${tb}="Sin abonar",$L${tb}>${UMBRAL_})`, COLORES.naranja),
     regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Abonada"`, COLORES.verde),
     regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin abonar"`, COLORES.rojo),
     regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin solicitar"`, COLORES.amarillo),

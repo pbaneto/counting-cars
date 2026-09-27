@@ -62,7 +62,11 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.match(abonos.cell(5, 4).f, /">="&DATE\(\$B\$1,1,16\).*"<="&EOMONTH\(DATE\(\$B\$1,1,1\),0\)/);
   assert.equal(abonos.cell(3, 7), undefined);               // ya no hay columna "Desde"
   assert.match(abonos.cell(4, 6).f, /TOL_CUADRE/);          // Estado (cuadre factura vs albaranes)
-  assert.match(abonos.cell(4, 12).f, /COUNTIFS/);           // panel "Pendientes de RM" > DIAS_AVISO_REEMB días
+  assert.equal(abonos.cell(4, 12).f, '=DIAS_AVISO_REEMB');  // panel: umbral copiado de Config a esta pestaña
+  assert.match(abonos.cell(5, 12).f, /COUNTIFS.*\$L\$4/);    // panel: fuera de plazo, contra el umbral de la misma pestaña
+  e.run('repararFormulas()');
+  const errores = e.log.logger.filter(m => /^\[ERROR\]/.test(m));
+  assert.deepEqual(errores, [], 'setup y repararFormulas deben terminar sin errores');
 });
 
 test('repararFormulas añade a Config las claves nuevas sin pisar los valores existentes', () => {
