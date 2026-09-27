@@ -75,9 +75,9 @@ test('cargarDatosIniciales: coches y piloto (un trabajo por matrícula) y no pis
   assert.ok(e.log.alerts.length > antes);
 });
 
-test('repararTrabajos_: recupera Matrícula cruzando con Albaranes y Factura/Pagado desde el piloto', () => {
+test('repararTrabajos: recupera Matrícula cruzando con Albaranes y Factura/Pagado desde el piloto', () => {
   const e = entorno({});
-  e.run('repararTrabajos_()');
+  e.run('repararTrabajos()');
   const trab = tabla(e, 'Trabajos');
   const j1 = trab.find(t => t['Nº trabajo'] === '1GHJ-1'), j2 = trab.find(t => t['Nº trabajo'] === '8DEF-1');
   assert.equal(j1['Matrícula'], '4321GHJ');

@@ -59,10 +59,10 @@ function cargarPiloto_() {
  * viejo de Quincena, "Factura" al viejo Recambios facturables y "Pagado"/"Beneficio" a texto de fórmulas.
  * Recupera Matrícula cruzando con Albaranes (que no se tocó) y Factura/Pagado desde los datos originales
  * del piloto en src/private.js, y quita la columna sobrante que dejó el desplazamiento.
- * A propósito NO está en el menú: ejecutar sólo una vez desde el editor de Apps Script. Volver a lanzarlo
- * después de tener Factura/Pagado reales pisaría esos datos con los del piloto.
+ * A propósito NO está en el menú: ejecutar sólo una vez desde el editor de Apps Script (sin "_" final para
+ * que salga en el desplegable). Volver a lanzarlo después de tener Factura/Pagado reales pisaría esos datos.
  */
-function repararTrabajos_() {
+function repararTrabajos() {
   ejecutar_('repararTrabajos', () => conBloqueo_(30, () => {
     if (typeof PRIVATE === 'undefined' || !PRIVATE.PILOTO) throw new Error('No encuentro src/private.js con los datos del piloto.');
     const tab = leerTabla_(HOJA.TRAB), alb = leerTabla_(HOJA.ALB);
