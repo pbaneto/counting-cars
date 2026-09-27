@@ -61,6 +61,19 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.match(abonos.cell(4, 12).f, /COUNTIFS/);           // panel "Pendientes de RM" > DIAS_AVISO_REEMB días
 });
 
+test('repararFormulas añade a Config las claves nuevas sin pisar los valores existentes', () => {
+  const e = entorno({});
+  const cfg = e.ss.getSheetByName('Config');
+  const fila = clave => e.run(`leerTabla_('Config').filas.find(f => f.v['Clave'] === '${clave}').fila`);
+  const r = fila('DIAS_AVISO_REEMBOLSO');
+  [1, 2, 3].forEach(c => cfg.put(r, c, ''));            // hoja montada antes de existir la clave
+  cfg.put(fila('DIAS_AVISO_TRABAJO'), 2, 20);           // valor cambiado a mano por el usuario
+  e.run('repararFormulas()');
+  const t = tabla(e, 'Config');
+  assert.equal(t.find(x => x.Clave === 'DIAS_AVISO_REEMBOLSO').Valor, 45);
+  assert.equal(t.find(x => x.Clave === 'DIAS_AVISO_TRABAJO').Valor, 20);
+});
+
 test('cargarDatosIniciales: coches y piloto (un trabajo por matrícula) y no pisa datos', () => {
   const e = entorno({});
   assert.equal(tabla(e, 'Coches').length, 3);

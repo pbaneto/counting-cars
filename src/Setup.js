@@ -23,10 +23,11 @@ function setup() {
   }));
 }
 
-/** Menú: reescribe fórmulas, formato y colores sin tocar los datos. */
+/** Menú: reescribe fórmulas, formato y colores sin tocar los datos. Añade a Config las claves nuevas (sin pisar valores). */
 function repararFormulas() {
   ejecutar_('repararFormulas', () => conBloqueo_(30, () => {
     reiniciarCaches_();
+    prepararConfig_();
     prepararTablas_();
     montarAbonos_();
     toast_('Fórmulas y formato reparados.');
@@ -52,7 +53,7 @@ function estiloCabecera_(sh, n) {
 
 function prepararConfig_() {
   const sh = hoja_(HOJA.CONFIG);
-  sh.getRange(1, 1, 1, 3).setValues([ESQUEMA['Config'].cabeceras]);
+  escribirCabeceras_(sh, ESQUEMA['Config'].cabeceras);
   estiloCabecera_(sh, 3);
   const t = leerTabla_(HOJA.CONFIG);
   const carpetas = (typeof PRIVATE !== 'undefined' && PRIVATE.CARPETAS) || {};
