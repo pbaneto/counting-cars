@@ -14,7 +14,7 @@ const HOJA = {
 
 const ESQUEMA = {
   'Albaranes': {
-    cabeceras: ['Fecha escaneo', 'Fecha albarán', 'Quincena', 'Proveedor', 'Nº albarán', 'Nº trabajo', 'Matrícula', 'Precio con IVA',
+    cabeceras: ['Fecha escaneo', 'Fecha albarán', 'Mes', 'Quincena', 'Proveedor', 'Nº albarán', 'Nº trabajo', 'Matrícula', 'Precio con IVA',
       'Precio facturable', 'Coche', 'Cliente', 'Ver PDF', 'Avisos', 'Nota escaneo'],
     entradas: ['Fecha escaneo', 'Fecha albarán', 'Proveedor', 'Nº albarán', 'Nº trabajo', 'Matrícula', 'Precio con IVA', 'Ver PDF', 'Nota escaneo'],
     filasFormato: 1500,

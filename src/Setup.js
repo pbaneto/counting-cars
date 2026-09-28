@@ -73,22 +73,24 @@ function prepararConfig_() {
 }
 
 /**
- * Migración única: en una hoja de una versión anterior (sin la columna "Mes"), "Matrícula" está todavía donde
- * ahora va "Mes". Inserta una columna en blanco ahí para no desalinear los datos de las columnas existentes.
- * Idempotente: si "Mes" ya está en su sitio (o la pestaña está recién creada, sin cabeceras), no hace nada.
+ * Migración única: en una hoja de una versión anterior sin `nombreCol`, la columna que le sigue en ESQUEMA
+ * está todavía donde ahora va `nombreCol`. Inserta una columna en blanco ahí para no desalinear los datos de
+ * las columnas existentes. Idempotente: si `nombreCol` ya está en su sitio (o la pestaña está recién creada,
+ * sin cabeceras), no hace nada.
  */
-function insertarColumnaMesTrabajos_() {
-  const sh = hoja_(HOJA.TRAB), posMes = ESQUEMA['Trabajos'].cabeceras.indexOf('Mes') + 1;
-  const actual = sh.getLastColumn() >= posMes ? sh.getRange(1, posMes).getValue() : '';
-  if (actual === 'Mes' || actual === '') return;
-  sh.insertColumnBefore(posMes);
-  log_('INFO', 'setup', `${HOJA.TRAB}!${colLetra_(posMes)}1`, 'Columna "Mes" insertada (migración desde una versión sin esa columna)');
+function insertarColumnaSiFalta_(nombreHoja, nombreCol) {
+  const sh = hoja_(nombreHoja), pos = ESQUEMA[nombreHoja].cabeceras.indexOf(nombreCol) + 1;
+  const actual = sh.getLastColumn() >= pos ? sh.getRange(1, pos).getValue() : '';
+  if (actual === nombreCol || actual === '') return;
+  sh.insertColumnBefore(pos);
+  log_('INFO', 'setup', `${nombreHoja}!${colLetra_(pos)}1`, `Columna "${nombreCol}" insertada (migración desde una versión sin esa columna)`);
 }
 
 /** Cabeceras, fórmulas, formato, validaciones y colores de las pestañas de tabla. */
 function prepararTablas_() {
   const ss = ss_();
-  insertarColumnaMesTrabajos_();
+  insertarColumnaSiFalta_(HOJA.ALB, 'Mes');
+  insertarColumnaSiFalta_(HOJA.TRAB, 'Mes');
   ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'].forEach(nombre => {
     const sh = ss.getSheetByName(nombre), esq = ESQUEMA[nombre], n = esq.cabeceras.length;
     escribirCabeceras_(sh, esq.cabeceras);
@@ -190,6 +192,7 @@ function formatoAlbaranes_() {
   limpiarProtecciones_(sh);
   colFmt_(sh, 'Fecha escaneo', n, { fmt: FMT.fecha, ancho: 105 });
   colFmt_(sh, 'Fecha albarán', n, { fmt: FMT.fecha, ancho: 105 });
+  colFmt_(sh, 'Mes', n, { gris: true, ancho: 70 });
   colFmt_(sh, 'Quincena', n, { gris: true, ancho: 75 });
   colFmt_(sh, 'Proveedor', n, { validacion: listaValidacion_(['RM', 'Otros']), ancho: 85 });
   colFmt_(sh, 'Nº albarán', n, { fmt: FMT.texto, ancho: 95 });

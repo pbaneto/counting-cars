@@ -6,6 +6,8 @@
 
 const FORMULAS = {
   'Albaranes': {
+    // CHOOSE con la lista fija en vez de TEXT(fecha,"mmm"): TEXT depende del idioma de la hoja y en español da "sept." para septiembre.
+    'Mes': r => { const a = letras_(HOJA.ALB); return `=IF(${a['Fecha albarán']}${r}="","",CHOOSE(MONTH(${a['Fecha albarán']}${r}),"ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"))`; },
     'Quincena': r => { const a = letras_(HOJA.ALB); return `=IF(${a['Fecha albarán']}${r}="","",IF(DAY(${a['Fecha albarán']}${r})<=15,1,2))`; },
     'Precio facturable': r => {
       const a = letras_(HOJA.ALB), p = letras_(HOJA.PIEZAS);

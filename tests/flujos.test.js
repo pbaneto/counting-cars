@@ -48,11 +48,13 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   for (const n of ['Albaranes', 'Trabajos', 'Piezas', 'Abonos', 'Coches', 'Resumen', 'Facturas RM', 'Líneas RM', 'Config', 'Registro']) assert.ok(nombres.includes(n), n);
   assert.ok(!nombres.includes('Hoja 1'));
   const alb = e.ss.getSheetByName('Albaranes');
-  assert.equal(alb.valor(1, 5), 'Nº albarán');
-  assert.match(alb.cell(2, 3).f, /^=IF\(B2=""/);          // Quincena
-  assert.match(alb.cell(2, 9).f, /SUMIFS\(Piezas!/);       // Precio facturable
-  assert.match(alb.cell(2, 13).f, /DIAS_AVISO/);           // Avisos en las filas con datos (piloto: filas 2-4)
-  assert.equal(alb.cell(5, 13), undefined, 'sin fórmulas en filas vacías: leerlas y recalcularlas era lo lento');
+  assert.equal(alb.valor(1, 6), 'Nº albarán');
+  assert.equal(alb.valor(1, 3), 'Mes', 'columna nueva "Mes" junto a "Fecha albarán"');
+  assert.match(alb.cell(2, 3).f, /CHOOSE\(MONTH\(/);
+  assert.match(alb.cell(2, 4).f, /^=IF\(B2=""/);          // Quincena
+  assert.match(alb.cell(2, 10).f, /SUMIFS\(Piezas!/);       // Precio facturable
+  assert.match(alb.cell(2, 14).f, /DIAS_AVISO/);           // Avisos en las filas con datos (piloto: filas 2-4)
+  assert.equal(alb.cell(5, 14), undefined, 'sin fórmulas en filas vacías: leerlas y recalcularlas era lo lento');
   assert.equal(alb.getLastRow(), 4);
   // Casillas sólo en filas con datos: una casilla vacía vale FALSE y haría leer miles de filas
   const trab = e.ss.getSheetByName('Trabajos');
@@ -84,19 +86,19 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   const e = entorno({});
   const alb = e.ss.getSheetByName('Albaranes'), p = e.ss.getSheetByName('Piezas');
   // Como la hoja real antes del cambio: fórmulas rellenadas por adelantado muy por debajo de los datos
-  for (let r = 5; r <= 1501; r++) { alb.put(r, 3, `=IF(B${r}="","",1)`); alb.put(r, 13, `=IF(G${r}="","",1)`); }
+  for (let r = 5; r <= 1501; r++) { alb.put(r, 4, `=IF(B${r}="","",1)`); alb.put(r, 14, `=IF(G${r}="","",1)`); }
   p.put(4001, 15, '=IF(C4001="","",1)');
   for (let r = 2; r <= 4001; r++) p.put(r, 1, false);   // casillas "Reembolso" rellenadas hasta la 4001 (valen FALSE)
   const trab = e.ss.getSheetByName('Trabajos');
   for (let r = 4; r <= 801; r++) trab.put(r, 11, false); // y "Pagado" (columna K tras la migración de "Mes") hasta la 801
-  alb.put(900, 10, 'escrito a mano');                 // valor (no fórmula) en la columna calculada "Coche"
+  alb.put(900, 11, 'escrito a mano');                 // valor (no fórmula) en la columna calculada "Coche"
   e.run('repararFormulas()');
-  assert.equal(alb.cell(700, 3), undefined, 'Quincena vacía por debajo de los datos');
-  assert.equal(alb.cell(1501, 13), undefined, 'Avisos vacía por debajo de los datos');
+  assert.equal(alb.cell(700, 4), undefined, 'Quincena vacía por debajo de los datos');
+  assert.equal(alb.cell(1501, 14), undefined, 'Avisos vacía por debajo de los datos');
   assert.equal(p.cell(4001, 15), undefined);
-  assert.match(alb.cell(4, 13).f, /DIAS_AVISO/, 'las filas con datos conservan sus fórmulas');
-  assert.equal(alb.valor(900, 10), 'escrito a mano', 'no borra un valor escrito a mano');
-  assert.ok(e.log.console.some(l => /\[AVISO\] repararFormulas Albaranes!J900/.test(l)));
+  assert.match(alb.cell(4, 14).f, /DIAS_AVISO/, 'las filas con datos conservan sus fórmulas');
+  assert.equal(alb.valor(900, 11), 'escrito a mano', 'no borra un valor escrito a mano');
+  assert.ok(e.log.console.some(l => /\[AVISO\] repararFormulas Albaranes!K900/.test(l)));
   assert.equal(p.getLastRow(), 1);
   assert.equal(trab.getLastRow(), 3, 'Trabajos queda con sus 2 filas de datos');
   assert.equal(trab.valor(2, 11), true, 'el Pagado de las filas con datos no se toca');
@@ -227,8 +229,8 @@ test('edición manual en Albaranes: fecha, proveedor y trabajo automáticos; NUE
   const e = entorno({});
   const alb = e.ss.getSheetByName('Albaranes');
   const fila = 10;
-  alb.put(fila, 7, '1234 abc'); alb.put(fila, 8, 44.54);
-  const rango = alb.getRange(fila, 7, 1, 2);
+  alb.put(fila, 8, '1234 abc'); alb.put(fila, 9, 44.54);
+  const rango = alb.getRange(fila, 8, 1, 2);
   e.ctx.__rango = rango;
   e.run('alEditar({ range: __rango })');
   const t = tabla(e, 'Albaranes').find(a => a['Matrícula'] === '1234ABC');
@@ -238,12 +240,12 @@ test('edición manual en Albaranes: fecha, proveedor y trabajo automáticos; NUE
   assert.equal(t['Proveedor'], 'RM');
   assert.equal(t['Nº trabajo'], '4ABC-1');
   // Segunda fila del mismo coche -> mismo trabajo abierto
-  alb.put(11, 7, '1234ABC'); alb.put(11, 8, 20);
-  e.ctx.__r2 = alb.getRange(11, 7, 1, 2); e.run('alEditar({ range: __r2 })');
+  alb.put(11, 8, '1234ABC'); alb.put(11, 9, 20);
+  e.ctx.__r2 = alb.getRange(11, 8, 1, 2); e.run('alEditar({ range: __r2 })');
   assert.equal(tabla(e, 'Albaranes').filter(a => a['Nº trabajo'] === '4ABC-1').length, 2);
   // NUEVO -> segundo trabajo abierto en paralelo
-  alb.put(11, 6, 'NUEVO');
-  e.ctx.__r3 = alb.getRange(11, 6); e.run('alEditar({ range: __r3 })');
+  alb.put(11, 7, 'NUEVO');
+  e.ctx.__r3 = alb.getRange(11, 7); e.run('alEditar({ range: __r3 })');
   assert.equal(tabla(e, 'Albaranes').find(a => a['Precio con IVA'] === 20)['Nº trabajo'], '4ABC-2');
   assert.equal(tabla(e, 'Trabajos').filter(x => x['Matrícula'] === '1234ABC').length, 2);
 });
@@ -253,17 +255,17 @@ test('Matrícula en Albaranes: busca por cualquier combinación de letras o díg
   const alb = e.ss.getSheetByName('Albaranes');
 
   // Coincidencia única por las LETRAS (van al final: el desplegable nativo de Sheets sólo busca desde el principio)
-  alb.put(10, 7, 'ghj');
-  e.ctx.__unica = alb.getRange(10, 7); e.run('alEditar({ range: __unica })');
-  assert.equal(alb.valor(10, 7), '4321GHJ', 'se autocompleta con la única matrícula que contiene "GHJ"');
+  alb.put(10, 8, 'ghj');
+  e.ctx.__unica = alb.getRange(10, 8); e.run('alEditar({ range: __unica })');
+  assert.equal(alb.valor(10, 8), '4321GHJ', 'se autocompleta con la única matrícula que contiene "GHJ"');
   assert.ok(e.log.toasts.some(t => t.includes('"GHJ" → 4321GHJ')), 'avisa de qué matrícula ha puesto');
 
   // Texto demasiado corto (< 3): no se busca, se deja tal cual y sigue el aviso habitual de "no está en Coches"
   // (ese aviso sólo se comprueba cuando la fila ya tiene precio, igual que sin este cambio)
   e.log.toasts.length = 0;
-  alb.put(11, 7, '4'); alb.put(11, 8, 44.54);
-  e.ctx.__corto = alb.getRange(11, 7, 1, 2); e.run('alEditar({ range: __corto })');
-  assert.equal(alb.valor(11, 7), '4', 'texto demasiado corto: se deja tal cual, sin adivinar');
+  alb.put(11, 8, '4'); alb.put(11, 9, 44.54);
+  e.ctx.__corto = alb.getRange(11, 8, 1, 2); e.run('alEditar({ range: __corto })');
+  assert.equal(alb.valor(11, 8), '4', 'texto demasiado corto: se deja tal cual, sin adivinar');
   assert.equal(e.log.toasts.length, 1);
   assert.match(e.log.toasts[0], /no está en la pestaña Coches/);
 
@@ -272,17 +274,17 @@ test('Matrícula en Albaranes: busca por cualquier combinación de letras o díg
   const coches = e.ss.getSheetByName('Coches');
   const filaNueva = coches.getLastRow() + 1;
   coches.put(filaNueva, 1, '4321GHK'); coches.put(filaNueva, 2, 'Otro'); coches.put(filaNueva, 3, 'Otro coche');
-  alb.put(12, 7, '432');
-  e.ctx.__varias = alb.getRange(12, 7); e.run('alEditar({ range: __varias })');
-  assert.equal(alb.valor(12, 7), '432', 'coincide con varias: no adivina, deja lo escrito');
+  alb.put(12, 8, '432');
+  e.ctx.__varias = alb.getRange(12, 8); e.run('alEditar({ range: __varias })');
+  assert.equal(alb.valor(12, 8), '432', 'coincide con varias: no adivina, deja lo escrito');
   assert.equal(e.log.toasts.length, 1);
   assert.match(e.log.toasts[0], /"432" coincide con 2 matrículas: 4321GHJ, 4321GHK/);
 
   // Matrícula ya exacta: no hay búsqueda ni aviso de "completada"
   e.log.toasts.length = 0;
-  alb.put(13, 7, '5678DEF');
-  e.ctx.__exacta = alb.getRange(13, 7); e.run('alEditar({ range: __exacta })');
-  assert.equal(alb.valor(13, 7), '5678DEF');
+  alb.put(13, 8, '5678DEF');
+  e.ctx.__exacta = alb.getRange(13, 8); e.run('alEditar({ range: __exacta })');
+  assert.equal(alb.valor(13, 8), '5678DEF');
   assert.ok(!e.log.toasts.some(t => t.includes('completada')), 'ya era exacta: no hay aviso de autocompletado');
 });
 
@@ -313,7 +315,7 @@ test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; re
   assert.equal(e.ss.getSheetByName('Abonos').valor(31, 5), 'Sin abonar');
   // Pieza de un albarán de proveedor "Otros": no se reclama a RM
   const alb = e.ss.getSheetByName('Albaranes');
-  alb.put(5, 4, 'Otros'); alb.put(5, 5, '999'); alb.put(5, 7, '1234ABC'); alb.put(5, 8, 20);
+  alb.put(5, 5, 'Otros'); alb.put(5, 6, '999'); alb.put(5, 8, '1234ABC'); alb.put(5, 9, 20);
   p.put(3, 3, '999'); p.put(3, 5, 'De otro proveedor'); p.put(3, 10, 10); p.put(3, 1, true);
   e.ctx.__p4 = p.getRange(3, 1); e.run('alEditar({ range: __p4 })');
   assert.equal(e.ss.getSheetByName('Abonos').valor(31, 6), '123456');
@@ -364,7 +366,7 @@ test('factura RM: guarda líneas, detecta abonos (Abonada / Sin solicitar) y avi
 test('diagnóstico lista problemas con enlaces', () => {
   const e = entorno({});
   const alb = e.ss.getSheetByName('Albaranes');
-  alb.put(20, 7, 'ZZZ9999'); alb.put(20, 8, 10);
+  alb.put(20, 8, 'ZZZ9999'); alb.put(20, 9, 10);
   e.mkFolder('ENT', 'ENT'); e.mkFolder('FRA', 'FRA');
   e.run('diagnostico()');
   const d = e.ss.getSheetByName('Diagnóstico');
@@ -387,7 +389,7 @@ test('con hoja en español (es_ES) TODAS las fórmulas y reglas se escriben con 
     assert.ok(f && !separadorIngles(f), `${hoja} ${fila},${col}: ${f}`);
   }
   e.run('cargarDatosIniciales()');
-  assert.ok(!separadorIngles(e.ss.getSheetByName('Albaranes').cell(2, 13).f), 'y las filas añadidas también');
+  assert.ok(!separadorIngles(e.ss.getSheetByName('Albaranes').cell(2, 14).f), 'y las filas añadidas también');
   e.mkFolder('ENT', 'E'); e.mkFolder('PROC', 'P');
   assert.equal(e.run("enlacePdf_({ getId: () => 'abc' })"), '=HYPERLINK("https://drive.google.com/file/d/abc/view";"Ver PDF")');
 });
