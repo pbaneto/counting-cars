@@ -30,6 +30,7 @@ function repararFormulas() {
     prepararConfig_();
     prepararTablas_();
     montarAbonos_();
+    montarResumen_();  // antes no se reconstruía aquí: si Trabajos cambiaba, el Resumen se quedaba con fórmulas viejas
     toast_('Fórmulas y formato reparados.');
   }));
 }
@@ -91,6 +92,8 @@ function prepararTablas_() {
   const ss = ss_();
   insertarColumnaSiFalta_(HOJA.ALB, 'Mes');
   insertarColumnaSiFalta_(HOJA.TRAB, 'Mes');
+  insertarColumnaSiFalta_(HOJA.TRAB, 'Recambios facturables RM');
+  insertarColumnaSiFalta_(HOJA.TRAB, 'Recambios facturables Otros');
   ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'].forEach(nombre => {
     const sh = ss.getSheetByName(nombre), esq = ESQUEMA[nombre], n = esq.cabeceras.length;
     escribirCabeceras_(sh, esq.cabeceras);
@@ -224,6 +227,8 @@ function formatoTrabajos_() {
   colFmt_(sh, 'Cliente', n, { gris: true, ancho: 150 });
   colFmt_(sh, 'Recambios', n, { fmt: FMT.euro, gris: true, ancho: 110 });
   colFmt_(sh, 'Recambios facturables', n, { fmt: FMT.euro, gris: true, ancho: 150 });
+  colFmt_(sh, 'Recambios facturables RM', n, { fmt: FMT.euro, gris: true, ancho: 130 });
+  colFmt_(sh, 'Recambios facturables Otros', n, { fmt: FMT.euro, gris: true, ancho: 130 });
   colFmt_(sh, 'Factura', n, { fmt: FMT.euro, ancho: 110 });
   colFmt_(sh, 'Beneficio', n, { fmt: FMT.euro, gris: true, ancho: 110 });
   colFmt_(sh, 'Pagado', n, { ancho: 80 });
@@ -236,6 +241,40 @@ function formatoTrabajos_() {
     regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}2,1)="ℹ"`, COLORES.azul),
     regla_(sh, R('Coche'), `=LEFT($${l['Coche']}2,1)="⚠"`, COLORES.naranja),
   ]);
+  panelResumenTrabajos_(sh, n, l);
+}
+
+/**
+ * Panel "Resumen (según filtro)", a la derecha de la tabla: una cabecera por métrica y, debajo, su valor con
+ * SUBTOTAL, que suma sólo las filas que el filtro de la cabecera deja visibles (sin filtro puesto, son todas).
+ * Morosos necesita además el truco SUMPRODUCT + SUBTOTAL(103, OFFSET(...)) porque SUBTOTAL solo no admite una
+ * condición (Pagado = falso): se usa la columna "Nº trabajo" para saber qué filas están visibles porque nunca
+ * está en blanco en una fila real, a diferencia de "Factura" (un trabajo sin facturar todavía), que daría una
+ * visibilidad falsa (0) por error.
+ * Empieza en la fila 2, no en la 1: leerTabla_ lee las cabeceras de TODA la fila 1, así que una celda con
+ * contenido ahí (aunque esté lejos, en la columna P) se colaría como si fuera una cabecera más de la tabla.
+ */
+function panelResumenTrabajos_(sh, n, l) {
+  const pc = TRAB_PANEL_COL, ini = 2;  // título en la fila 2, cabeceras en la 3, valores en la 4
+  const rango = h => `Trabajos!$${l[h]}$2:$${l[h]}$${n + 1}`;
+  const primeraN = `Trabajos!$${l['Nº trabajo']}$2`, rangoN = rango('Nº trabajo');
+  const visibles = `SUBTOTAL(103,OFFSET(${primeraN},ROW(${rangoN})-ROW(${primeraN}),0,1))`;
+  const cols = [
+    ['Trabajos', `=SUBTOTAL(103,${rangoN})`, '0'],
+    ['Recambios RM', `=SUBTOTAL(109,${rango('Recambios facturables RM')})`, FMT.euro],
+    ['Recambios Otros', `=SUBTOTAL(109,${rango('Recambios facturables Otros')})`, FMT.euro],
+    ['Ingresos', `=SUBTOTAL(109,${rango('Factura')})`, FMT.euro],
+    ['Morosos', `=SUMPRODUCT((${rango('Pagado')}=FALSE)*${visibles}*${rango('Factura')})`, FMT.euro],
+    ['Beneficio', `=SUBTOTAL(109,${rango('Beneficio')})`, FMT.euro],
+  ];
+  sh.getRange(ini, pc, 1, cols.length).merge().setValue('Resumen (según filtro)')
+    .setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
+  sh.getRange(ini + 1, pc, 1, cols.length).setValues([cols.map(c => c[0])])
+    .setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setHorizontalAlignment('center');
+  cols.forEach(([, formula, fmt], i) => sh.getRange(ini + 2, pc + i).setValue(loc_(formula)).setNumberFormat(fmt));
+  sh.getRange(ini + 2, pc, 1, cols.length).setHorizontalAlignment('center').setBackground(COLORES.gris);
+  for (let i = 0; i < cols.length; i++) sh.setColumnWidth(pc + i, i === 0 ? 75 : 110);
+  proteger_(sh.getRange(ini, pc, 3, cols.length));
 }
 
 function formatoPiezas_() {

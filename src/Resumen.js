@@ -60,7 +60,9 @@ function montarResumen_() {
     const suma = h => `SUMIFS(Trabajos!$${t[h]}:$${t[h]},${rango})`;
     const rec = enVivo ? `=${suma('Recambios facturables')}` : (s[0] || 0);
     const ing = enVivo ? `=${suma('Factura')}` : (s[2] || 0);
-    const mor = enVivo ? `=D${r}-SUMIFS(Trabajos!$${t['Factura']}:$${t['Factura']},${rango},Trabajos!$${t['Pagado']}:$${t['Pagado']},TRUE)` : (s[1] || 0);
+    // Suma directa de lo pendiente (Pagado=FALSO), no "Ingreso menos lo cobrado": así un fallo en el cruce con
+    // Pagado se nota como un Moroso mal calculado en vez de cancelarse contra el Ingreso y pasar desapercibido.
+    const mor = enVivo ? `=SUMIFS(Trabajos!$${t['Factura']}:$${t['Factura']},${rango},Trabajos!$${t['Pagado']}:$${t['Pagado']},FALSE)` : (s[1] || 0);
     sh.getRange(r, 1, 1, 8).setValues([locFila_([MESES[m - 1], rec, mor, ing, s[3] || 0, `=D${r}-B${r}`, `=F${r}-E${r}-${TOT_FIJOS}`, `=${BANCO}+E${r}`])]);
   }
   sh.getRange(RES.total, 6, 1, 2).setValues([['Total año', `=SUM(G${RES.ini}:G${RES.ini + 11})`]]).setFontWeight('bold');

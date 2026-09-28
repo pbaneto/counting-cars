@@ -20,7 +20,8 @@ const ESQUEMA = {
     filasFormato: 1500,
   },
   'Trabajos': {
-    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Mes', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Recambios facturables', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
+    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Mes', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Recambios facturables', 'Recambios facturables RM',
+      'Recambios facturables Otros', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
     entradas: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Factura', 'Pagado'],
     casillas: ['Pagado'],
     filasFormato: 800,
@@ -86,6 +87,9 @@ const ABONOS = {
   cabTabla: ['Fecha abono', 'Descripción pieza', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia', 'Matrícula',
     'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente'],
 };
+
+/** Columna P: panel "Resumen (según filtro)" en Trabajos, a la derecha de sus columnas reales (deja una de hueco). */
+const TRAB_PANEL_COL = 16;
 
 const ESTADOS_ABONO = ['Abonada', 'Sin abonar', 'Sin solicitar'];
 const COLORES = {

@@ -53,6 +53,15 @@ const FORMULAS = {
       const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB);
       return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio facturable']}:$${a['Precio facturable']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r}))`;
     },
+    // Mismo cálculo que "Recambios facturables" pero separado por proveedor, para el panel de resumen filtrable.
+    'Recambios facturables RM': r => {
+      const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB);
+      return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio facturable']}:$${a['Precio facturable']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"RM"))`;
+    },
+    'Recambios facturables Otros': r => {
+      const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB);
+      return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio facturable']}:$${a['Precio facturable']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"Otros"))`;
+    },
     'Beneficio': r => { const t = letras_(HOJA.TRAB); return `=IF(OR(${t['Nº trabajo']}${r}="",${t['Factura']}${r}=""),"",${t['Factura']}${r}-${t['Recambios facturables']}${r})`; },
     'Avisos': r => {
       const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB), c = letras_(HOJA.COCHES);

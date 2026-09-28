@@ -58,13 +58,21 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.equal(alb.getLastRow(), 4);
   // Casillas sólo en filas con datos: una casilla vacía vale FALSE y haría leer miles de filas
   const trab = e.ss.getSheetByName('Trabajos');
-  assert.equal(trab.getLastRow(), 3, 'Trabajos: 2 trabajos del piloto, sin casillas "Pagado" por debajo');
+  assert.equal(trab.getLastRow(), 4, 'Trabajos: 2 trabajos del piloto, sin casillas "Pagado" por debajo (el panel de resumen llega a la fila 4)');
   assert.equal(e.ss.getSheetByName('Piezas').getLastRow(), 1, 'Piezas vacía: sin casillas "Reembolso" por debajo');
-  assert.equal(trab.valor(3, 11), false, 'la fila nueva lleva su casilla (FALSE = sin pagar), ahora en la columna K');
+  assert.equal(trab.valor(3, 13), false, 'la fila nueva lleva su casilla (FALSE = sin pagar), ahora en la columna M');
   assert.equal(trab.valor(1, 3), 'Mes', 'columna nueva "Mes" junto a "Fecha apertura"');
   assert.match(trab.cell(2, 3).f, /CHOOSE\(MONTH\(/);
+  assert.equal(trab.valor(1, 4), 'Matrícula');
+  assert.match(trab.cell(2, 9).f, /SUMIFS\(Albaranes!.*"RM"\)/);      // Recambios facturables RM
+  assert.match(trab.cell(2, 10).f, /SUMIFS\(Albaranes!.*"Otros"\)/);  // Recambios facturables Otros
+  // Panel "Resumen (según filtro)" a la derecha (P:U), en las filas 2-4: nunca en la 1 (leerTabla_ la lee como cabecera)
+  assert.equal(trab.valor(1, 16), '', 'la fila 1 de la tabla no lleva nada del panel');
+  assert.equal(trab.valor(3, 16), 'Trabajos'); assert.equal(trab.valor(3, 20), 'Morosos');
+  assert.match(trab.cell(4, 20).f, /SUMPRODUCT/);
   // Ninguna columna calculada (gris) se queda con una validación residual; las de entrada no se tocan
-  assert.deepEqual(new Set(trab.validacionesLimpiadas), new Set([3, 5, 6, 7, 8, 10, 12]), 'Mes, Coche, Cliente, Recambios, Recambios facturables, Beneficio, Avisos');
+  assert.deepEqual(new Set(trab.validacionesLimpiadas), new Set([3, 5, 6, 7, 8, 9, 10, 12, 14]),
+    'Mes, Coche, Cliente, Recambios, Recambios facturables, Recambios facturables RM/Otros, Beneficio, Avisos');
   const cfg = tabla(e, 'Config');
   assert.equal(cfg.find(x => x.Clave === 'CARPETA_ENTRADA').Valor, 'ENT');
   assert.equal(cfg.find(x => x.Clave === 'MODELO_GEMINI').Valor, 'gemini-3.5-flash-lite');
@@ -90,7 +98,7 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   p.put(4001, 15, '=IF(C4001="","",1)');
   for (let r = 2; r <= 4001; r++) p.put(r, 1, false);   // casillas "Reembolso" rellenadas hasta la 4001 (valen FALSE)
   const trab = e.ss.getSheetByName('Trabajos');
-  for (let r = 4; r <= 801; r++) trab.put(r, 11, false); // y "Pagado" (columna K tras la migración de "Mes") hasta la 801
+  for (let r = 4; r <= 801; r++) trab.put(r, 13, false); // y "Pagado" (columna M tras la migración de "Mes" y del reparto RM/Otros) hasta la 801
   alb.put(900, 11, 'escrito a mano');                 // valor (no fórmula) en la columna calculada "Coche"
   e.run('repararFormulas()');
   assert.equal(alb.cell(700, 4), undefined, 'Quincena vacía por debajo de los datos');
@@ -100,14 +108,14 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   assert.equal(alb.valor(900, 11), 'escrito a mano', 'no borra un valor escrito a mano');
   assert.ok(e.log.console.some(l => /\[AVISO\] repararFormulas Albaranes!K900/.test(l)));
   assert.equal(p.getLastRow(), 1);
-  assert.equal(trab.getLastRow(), 3, 'Trabajos queda con sus 2 filas de datos');
-  assert.equal(trab.valor(2, 11), true, 'el Pagado de las filas con datos no se toca');
+  assert.equal(trab.getLastRow(), 4, 'Trabajos queda con sus 2 filas de datos (más el panel de resumen hasta la fila 4)');
+  assert.equal(trab.valor(2, 13), true, 'el Pagado de las filas con datos no se toca');
 });
 
 test('Trabajos: la migración a la columna "Mes" no desalinea una hoja de la versión anterior', () => {
-  const e = entorno({});  // entorno() ya corre setup() una vez: Trabajos ya tiene "Mes" en su sitio (D=Matrícula, K=Pagado)
+  const e = entorno({});  // entorno() ya corre setup() una vez: Trabajos ya tiene "Mes" en su sitio (D=Matrícula, M=Pagado)
   const trab = e.ss.getSheetByName('Trabajos');
-  const matriculaAntes = trab.valor(2, 4), pagadoAntes = trab.valor(2, 11);
+  const matriculaAntes = trab.valor(2, 4), pagadoAntes = trab.valor(2, 13);
   assert.equal(matriculaAntes, '4321GHJ');
   // Deshace la migración a mano para simular una hoja real todavía sin la columna "Mes" (Matrícula en la C, como antes)
   const vieja = new Map();
@@ -123,7 +131,7 @@ test('Trabajos: la migración a la columna "Mes" no desalinea una hoja de la ver
   assert.equal(trab.valor(1, 3), 'Mes', 'ahora la C es "Mes"');
   assert.match(trab.cell(2, 3).f, /CHOOSE\(MONTH\(/);
   assert.equal(trab.valor(2, 4), matriculaAntes, 'Matrícula se ha desplazado a la D con su valor intacto');
-  assert.equal(trab.valor(2, 11), pagadoAntes, 'Pagado se ha desplazado con su valor intacto');
+  assert.equal(trab.valor(2, 13), pagadoAntes, 'Pagado se ha desplazado con su valor intacto');
 
   // Repetir la reparación es idempotente: no vuelve a insertar otra columna de más
   const anchoAntes = trab.getLastColumn();
@@ -384,7 +392,7 @@ test('con hoja en español (es_ES) TODAS las fórmulas y reglas se escriben con 
   assert.ok(porFila.length >= 15);
   assert.ok(porFila.some(([k, f]) => k === 'Albaranes ▸ Quincena' && f === '=IF(B2="";"";IF(DAY(B2)<=15;1;2))'));
   for (const [k, f] of porFila) assert.ok(!separadorIngles(f), `${k}: ${f}`);
-  for (const [hoja, col, fila] of [['Abonos', 3, 4], ['Abonos', 4, 4], ['Abonos', 6, 4], ['Abonos', 12, 3], ['Resumen', 2, 13]]) {
+  for (const [hoja, col, fila] of [['Abonos', 3, 4], ['Abonos', 4, 4], ['Abonos', 6, 4], ['Abonos', 12, 3], ['Resumen', 2, 13], ['Resumen', 3, 13], ['Trabajos', 20, 4]]) {
     const f = e.ss.getSheetByName(hoja).cell(fila, col).f;
     assert.ok(f && !separadorIngles(f), `${hoja} ${fila},${col}: ${f}`);
   }
