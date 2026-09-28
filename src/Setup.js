@@ -47,9 +47,10 @@ function crearHojas_() {
   ss.setActiveSheet(ss.getSheetByName(HOJA.ALB));
 }
 
-function estiloCabecera_(sh, n) {
-  sh.getRange(1, 1, 1, n).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setVerticalAlignment('middle').setWrap(true);
-  sh.setFrozenRows(1);
+function estiloCabecera_(sh, n, filaCab) {
+  filaCab = filaCab || 1;
+  sh.getRange(filaCab, 1, 1, n).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setVerticalAlignment('middle').setWrap(true);
+  sh.setFrozenRows(filaCab);  // deja fijo también lo que haya encima (el panel de resumen, si lo hay)
 }
 
 function prepararConfig_() {
@@ -80,24 +81,40 @@ function prepararConfig_() {
  * sin cabeceras), no hace nada.
  */
 function insertarColumnaSiFalta_(nombreHoja, nombreCol) {
-  const sh = hoja_(nombreHoja), pos = ESQUEMA[nombreHoja].cabeceras.indexOf(nombreCol) + 1;
-  const actual = sh.getLastColumn() >= pos ? sh.getRange(1, pos).getValue() : '';
+  const sh = hoja_(nombreHoja), esq = ESQUEMA[nombreHoja], fc = esq.filaCabecera || 1, pos = esq.cabeceras.indexOf(nombreCol) + 1;
+  const actual = sh.getLastColumn() >= pos ? sh.getRange(fc, pos).getValue() : '';
   if (actual === nombreCol || actual === '') return;
   sh.insertColumnBefore(pos);
-  log_('INFO', 'setup', `${nombreHoja}!${colLetra_(pos)}1`, `Columna "${nombreCol}" insertada (migración desde una versión sin esa columna)`);
+  log_('INFO', 'setup', `${nombreHoja}!${colLetra_(pos)}${fc}`, `Columna "${nombreCol}" insertada (migración desde una versión sin esa columna)`);
+}
+
+/**
+ * Migración única: si la cabecera de `nombreHoja` sigue en la fila 1 (versión anterior sin panel encima),
+ * inserta las filas en blanco que hacen falta para que caiga en `filaCabecera`, sin desalinear los datos.
+ * Idempotente: si ya está ahí, o la pestaña está recién creada (fila 1 vacía), no hace nada.
+ */
+function insertarFilasSiFalta_(nombreHoja) {
+  const esq = ESQUEMA[nombreHoja], fc = esq.filaCabecera;
+  if (!fc || fc === 1) return;
+  const sh = hoja_(nombreHoja);
+  const actual = sh.getLastRow() >= 1 ? sh.getRange(1, 1).getValue() : '';
+  if (actual !== esq.cabeceras[0]) return;
+  sh.insertRowsBefore(1, fc - 1);
+  log_('INFO', 'setup', `${nombreHoja}!A${fc}`, `${fc - 1} fila(s) insertada(s) arriba (migración desde una versión sin panel de resumen)`);
 }
 
 /** Cabeceras, fórmulas, formato, validaciones y colores de las pestañas de tabla. */
 function prepararTablas_() {
   const ss = ss_();
+  insertarFilasSiFalta_(HOJA.TRAB);
   insertarColumnaSiFalta_(HOJA.ALB, 'Mes');
   insertarColumnaSiFalta_(HOJA.TRAB, 'Mes');
   insertarColumnaSiFalta_(HOJA.TRAB, 'Recambios facturables RM');
   insertarColumnaSiFalta_(HOJA.TRAB, 'Recambios facturables Otros');
   ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'].forEach(nombre => {
     const sh = ss.getSheetByName(nombre), esq = ESQUEMA[nombre], n = esq.cabeceras.length;
-    escribirCabeceras_(sh, esq.cabeceras);
-    estiloCabecera_(sh, n);
+    escribirCabeceras_(sh, esq.cabeceras, esq.filaCabecera);
+    estiloCabecera_(sh, n, esq.filaCabecera);
   });
   _letras = {};
   ['Albaranes', 'Trabajos', 'Piezas', 'Líneas RM'].forEach(escribirFormulas_);
@@ -110,14 +127,15 @@ function prepararTablas_() {
  * silencio los datos de las filas de abajo con el nombre nuevo (p. ej. una columna "Quincena" heredada
  * de una versión anterior del esquema, que ya no existe en ESQUEMA pero seguía teniendo datos reales).
  */
-function escribirCabeceras_(sh, cabeceras) {
+function escribirCabeceras_(sh, cabeceras, filaCab) {
+  filaCab = filaCab || 1;
   const ancho = Math.max(sh.getLastColumn(), cabeceras.length);
-  const actual = ancho > 0 ? sh.getRange(1, 1, 1, ancho).getValues()[0] : [];
+  const actual = ancho > 0 ? sh.getRange(filaCab, 1, 1, ancho).getValues()[0] : [];
   cabeceras.forEach((h, i) => {
     if (actual[i] === h) return;
     if (actual[i]) throw new Error(`"${sh.getName()}": la columna ${colLetra_(i + 1)} tiene la cabecera "${actual[i]}" en vez de "${h}". ` +
       'Corrígelo a mano (renombra o mueve esa columna) antes de reparar, para no desalinear los datos de las filas de abajo.');
-    sh.getRange(1, i + 1).setValue(h);
+    sh.getRange(filaCab, i + 1).setValue(h);
   });
 }
 
@@ -127,16 +145,16 @@ function escribirCabeceras_(sh, cabeceras) {
  * (agregarFilas_) o al editarlas a mano (alEditar ▸ asegurarFila_). Quita las de las filas vacías.
  */
 function escribirFormulas_(nombre) {
-  const sh = hoja_(nombre), n = ESQUEMA[nombre].filasFormato;
-  if (sh.getMaxRows() < n + 1) sh.insertRowsAfter(sh.getMaxRows(), n + 1 - sh.getMaxRows());
+  const sh = hoja_(nombre), n = ESQUEMA[nombre].filasFormato, fc = ESQUEMA[nombre].filaCabecera || 1;
+  if (sh.getMaxRows() < n + fc) sh.insertRowsAfter(sh.getMaxRows(), n + fc - sh.getMaxRows());
   const t = leerTabla_(nombre), ultDatos = t.libre - 1, ultHoja = sh.getLastRow();
   Object.keys(FORMULAS[nombre]).forEach(h => {
-    if (ultDatos >= 2) sh.getRange(2, t.map[h], ultDatos - 1, 1).setFormulas(Array.from({ length: ultDatos - 1 }, (_, i) => [loc_(FORMULAS[nombre][h](i + 2))]));
+    if (ultDatos >= fc + 1) sh.getRange(fc + 1, t.map[h], ultDatos - fc, 1).setFormulas(Array.from({ length: ultDatos - fc }, (_, i) => [loc_(FORMULAS[nombre][h](i + fc + 1))]));
     if (ultHoja > ultDatos) limpiarFormulasSobrantes_(t, h, ultDatos + 1, ultHoja);
   });
   // Por debajo de los datos una casilla sólo puede valer FALSE (TRUE contaría como dato), así que se quita sin perder nada.
   (t.esq.casillas || []).forEach(h => {
-    if (ultDatos >= 2) sh.getRange(2, t.map[h], ultDatos - 1, 1).setDataValidation(checkbox_());
+    if (ultDatos >= fc + 1) sh.getRange(fc + 1, t.map[h], ultDatos - fc, 1).setDataValidation(checkbox_());
     if (ultHoja > ultDatos) sh.getRange(ultDatos + 1, t.map[h], ultHoja - ultDatos, 1).clearDataValidations().clearContent();
   });
 }
@@ -153,17 +171,19 @@ function limpiarFormulasSobrantes_(t, h, desde, hasta) {
   rango.clearContent();
 }
 
-function colDe_(sh, h) { return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].indexOf(h) + 1; }
+function colDe_(sh, h, filaCab) { return sh.getRange(filaCab || 1, 1, 1, sh.getLastColumn()).getValues()[0].indexOf(h) + 1; }
 
 /**
- * Aplica formato a una columna por nombre: n filas desde la 2. Una columna gris (calculada) nunca debe llevar
- * una validación manual, así que si no se le pasa una, se quita cualquier resto de una versión anterior (p. ej.
- * de un bug de columnas desalineadas que dejó una validación de otra columna pegada aquí).
+ * Aplica formato a una columna por nombre: n filas desde la siguiente a la cabecera. Una columna gris
+ * (calculada) nunca debe llevar una validación manual, así que si no se le pasa una, se quita cualquier resto
+ * de una versión anterior (p. ej. de un bug de columnas desalineadas que dejó una validación de otra columna
+ * pegada aquí).
  */
-function colFmt_(sh, h, n, o) {
-  const c = colDe_(sh, h);
+function colFmt_(sh, h, n, o, filaCab) {
+  filaCab = filaCab || 1;
+  const c = colDe_(sh, h, filaCab);
   if (!c) return;
-  const r = sh.getRange(2, c, n, 1);
+  const r = sh.getRange(filaCab + 1, c, n, 1);
   if (o.fmt) r.setNumberFormat(o.fmt);
   if (o.gris) r.setBackground(COLORES.gris);
   if (o.ancho) sh.setColumnWidth(c, o.ancho);
@@ -217,47 +237,47 @@ function formatoAlbaranes_() {
 }
 
 function formatoTrabajos_() {
-  const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB);
+  const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB), fc = ESQUEMA['Trabajos'].filaCabecera;
   limpiarProtecciones_(sh);
-  colFmt_(sh, 'Nº trabajo', n, { ancho: 95 });
-  colFmt_(sh, 'Fecha apertura', n, { fmt: FMT.fecha, ancho: 105 });
-  colFmt_(sh, 'Mes', n, { gris: true, ancho: 70 });
-  colFmt_(sh, 'Matrícula', n, { validacion: matriculaValidacion_(), ancho: 100 });
-  colFmt_(sh, 'Coche', n, { gris: true, ancho: 190 });
-  colFmt_(sh, 'Cliente', n, { gris: true, ancho: 150 });
-  colFmt_(sh, 'Recambios', n, { fmt: FMT.euro, gris: true, ancho: 110 });
-  colFmt_(sh, 'Recambios facturables', n, { fmt: FMT.euro, gris: true, ancho: 150 });
-  colFmt_(sh, 'Recambios facturables RM', n, { fmt: FMT.euro, gris: true, ancho: 130 });
-  colFmt_(sh, 'Recambios facturables Otros', n, { fmt: FMT.euro, gris: true, ancho: 130 });
-  colFmt_(sh, 'Factura', n, { fmt: FMT.euro, ancho: 110 });
-  colFmt_(sh, 'Beneficio', n, { fmt: FMT.euro, gris: true, ancho: 110 });
-  colFmt_(sh, 'Pagado', n, { ancho: 80 });
-  colFmt_(sh, 'Avisos', n, { gris: true, ancho: 340 });
-  const R = h => `${l[h]}2:${l[h]}${n + 1}`;
+  // Limpieza única del panel lateral de una versión anterior (columnas P en adelante, filas 1-10): ahora va encima.
+  sh.getRange(1, 16, 10, 8).breakApart().clearContent().clearFormat().clearDataValidations();
+  const cf = (h, o) => colFmt_(sh, h, n, o, fc);
+  cf('Nº trabajo', { ancho: 95 });
+  cf('Fecha apertura', { fmt: FMT.fecha, ancho: 105 });
+  cf('Mes', { gris: true, ancho: 70 });
+  cf('Matrícula', { validacion: matriculaValidacion_(), ancho: 100 });
+  cf('Coche', { gris: true, ancho: 190 });
+  cf('Cliente', { gris: true, ancho: 150 });
+  cf('Recambios', { fmt: FMT.euro, gris: true, ancho: 110 });
+  cf('Recambios facturables', { fmt: FMT.euro, gris: true, ancho: 150 });
+  cf('Recambios facturables RM', { fmt: FMT.euro, gris: true, ancho: 130 });
+  cf('Recambios facturables Otros', { fmt: FMT.euro, gris: true, ancho: 130 });
+  cf('Factura', { fmt: FMT.euro, ancho: 110 });
+  cf('Beneficio', { fmt: FMT.euro, gris: true, ancho: 110 });
+  cf('Pagado', { ancho: 80 });
+  cf('Avisos', { gris: true, ancho: 340 });
+  const R = h => `${l[h]}${fc + 1}:${l[h]}${fc + n}`;
   sh.setConditionalFormatRules([
-    regla_(sh, R('Pagado'), `=AND($${l['Nº trabajo']}2<>"",$${l['Pagado']}2<>TRUE)`, COLORES.rojo),
-    regla_(sh, R('Pagado'), `=$${l['Pagado']}2=TRUE`, COLORES.verde),
-    regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}2,1)="⚠"`, COLORES.naranja),
-    regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}2,1)="ℹ"`, COLORES.azul),
-    regla_(sh, R('Coche'), `=LEFT($${l['Coche']}2,1)="⚠"`, COLORES.naranja),
+    regla_(sh, R('Pagado'), `=AND($${l['Nº trabajo']}${fc + 1}<>"",$${l['Pagado']}${fc + 1}<>TRUE)`, COLORES.rojo),
+    regla_(sh, R('Pagado'), `=$${l['Pagado']}${fc + 1}=TRUE`, COLORES.verde),
+    regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}${fc + 1},1)="⚠"`, COLORES.naranja),
+    regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}${fc + 1},1)="ℹ"`, COLORES.azul),
+    regla_(sh, R('Coche'), `=LEFT($${l['Coche']}${fc + 1},1)="⚠"`, COLORES.naranja),
   ]);
-  panelResumenTrabajos_(sh, n, l);
+  panelResumenTrabajos_(sh, n, l, fc);
 }
 
 /**
- * Panel "Resumen (según filtro)", a la derecha de la tabla: una cabecera por métrica y, debajo, su valor con
- * SUBTOTAL, que suma sólo las filas que el filtro de la cabecera deja visibles (sin filtro puesto, son todas).
- * Morosos necesita además el truco SUMPRODUCT + SUBTOTAL(103, OFFSET(...)) porque SUBTOTAL solo no admite una
- * condición (Pagado = falso): se usa la columna "Nº trabajo" para saber qué filas están visibles porque nunca
- * está en blanco en una fila real, a diferencia de "Factura" (un trabajo sin facturar todavía), que daría una
- * visibilidad falsa (0) por error.
- * Empieza en la fila 2, no en la 1: leerTabla_ lee las cabeceras de TODA la fila 1, así que una celda con
- * contenido ahí (aunque esté lejos, en la columna P) se colaría como si fuera una cabecera más de la tabla.
+ * Panel "Resumen (según filtro)", encima de la cabecera real de Trabajos (ocupa las filas 1 a filaCabecera-1):
+ * una cabecera por métrica y, debajo, su valor con SUBTOTAL, que suma sólo las filas que el filtro de la
+ * cabecera deja visibles (sin filtro puesto, son todas). Morosos necesita además el truco SUMPRODUCT +
+ * SUBTOTAL(103, OFFSET(...)) porque SUBTOTAL solo no admite una condición (Pagado = falso): se usa la columna
+ * "Nº trabajo" para saber qué filas están visibles porque nunca está en blanco en una fila real, a diferencia
+ * de "Factura" (un trabajo sin facturar todavía), que daría una visibilidad falsa (0) por error.
  */
-function panelResumenTrabajos_(sh, n, l) {
-  const pc = TRAB_PANEL_COL, ini = 2;  // título en la fila 2, cabeceras en la 3, valores en la 4
-  const rango = h => `Trabajos!$${l[h]}$2:$${l[h]}$${n + 1}`;
-  const primeraN = `Trabajos!$${l['Nº trabajo']}$2`, rangoN = rango('Nº trabajo');
+function panelResumenTrabajos_(sh, n, l, fc) {
+  const rango = h => `Trabajos!$${l[h]}$${fc + 1}:$${l[h]}$${fc + n}`;
+  const primeraN = `Trabajos!$${l['Nº trabajo']}$${fc + 1}`, rangoN = rango('Nº trabajo');
   const visibles = `SUBTOTAL(103,OFFSET(${primeraN},ROW(${rangoN})-ROW(${primeraN}),0,1))`;
   const cols = [
     ['Trabajos', `=SUBTOTAL(103,${rangoN})`, '0'],
@@ -267,14 +287,13 @@ function panelResumenTrabajos_(sh, n, l) {
     ['Morosos', `=SUMPRODUCT((${rango('Pagado')}=FALSE)*${visibles}*${rango('Factura')})`, FMT.euro],
     ['Beneficio', `=SUBTOTAL(109,${rango('Beneficio')})`, FMT.euro],
   ];
-  sh.getRange(ini, pc, 1, cols.length).merge().setValue('Resumen (según filtro)')
+  sh.getRange(1, 1, 1, cols.length).merge().setValue('Resumen (según filtro)')
     .setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
-  sh.getRange(ini + 1, pc, 1, cols.length).setValues([cols.map(c => c[0])])
+  sh.getRange(2, 1, 1, cols.length).setValues([cols.map(c => c[0])])
     .setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setHorizontalAlignment('center');
-  cols.forEach(([, formula, fmt], i) => sh.getRange(ini + 2, pc + i).setValue(loc_(formula)).setNumberFormat(fmt));
-  sh.getRange(ini + 2, pc, 1, cols.length).setHorizontalAlignment('center').setBackground(COLORES.gris);
-  for (let i = 0; i < cols.length; i++) sh.setColumnWidth(pc + i, i === 0 ? 75 : 110);
-  proteger_(sh.getRange(ini, pc, 3, cols.length));
+  cols.forEach(([, formula, fmt], i) => sh.getRange(3, 1 + i).setValue(loc_(formula)).setNumberFormat(fmt));
+  sh.getRange(3, 1, 1, cols.length).setHorizontalAlignment('center').setBackground(COLORES.gris);
+  proteger_(sh.getRange(1, 1, 3, cols.length));
 }
 
 function formatoPiezas_() {

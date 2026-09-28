@@ -96,7 +96,8 @@ function editarAlbaranes_(r0, n, c0, nc) {
 function editarTrabajos_(r0, n, c0, nc) {
   const tab = leerTabla_(HOJA.TRAB), hoy = hoyISO_(), ancho = anchoTabla_(tab);
   let coches = null;
-  for (let r = Math.max(r0, 2); r < r0 + n; r++) {
+  // El panel "Resumen (según filtro)" vive por encima de la cabecera real: una edición ahí no es una fila de datos.
+  for (let r = Math.max(r0, tab.esq.filaCabecera + 1); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
     const g = h => vals[tab.map[h] - 1];
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };

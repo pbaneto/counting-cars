@@ -25,6 +25,7 @@ const ESQUEMA = {
     entradas: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Factura', 'Pagado'],
     casillas: ['Pagado'],
     filasFormato: 800,
+    filaCabecera: 4,  // filas 1-3: panel "Resumen (según filtro)" encima de la cabecera real
   },
   'Piezas': {
     cabeceras: ['Reembolso', 'Matrícula', 'Nº albarán', 'Referencia pieza', 'Descripción', 'Marca', 'Cantidad', 'Precio base', 'Descuento aplicado',
@@ -87,9 +88,6 @@ const ABONOS = {
   cabTabla: ['Fecha abono', 'Descripción pieza', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia', 'Matrícula',
     'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente'],
 };
-
-/** Columna P: panel "Resumen (según filtro)" en Trabajos, a la derecha de sus columnas reales (deja una de hueco). */
-const TRAB_PANEL_COL = 16;
 
 const ESTADOS_ABONO = ['Abonada', 'Sin abonar', 'Sin solicitar'];
 const COLORES = {

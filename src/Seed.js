@@ -88,8 +88,7 @@ function repararTrabajos() {
       arregladas++;
     });
 
-    // Sólo limpia hasta antes del panel "Resumen (según filtro)" (TRAB_PANEL_COL): nunca lo borra a él.
-    const nCab = ESQUEMA['Trabajos'].cabeceras.length, extra = TRAB_PANEL_COL - 1 - nCab;
+    const nCab = ESQUEMA['Trabajos'].cabeceras.length, extra = tab.sh.getLastColumn() - nCab;
     if (extra > 0) tab.sh.deleteColumns(nCab + 1, extra);
 
     reiniciarCaches_();

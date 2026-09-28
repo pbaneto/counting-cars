@@ -47,26 +47,27 @@ function tieneDatos_(esq, v) {
 }
 
 /**
- * Lee una tabla de cabeceras en fila 1 con UNA sola lectura (cabecera + datos).
+ * Lee una tabla con UNA sola lectura (cabecera + datos). La cabecera está en la fila 1, salvo que el esquema
+ * diga otra cosa con `filaCabecera` (Trabajos: encima lleva el panel de resumen).
  * Devuelve {sh, map, filas:[{fila, v:{cabecera: valor}}], libre, leidas, valores}; leidas = filas de datos leídas
  * (con o sin datos); valores = lo leído tal cual, fila 1 incluida (valores[r - 1] es la fila r).
  */
 function leerTabla_(nombre) {
-  const sh = hoja_(nombre), esq = ESQUEMA[nombre];
+  const sh = hoja_(nombre), esq = ESQUEMA[nombre], fc = esq.filaCabecera || 1;
   const todo = sh.getDataRange().getValues();
   const map = {};
-  todo[0].forEach((h, i) => { if (h !== '') map[String(h).trim()] = i + 1; });
+  (todo[fc - 1] || []).forEach((h, i) => { if (h !== '') map[String(h).trim()] = i + 1; });
   esq.cabeceras.forEach(h => {
     if (!map[h]) throw new Error(`Falta la columna "${h}" en la pestaña "${nombre}". Ejecuta Counting Cars ▸ Reparar fórmulas y formato.`);
   });
   const filas = [];
-  let libre = 2;
-  for (let i = 1; i < todo.length; i++) {
+  let libre = fc + 1;
+  for (let i = fc; i < todo.length; i++) {
     const v = {};
     for (const h in map) v[h] = todo[i][map[h] - 1];
     if (tieneDatos_(esq, v)) { filas.push({ fila: i + 1, v }); libre = i + 2; }
   }
-  return { nombre, sh, map, filas, libre, esq, leidas: todo.length - 1, valores: todo };
+  return { nombre, sh, map, filas, libre, esq, leidas: todo.length - fc, valores: todo };
 }
 
 function anchoTabla_(tabla) { return Math.max.apply(null, Object.keys(tabla.map).map(h => tabla.map[h])); }
