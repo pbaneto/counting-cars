@@ -39,6 +39,8 @@ const FORMULAS = {
   },
 
   'Trabajos': {
+    // CHOOSE con la lista fija en vez de TEXT(fecha,"mmm"): TEXT depende del idioma de la hoja y en español da "sept." para septiembre.
+    'Mes': r => { const t = letras_(HOJA.TRAB); return `=IF(${t['Fecha apertura']}${r}="","",CHOOSE(MONTH(${t['Fecha apertura']}${r}),"ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"))`; },
     'Coche': r => { const t = letras_(HOJA.TRAB); return `=IF(${t['Matrícula']}${r}="","",IFERROR(VLOOKUP(${t['Matrícula']}${r},Coches!$A:$C,${indice_(HOJA.COCHES, 'Coche')},FALSE),"⚠ Matrícula no está en Coches"))`; },
     'Cliente': r => { const t = letras_(HOJA.TRAB); return `=IF(${t['Matrícula']}${r}="","",IFERROR(VLOOKUP(${t['Matrícula']}${r},Coches!$A:$C,${indice_(HOJA.COCHES, 'Cliente')},FALSE),""))`; },
     'Recambios': r => {

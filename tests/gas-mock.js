@@ -41,7 +41,7 @@ class Rango {
   setFormulas(a) { this._each((r, c, i, j) => this.sh.put(r, c, a[i][j])); return this._w(); }
   setFormula(f) { this.sh.put(this.r, this.c, f); return this._w(); }
   clearContent() { this._each((r, c) => this.sh.grid.delete(r + ',' + c)); return this._w(); }
-  clearDataValidations() { return this._w(); }
+  clearDataValidations() { this.sh.validacionesLimpiadas.push(this.c); return this._w(); }
   /** Como Sheets: una casilla de verificación nunca está vacía, vale FALSE aunque nadie la haya tocado. */
   setDataValidation(regla) { if (regla && regla.casilla) this._each((r, c) => { if (!this.sh.cell(r, c)) this.sh.put(r, c, false); }); return this._w(); }
   setNumberFormat() { return this._w(); }
@@ -49,7 +49,7 @@ class Rango {
 
 class Hoja {
   constructor(ss, name, id) {
-    this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000;
+    this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000; this.validacionesLimpiadas = [];
     return new Proxy(this, { get: (t, k, rcv) => (k in t || typeof k === 'symbol' ? Reflect.get(t, k, t) : chain()) });
   }
   cell(r, c) { return this.grid.get(r + ',' + c); }
@@ -64,6 +64,16 @@ class Hoja {
   getName() { return this.name; } getSheetId() { return this.id; }
   getMaxRows() { this.ss.io.leer(`${this.name}.getMaxRows`); return this.maxRows; }
   insertRowsAfter(n, k) { this.maxRows += k; this.ss.io.escrito = true; }
+  /** Desplaza a la derecha, como Sheets, todo lo que esté en la columna c o a partir de ella. */
+  insertColumnBefore(c) {
+    const nuevo = new Map();
+    this.grid.forEach((v, k) => {
+      const [r, col] = k.split(',').map(Number);
+      nuevo.set(r + ',' + (col >= c ? col + 1 : col), v);
+    });
+    this.grid = nuevo;
+    this.ss.io.escrito = true;
+  }
   getLastRow() { this.ss.io.leer(`${this.name}.getLastRow`); let m = 0; this.grid.forEach((x, k) => { const r = Number(k.split(',')[0]); if (r > m) m = r; }); return m; }
   getLastColumn() { let m = 0; this.grid.forEach((x, k) => { const c = Number(k.split(',')[1]); if (c > m) m = c; }); return m; }
   getDataRange() { return new Rango(this, 1, 1, Math.max(this.getLastRow(), 1), Math.max(this.getLastColumn(), 1)); }

@@ -20,7 +20,7 @@ const ESQUEMA = {
     filasFormato: 1500,
   },
   'Trabajos': {
-    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Recambios facturables', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
+    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Mes', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Recambios facturables', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
     entradas: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Factura', 'Pagado'],
     casillas: ['Pagado'],
     filasFormato: 800,

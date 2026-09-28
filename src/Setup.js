@@ -72,9 +72,23 @@ function prepararConfig_() {
   _cfg = null;
 }
 
+/**
+ * Migración única: en una hoja de una versión anterior (sin la columna "Mes"), "Matrícula" está todavía donde
+ * ahora va "Mes". Inserta una columna en blanco ahí para no desalinear los datos de las columnas existentes.
+ * Idempotente: si "Mes" ya está en su sitio (o la pestaña está recién creada, sin cabeceras), no hace nada.
+ */
+function insertarColumnaMesTrabajos_() {
+  const sh = hoja_(HOJA.TRAB), posMes = ESQUEMA['Trabajos'].cabeceras.indexOf('Mes') + 1;
+  const actual = sh.getLastColumn() >= posMes ? sh.getRange(1, posMes).getValue() : '';
+  if (actual === 'Mes' || actual === '') return;
+  sh.insertColumnBefore(posMes);
+  log_('INFO', 'setup', `${HOJA.TRAB}!${colLetra_(posMes)}1`, 'Columna "Mes" insertada (migración desde una versión sin esa columna)');
+}
+
 /** Cabeceras, fórmulas, formato, validaciones y colores de las pestañas de tabla. */
 function prepararTablas_() {
   const ss = ss_();
+  insertarColumnaMesTrabajos_();
   ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'].forEach(nombre => {
     const sh = ss.getSheetByName(nombre), esq = ESQUEMA[nombre], n = esq.cabeceras.length;
     escribirCabeceras_(sh, esq.cabeceras);
@@ -136,7 +150,11 @@ function limpiarFormulasSobrantes_(t, h, desde, hasta) {
 
 function colDe_(sh, h) { return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].indexOf(h) + 1; }
 
-/** Aplica formato a una columna por nombre: n filas desde la 2. */
+/**
+ * Aplica formato a una columna por nombre: n filas desde la 2. Una columna gris (calculada) nunca debe llevar
+ * una validación manual, así que si no se le pasa una, se quita cualquier resto de una versión anterior (p. ej.
+ * de un bug de columnas desalineadas que dejó una validación de otra columna pegada aquí).
+ */
 function colFmt_(sh, h, n, o) {
   const c = colDe_(sh, h);
   if (!c) return;
@@ -145,6 +163,7 @@ function colFmt_(sh, h, n, o) {
   if (o.gris) r.setBackground(COLORES.gris);
   if (o.ancho) sh.setColumnWidth(c, o.ancho);
   if (o.validacion) r.setDataValidation(o.validacion);
+  else if (o.gris) r.clearDataValidations();
   if (o.gris) proteger_(r);
 }
 
@@ -196,6 +215,7 @@ function formatoTrabajos_() {
   limpiarProtecciones_(sh);
   colFmt_(sh, 'Nº trabajo', n, { ancho: 95 });
   colFmt_(sh, 'Fecha apertura', n, { fmt: FMT.fecha, ancho: 105 });
+  colFmt_(sh, 'Mes', n, { gris: true, ancho: 70 });
   colFmt_(sh, 'Matrícula', n, { validacion: matriculaValidacion_(), ancho: 100 });
   colFmt_(sh, 'Coche', n, { gris: true, ancho: 190 });
   colFmt_(sh, 'Cliente', n, { gris: true, ancho: 150 });
