@@ -5,8 +5,7 @@ let _buffer = [];
 function log_(nivel, funcion, referencia, mensaje) {
   _buffer.push([new Date(), nivel, funcion, referencia || '', String(mensaje).slice(0, 1500)]);
   const linea = `[${nivel}] ${funcion} ${referencia || ''} ${mensaje}`;
-  Logger.log(linea);
-  // console.* (no Logger.log) es lo que aparece en el detalle de cada ejecución en Apps Script ▸ Ejecuciones.
+  // Sólo console.*: sale en Apps Script ▸ Ejecuciones con su nivel. Usar también Logger.log la duplicaba.
   (nivel === 'ERROR' ? console.error : nivel === 'AVISO' ? console.warn : console.log)(linea);
 }
 

@@ -51,7 +51,9 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.equal(alb.valor(1, 5), 'Nº albarán');
   assert.match(alb.cell(2, 3).f, /^=IF\(B2=""/);          // Quincena
   assert.match(alb.cell(2, 9).f, /SUMIFS\(Piezas!/);       // Precio facturable
-  assert.match(alb.cell(1500, 13).f, /DIAS_AVISO/);        // Avisos hasta la fila 1500
+  assert.match(alb.cell(2, 13).f, /DIAS_AVISO/);           // Avisos en las filas con datos (piloto: filas 2-4)
+  assert.equal(alb.cell(5, 13), undefined, 'sin fórmulas en filas vacías: leerlas y recalcularlas era lo lento');
+  assert.equal(alb.getLastRow(), 4);
   const cfg = tabla(e, 'Config');
   assert.equal(cfg.find(x => x.Clave === 'CARPETA_ENTRADA').Valor, 'ENT');
   assert.equal(cfg.find(x => x.Clave === 'MODELO_GEMINI').Valor, 'gemini-3.5-flash-lite');
@@ -65,8 +67,25 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.equal(abonos.cell(4, 12).f, '=DIAS_AVISO_REEMB');  // panel: umbral copiado de Config a esta pestaña
   assert.match(abonos.cell(5, 12).f, /COUNTIFS.*\$L\$4/);    // panel: fuera de plazo, contra el umbral de la misma pestaña
   e.run('repararFormulas()');
-  const errores = e.log.logger.filter(m => /^\[ERROR\]/.test(m));
+  const errores = e.log.console.filter(m => /^\[ERROR\]/.test(m));
   assert.deepEqual(errores, [], 'setup y repararFormulas deben terminar sin errores');
+});
+
+test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) sin tocar datos ni valores a mano', () => {
+  const e = entorno({});
+  const alb = e.ss.getSheetByName('Albaranes'), p = e.ss.getSheetByName('Piezas');
+  // Como la hoja real antes del cambio: fórmulas rellenadas por adelantado muy por debajo de los datos
+  for (let r = 5; r <= 1501; r++) { alb.put(r, 3, `=IF(B${r}="","",1)`); alb.put(r, 13, `=IF(G${r}="","",1)`); }
+  p.put(4001, 15, '=IF(C4001="","",1)');
+  alb.put(900, 10, 'escrito a mano');                 // valor (no fórmula) en la columna calculada "Coche"
+  e.run('repararFormulas()');
+  assert.equal(alb.cell(700, 3), undefined, 'Quincena vacía por debajo de los datos');
+  assert.equal(alb.cell(1501, 13), undefined, 'Avisos vacía por debajo de los datos');
+  assert.equal(p.cell(4001, 15), undefined);
+  assert.match(alb.cell(4, 13).f, /DIAS_AVISO/, 'las filas con datos conservan sus fórmulas');
+  assert.equal(alb.valor(900, 10), 'escrito a mano', 'no borra un valor escrito a mano');
+  assert.ok(e.log.console.some(l => /\[AVISO\] repararFormulas Albaranes!J900/.test(l)));
+  assert.equal(p.getLastRow(), 1);
 });
 
 test('repararFormulas añade a Config las claves nuevas sin pisar los valores existentes', () => {
@@ -199,13 +218,22 @@ test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; re
   // Tiempos en Apps Script ▸ Ejecuciones: una línea por paso del camino "marcar pieza"
   const linea = pre => e.log.console.find(l => l.startsWith(pre)) || '';
   assert.match(linea('⏱ alEditar (Piezas)'), /esperar bloqueo \d+ms, editar Piezas \d+ms \| total \d+ms/);
-  assert.match(linea('⏱ editarPiezas_'), /leer Piezas \(1 filas\) \d+ms, revisar 1 fila\(s\) editada\(s\) \d+ms, reconstruir Abonos \d+ms/);
-  assert.match(linea('⏱ reconstruirAbonos_'), /leer Piezas .*leer Líneas RM .*leer Albaranes .*leer Config .*preparar piezas \(1 marcadas.*cruce .*borrar .*escribir \(1 filas\)/);
+  assert.match(linea('⏱ editarPiezas_'), /leer Piezas \(1 de 1 filas\) \d+ms, revisar 1 fila\(s\) editada\(s\) \d+ms, reconstruir Abonos \d+ms/);
+  assert.match(linea('⏱ reconstruirAbonos_'), /Piezas ya leída .*leer Líneas RM \(0 de 0 filas\).*leer Albaranes \(3 de 3 filas\).*leer Config .*preparar piezas \(1 marcadas.*cruce .*borrar .*escribir \(1 filas\).*Sin abonar 1/);
   assert.match(linea('■ alEditar'), /^■ alEditar: \d+ms \(escribir en Registro \d+ms\)$/);
+  assert.equal(e.log.console.filter(l => /^\[INFO\] reconstruirAbonos/.test(l)).length, 0, 'el resumen ya no se escribe en Registro');
   assert.equal(p.valor(2, 1), true);
   assert.ok(esFecha(p.valor(2, 12)), 'fecha de reembolso');
   assert.equal(p.valor(2, 14), 'Manual');
+  assert.match(p.cell(2, 15).f, /Falta el nº de albarán/, 'la fila escrita a mano recibe sus fórmulas');
   assert.equal(e.ss.getSheetByName('Abonos').valor(31, 5), 'Sin abonar');
+  // Pieza de un albarán de proveedor "Otros": no se reclama a RM
+  const alb = e.ss.getSheetByName('Albaranes');
+  alb.put(5, 4, 'Otros'); alb.put(5, 5, '999'); alb.put(5, 7, '1234ABC'); alb.put(5, 8, 20);
+  p.put(3, 3, '999'); p.put(3, 5, 'De otro proveedor'); p.put(3, 10, 10); p.put(3, 1, true);
+  e.ctx.__p4 = p.getRange(3, 1); e.run('alEditar({ range: __p4 })');
+  assert.equal(e.ss.getSheetByName('Abonos').valor(31, 6), '123456');
+  assert.equal(e.ss.getSheetByName('Abonos').valor(32, 6), '', 'la pieza de "Otros" no entra en Abonos');
   // desmarcar limpia la fecha y la fila de Abonos
   p.put(2, 1, false);
   e.ctx.__p3 = p.getRange(2, 1); e.run('alEditar({ range: __p3 })');
@@ -264,15 +292,18 @@ test('diagnóstico lista problemas con enlaces', () => {
 test('con hoja en español (es_ES) TODAS las fórmulas y reglas se escriben con ";"', () => {
   let e = crearEntorno({ privado: true, privadoRuta: PRIV, locale: 'es_ES', gemini: () => ({}) });
   e.run('setup()');
-  const alb = e.ss.getSheetByName('Albaranes');
-  assert.equal(alb.cell(2, 3).f, '=IF(B2="";"";IF(DAY(B2)<=15;1;2))');
   const separadorIngles = f => /(?:^|[^\d]),|,(?:[^\d]|$)/.test(f.replace(/"[^"]*"/g, '""'));  // una coma que no sea decimal (entre dígitos)
-  assert.ok(!separadorIngles(alb.cell(2, 13).f), 'sin comas de argumento fuera de comillas');
-  for (const [hoja, col, fila] of [['Trabajos', 6, 2], ['Piezas', 11, 2], ['Líneas RM', 13, 2], ['Abonos', 3, 4], ['Abonos', 4, 4], ['Abonos', 6, 4], ['Abonos', 12, 3], ['Resumen', 2, 13]]) {
+  // Las fórmulas por fila ya no se escriben en filas vacías: se comprueban todas tal como se escribirían en la fila 2.
+  const porFila = e.run("Object.keys(FORMULAS).flatMap(n => Object.keys(FORMULAS[n]).map(h => [n + ' ▸ ' + h, loc_(FORMULAS[n][h](2))]))");
+  assert.ok(porFila.length >= 15);
+  assert.ok(porFila.some(([k, f]) => k === 'Albaranes ▸ Quincena' && f === '=IF(B2="";"";IF(DAY(B2)<=15;1;2))'));
+  for (const [k, f] of porFila) assert.ok(!separadorIngles(f), `${k}: ${f}`);
+  for (const [hoja, col, fila] of [['Abonos', 3, 4], ['Abonos', 4, 4], ['Abonos', 6, 4], ['Abonos', 12, 3], ['Resumen', 2, 13]]) {
     const f = e.ss.getSheetByName(hoja).cell(fila, col).f;
     assert.ok(f && !separadorIngles(f), `${hoja} ${fila},${col}: ${f}`);
   }
   e.run('cargarDatosIniciales()');
+  assert.ok(!separadorIngles(e.ss.getSheetByName('Albaranes').cell(2, 13).f), 'y las filas añadidas también');
   e.mkFolder('ENT', 'E'); e.mkFolder('PROC', 'P');
   assert.equal(e.run("enlacePdf_({ getId: () => 'abc' })"), '=HYPERLINK("https://drive.google.com/file/d/abc/view";"Ver PDF")');
 });

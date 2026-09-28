@@ -20,6 +20,7 @@ function alEditar(e) {
   const sh = e.range.getSheet(), nombre = sh.getName();
   if ([HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.COCHES].indexOf(nombre) < 0) return;
   ejecutar_('alEditar', () => {
+    if (e.source) _ss = e.source;  // la hoja ya viene abierta en el evento: evita abrirla otra vez por ID
     const crono = cronometro_(`alEditar (${nombre})`);
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) { toast_('Counting Cars está ocupado con otro proceso. Repite la edición en un momento.', '⚠'); return; }
@@ -52,6 +53,7 @@ function editarAlbaranes_(r0, n, c0, nc) {
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }
     const precio = parseNumber(g('Precio con IVA'));
     const jobVal = String(g('Nº trabajo')).trim().toUpperCase();
+    if (filaConDatos_(vals)) asegurarFormulasFila_(tab, r);
 
     if (jobVal === 'NUEVO' && !plate) { set('Nº trabajo', ''); toast_('Escribe primero la matrícula para abrir un trabajo nuevo.', '⚠ Falta matrícula'); continue; }
     if (!(plate && precio > 0)) continue;
@@ -59,7 +61,6 @@ function editarAlbaranes_(r0, n, c0, nc) {
     if (!g('Fecha escaneo')) set('Fecha escaneo', aFecha_(hoy));
     if (!g('Fecha albarán')) set('Fecha albarán', g('Fecha escaneo') || aFecha_(hoy));
     if (!g('Proveedor')) set('Proveedor', 'RM');
-    asegurarFormulasFila_(tab, r);
 
     trab = trab || leerTabla_(HOJA.TRAB);
     const actual = trab.filas.find(f => String(f.v['Nº trabajo']).trim().toUpperCase() === jobVal);
@@ -85,8 +86,8 @@ function editarTrabajos_(r0, n, c0, nc) {
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
     const plate = normPlate(g('Matrícula'));
     if (String(g('Matrícula')) !== plate) set('Matrícula', plate);
+    if (filaConDatos_(vals)) asegurarFormulasFila_(tab, r);
     if (!plate) continue;
-    asegurarFormulasFila_(tab, r);
     if (String(g('Nº trabajo')).trim() === '') {
       const otros = tab.filas.filter(f => f.fila !== r).map(f => f.v['Nº trabajo']);
       set('Nº trabajo', nextJobNumber(jobPrefix(plate), otros));
@@ -101,12 +102,14 @@ function editarTrabajos_(r0, n, c0, nc) {
 function editarPiezas_(r0, n, c0, nc) {
   const crono = cronometro_('editarPiezas_');
   const tab = leerTabla_(HOJA.PIEZAS), hoy = hoyISO_(), ancho = anchoTabla_(tab);
-  crono.paso(`leer Piezas (${tab.filas.length} filas)`);
+  crono.paso(`leer Piezas (${tab.filas.length} de ${tab.leidas} filas)`);
   let toca = false;
   for (let r = Math.max(r0, 2); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
+    const fila = tab.filas.find(f => f.fila === r);  // se mantiene al día para pasar la tabla a reconstruirAbonos_ sin releerla
     const g = h => vals[tab.map[h] - 1];
-    const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
+    const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; if (fila) fila.v[h] = v; };
+    if (filaConDatos_(vals)) asegurarFormulasFila_(tab, r);
     const num = normAlbaran(g('Nº albarán'));
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }
 
@@ -119,10 +122,9 @@ function editarPiezas_(r0, n, c0, nc) {
     } else if (g('Reembolso') === true) toca = true;
 
     if (!g('Origen') && (num || g('Descripción') || g('Precio descontado sin IVA') !== '')) set('Origen', 'Manual');
-    asegurarFormulasFila_(tab, r);
   }
   crono.paso(`revisar ${n} fila(s) editada(s)`);
-  if (toca) { reconstruirAbonos_(); crono.paso('reconstruir Abonos'); }
+  if (toca) { reconstruirAbonos_(tab); crono.paso('reconstruir Abonos'); }
   crono.fin(toca ? '' : 'sin cambios en reembolsos: Abonos no se toca');
 }
 

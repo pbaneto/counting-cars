@@ -60,6 +60,7 @@ class Hoja {
   insertRowsAfter(n, k) { this.maxRows += k; }
   getLastRow() { let m = 0; this.grid.forEach((x, k) => { const r = Number(k.split(',')[0]); if (r > m) m = r; }); return m; }
   getLastColumn() { let m = 0; this.grid.forEach((x, k) => { const c = Number(k.split(',')[1]); if (c > m) m = c; }); return m; }
+  getDataRange() { return new Rango(this, 1, 1, Math.max(this.getLastRow(), 1), Math.max(this.getLastColumn(), 1)); }
   getRange(a, b, c, d) { if (typeof a === 'string') { const [r, cc, nr, nc] = parseA1(a); return new Rango(this, r, cc, nr, nc); } return new Rango(this, a, b, c || 1, d || 1); }
   getProtections() { return []; } getCharts() { return []; } newChart() { return chain(); } insertChart() {} removeChart() {}
   /** Como Sheets: una regla de formato condicional no puede leer otra pestaña, ni directamente ni con un rango con nombre. */

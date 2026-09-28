@@ -102,15 +102,31 @@ function escribirCabeceras_(sh, cabeceras) {
   });
 }
 
+/**
+ * Fórmulas SÓLO en las filas con datos: miles de filas vacías con fórmula hacían que cada lectura de la pestaña
+ * (y cada recálculo) arrastrara todas esas filas. Las filas nuevas reciben sus fórmulas al crearlas
+ * (agregarFilas_) o al editarlas a mano (alEditar ▸ asegurarFormulasFila_). Quita las de las filas vacías.
+ */
 function escribirFormulas_(nombre) {
-  const sh = hoja_(nombre), n = ESQUEMA[nombre].filasFormulas, l = letras_(nombre);
+  const sh = hoja_(nombre), n = ESQUEMA[nombre].filasFormato;
   if (sh.getMaxRows() < n + 1) sh.insertRowsAfter(sh.getMaxRows(), n + 1 - sh.getMaxRows());
+  const t = leerTabla_(nombre), ultDatos = t.libre - 1, ultHoja = sh.getLastRow();
   Object.keys(FORMULAS[nombre]).forEach(h => {
-    const col = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].indexOf(h) + 1;
-    const filas = [];
-    for (let r = 2; r <= n + 1; r++) filas.push([loc_(FORMULAS[nombre][h](r))]);
-    sh.getRange(2, col, n, 1).setFormulas(filas);
+    if (ultDatos >= 2) sh.getRange(2, t.map[h], ultDatos - 1, 1).setFormulas(Array.from({ length: ultDatos - 1 }, (_, i) => [loc_(FORMULAS[nombre][h](i + 2))]));
+    if (ultHoja > ultDatos) limpiarFormulasSobrantes_(t, h, ultDatos + 1, ultHoja);
   });
+}
+
+/** Vacía una columna calculada por debajo de la última fila con datos. Si ahí hay un valor escrito a mano, no la toca y avisa. */
+function limpiarFormulasSobrantes_(t, h, desde, hasta) {
+  const rango = t.sh.getRange(desde, t.map[h], hasta - desde + 1, 1);
+  const formulas = rango.getFormulas(), valores = rango.getValues();
+  const aMano = valores.findIndex((v, i) => !formulas[i][0] && v[0] !== '' && v[0] !== false);
+  if (aMano >= 0) {
+    log_('AVISO', 'repararFormulas', `${t.nombre}!${colLetra_(t.map[h])}${desde + aMano}`, `Valor escrito a mano en la columna calculada "${h}" por debajo de los datos: esa columna no se limpia`);
+    return;
+  }
+  rango.clearContent();
 }
 
 function colDe_(sh, h) { return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].indexOf(h) + 1; }
@@ -146,7 +162,7 @@ function matriculaValidacion_() {
 }
 
 function formatoAlbaranes_() {
-  const sh = hoja_(HOJA.ALB), n = ESQUEMA['Albaranes'].filasFormulas, l = letras_(HOJA.ALB);
+  const sh = hoja_(HOJA.ALB), n = ESQUEMA['Albaranes'].filasFormato, l = letras_(HOJA.ALB);
   limpiarProtecciones_(sh);
   colFmt_(sh, 'Fecha escaneo', n, { fmt: FMT.fecha, ancho: 105 });
   colFmt_(sh, 'Fecha albarán', n, { fmt: FMT.fecha, ancho: 105 });
@@ -171,7 +187,7 @@ function formatoAlbaranes_() {
 }
 
 function formatoTrabajos_() {
-  const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormulas, l = letras_(HOJA.TRAB);
+  const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB);
   limpiarProtecciones_(sh);
   colFmt_(sh, 'Nº trabajo', n, { ancho: 95 });
   colFmt_(sh, 'Fecha apertura', n, { fmt: FMT.fecha, ancho: 105 });
@@ -195,7 +211,7 @@ function formatoTrabajos_() {
 }
 
 function formatoPiezas_() {
-  const sh = hoja_(HOJA.PIEZAS), n = ESQUEMA['Piezas'].filasFormulas, l = letras_(HOJA.PIEZAS);
+  const sh = hoja_(HOJA.PIEZAS), n = ESQUEMA['Piezas'].filasFormato, l = letras_(HOJA.PIEZAS);
   limpiarProtecciones_(sh);
   colFmt_(sh, 'Reembolso', n, { validacion: checkbox_(), ancho: 85 });
   colFmt_(sh, 'Matrícula', n, { gris: true, ancho: 100 });
@@ -237,7 +253,7 @@ function formatoFacturas_() {
 }
 
 function formatoLineas_() {
-  const sh = hoja_(HOJA.LINEAS), n = ESQUEMA['Líneas RM'].filasFormulas, l = letras_(HOJA.LINEAS);
+  const sh = hoja_(HOJA.LINEAS), n = ESQUEMA['Líneas RM'].filasFormato, l = letras_(HOJA.LINEAS);
   limpiarProtecciones_(sh);
   colFmt_(sh, 'Nº albarán', n, { fmt: FMT.texto, ancho: 95 });
   colFmt_(sh, 'Fecha albarán', n, { fmt: FMT.fecha, ancho: 105 });

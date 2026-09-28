@@ -40,30 +40,32 @@ function letras_(nombre) {
   return (_letras[nombre] = o);
 }
 
+function filaConDatos_(vals) { return vals.some(x => x !== '' && x !== false && x != null); }
+
 function tieneDatos_(esq, v) {
   return esq.entradas.some(h => { const x = v[h]; return x !== '' && x !== null && x !== undefined && x !== false; });
 }
 
-/** Lee una tabla de cabeceras en fila 1. Devuelve {sh, map, filas:[{fila, v:{cabecera: valor}}], libre}. */
+/**
+ * Lee una tabla de cabeceras en fila 1 con UNA sola lectura (cabecera + datos).
+ * Devuelve {sh, map, filas:[{fila, v:{cabecera: valor}}], libre, leidas}; leidas = filas de datos leídas (con o sin datos).
+ */
 function leerTabla_(nombre) {
   const sh = hoja_(nombre), esq = ESQUEMA[nombre];
-  const ancho = Math.max(sh.getLastColumn(), esq.cabeceras.length);
-  const cab = sh.getRange(1, 1, 1, ancho).getValues()[0];
+  const todo = sh.getDataRange().getValues();
   const map = {};
-  cab.forEach((h, i) => { if (h !== '') map[String(h).trim()] = i + 1; });
+  todo[0].forEach((h, i) => { if (h !== '') map[String(h).trim()] = i + 1; });
   esq.cabeceras.forEach(h => {
     if (!map[h]) throw new Error(`Falta la columna "${h}" en la pestaña "${nombre}". Ejecuta Counting Cars ▸ Reparar fórmulas y formato.`);
   });
-  const ult = sh.getLastRow();
-  const vals = ult > 1 ? sh.getRange(2, 1, ult - 1, ancho).getValues() : [];
   const filas = [];
   let libre = 2;
-  vals.forEach((row, i) => {
+  for (let i = 1; i < todo.length; i++) {
     const v = {};
-    for (const h in map) v[h] = row[map[h] - 1];
-    if (tieneDatos_(esq, v)) { filas.push({ fila: i + 2, v }); libre = i + 3; }
-  });
-  return { nombre, sh, map, filas, libre, esq };
+    for (const h in map) v[h] = todo[i][map[h] - 1];
+    if (tieneDatos_(esq, v)) { filas.push({ fila: i + 1, v }); libre = i + 2; }
+  }
+  return { nombre, sh, map, filas, libre, esq, leidas: todo.length - 1 };
 }
 
 function anchoTabla_(tabla) { return Math.max.apply(null, Object.keys(tabla.map).map(h => tabla.map[h])); }
@@ -106,9 +108,9 @@ function actualizarFila_(tabla, fila, cambios) {
 function asegurarFormulasFila_(tabla, fila) {
   const formulas = FORMULAS[tabla.nombre];
   if (!formulas) return;
-  for (const h in formulas) if (tabla.map[h]) {
-    const c = tabla.sh.getRange(fila, tabla.map[h]);
-    if (!c.getFormula()) c.setFormula(loc_(formulas[h](fila)));
+  const actuales = tabla.sh.getRange(fila, 1, 1, anchoTabla_(tabla)).getFormulas()[0];
+  for (const h in formulas) if (tabla.map[h] && !actuales[tabla.map[h] - 1]) {
+    tabla.sh.getRange(fila, tabla.map[h]).setFormula(loc_(formulas[h](fila)));
   }
 }
 
