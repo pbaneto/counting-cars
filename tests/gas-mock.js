@@ -38,6 +38,9 @@ class Rango {
   setFormulas(a) { this._each((r, c, i, j) => this.sh.put(r, c, a[i][j])); return this; }
   setFormula(f) { this.sh.put(this.r, this.c, f); return this; }
   clearContent() { this._each((r, c) => this.sh.grid.delete(r + ',' + c)); return this; }
+  clearDataValidations() { return this; }
+  /** Como Sheets: una casilla de verificación nunca está vacía, vale FALSE aunque nadie la haya tocado. */
+  setDataValidation(regla) { if (regla && regla.casilla) this._each((r, c) => { if (!this.sh.cell(r, c)) this.sh.put(r, c, false); }); return this; }
   setNumberFormat() { return this; }
 }
 
@@ -80,6 +83,11 @@ function crearEntorno(opts = {}) {
   let idSeq = 1;
   const ss = { sheets: [], namedRanges: {}, getSpreadsheetLocale: () => opts.locale || 'en_US', toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {},
     setNamedRange(nombre, rango) { ss.namedRanges[nombre] = rango.getSheet().getName(); }, setActiveSheet() {}, moveActiveSheet() {} };
+  const validacion = () => {
+    const b = { casilla: false, requireCheckbox() { b.casilla = true; return b; }, build() { return { casilla: b.casilla }; } };
+    const p = new Proxy(b, { get: (t, k) => (k in t ? t[k] : () => p) });
+    return p;
+  };
   const reglaCF = () => {
     const b = { formula: '', whenFormulaSatisfied(f) { b.formula = f; return b; }, setBackground() { return b; }, setRanges() { return b; }, build() { return { formula: b.formula }; } };
     return b;
@@ -111,7 +119,7 @@ function crearEntorno(opts = {}) {
   const ctx = {
     console: { log: m => log.console.push(String(m)), warn: m => log.console.push(String(m)), error: m => log.console.push(String(m)) },
     Logger: { log: m => log.logger.push(m) },
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: chain, newConditionalFormatRule: reglaCF,
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: validacion, newConditionalFormatRule: reglaCF,
       ProtectionType: { RANGE: 'RANGE' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
     DriveApp: { getFolderById: id => { if (!carpetas[id]) throw new Error('carpeta inexistente ' + id); return carpetas[id]; },
       getFileById: id => archivos[id], getRootFolder: () => carpetas.PADRE },

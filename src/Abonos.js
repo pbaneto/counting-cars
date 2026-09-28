@@ -13,7 +13,7 @@ function reconstruirAbonos_(tabP) {
   else { tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${leida(tabP)})`); }
   const tabL = leerTabla_(HOJA.LINEAS); crono.paso(`leer Líneas RM (${leida(tabL)})`);
   const tabA = leerTabla_(HOJA.ALB); crono.paso(`leer Albaranes (${leida(tabA)})`);
-  const hoy = hoyISO_(), iva = cfgNum_('IVA'); crono.paso('leer Config');
+  const hoy = hoyISO_();
   const plateDe = {}, proveedorDe = {};
   tabA.filas.forEach(f => {
     const n = normAlbaran(f.v['Nº albarán']);
@@ -40,7 +40,7 @@ function reconstruirAbonos_(tabP) {
     ref: f.v['Referencia'], desc: f.v['Descripción'], importe: parseNumber(f.v['Importe sin IVA']), matricula: plateDe[albaranOrigen(f.v['Albarán origen'])] || '',
   }));
 
-  const filas = construirAbonos(marcadas, todas, abonos, iva);
+  const filas = construirAbonos(marcadas, todas, abonos);
   crono.paso(`cruce (${abonos.length} abonos)`);
   const sh = hoja_(HOJA.ABONOS), ini = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
   const ult = Math.max(sh.getLastRow(), ini);
@@ -52,7 +52,8 @@ function reconstruirAbonos_(tabP) {
     // 'Días pendiente' es una fórmula (no un valor calculado aquí) para que se actualice sola día a día sin rehacer Abonos.
     sh.getRange(ini, 1, filas.length, ncol).setValues(filas.map((f, i) => {
       const r = ini + i;
-      return [aFecha_(f.fechaAbono), f.descripcion, f.sinIva, f.conIva, f.estado, f.albaran, f.referencia, f.matricula,
+      // "Precio con IVA" como fórmula con el IVA de Config: así no hay que leer Config en cada reconstrucción.
+      return [aFecha_(f.fechaAbono), f.descripcion, f.sinIva, loc_(`=ROUND($C${r}*(1+IVA),2)`), f.estado, f.albaran, f.referencia, f.matricula,
         aFecha_(f.fechaSolicitud), f.factura, f.nota, loc_(`=IF($E${r}="Sin abonar",TODAY()-$I${r},"")`)];
     }));
   }

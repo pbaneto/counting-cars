@@ -103,9 +103,9 @@ function escribirCabeceras_(sh, cabeceras) {
 }
 
 /**
- * Fórmulas SÓLO en las filas con datos: miles de filas vacías con fórmula hacían que cada lectura de la pestaña
- * (y cada recálculo) arrastrara todas esas filas. Las filas nuevas reciben sus fórmulas al crearlas
- * (agregarFilas_) o al editarlas a mano (alEditar ▸ asegurarFormulasFila_). Quita las de las filas vacías.
+ * Fórmulas y casillas SÓLO en las filas con datos: miles de filas vacías con fórmula o casilla hacían que cada
+ * lectura de la pestaña (y cada recálculo) arrastrara todas esas filas. Las filas nuevas las reciben al crearlas
+ * (agregarFilas_) o al editarlas a mano (alEditar ▸ asegurarFila_). Quita las de las filas vacías.
  */
 function escribirFormulas_(nombre) {
   const sh = hoja_(nombre), n = ESQUEMA[nombre].filasFormato;
@@ -114,6 +114,11 @@ function escribirFormulas_(nombre) {
   Object.keys(FORMULAS[nombre]).forEach(h => {
     if (ultDatos >= 2) sh.getRange(2, t.map[h], ultDatos - 1, 1).setFormulas(Array.from({ length: ultDatos - 1 }, (_, i) => [loc_(FORMULAS[nombre][h](i + 2))]));
     if (ultHoja > ultDatos) limpiarFormulasSobrantes_(t, h, ultDatos + 1, ultHoja);
+  });
+  // Por debajo de los datos una casilla sólo puede valer FALSE (TRUE contaría como dato), así que se quita sin perder nada.
+  (t.esq.casillas || []).forEach(h => {
+    if (ultDatos >= 2) sh.getRange(2, t.map[h], ultDatos - 1, 1).setDataValidation(checkbox_());
+    if (ultHoja > ultDatos) sh.getRange(ultDatos + 1, t.map[h], ultHoja - ultDatos, 1).clearDataValidations().clearContent();
   });
 }
 
@@ -198,7 +203,7 @@ function formatoTrabajos_() {
   colFmt_(sh, 'Recambios facturables', n, { fmt: FMT.euro, gris: true, ancho: 150 });
   colFmt_(sh, 'Factura', n, { fmt: FMT.euro, ancho: 110 });
   colFmt_(sh, 'Beneficio', n, { fmt: FMT.euro, gris: true, ancho: 110 });
-  colFmt_(sh, 'Pagado', n, { validacion: checkbox_(), ancho: 80 });
+  colFmt_(sh, 'Pagado', n, { ancho: 80 });
   colFmt_(sh, 'Avisos', n, { gris: true, ancho: 340 });
   const R = h => `${l[h]}2:${l[h]}${n + 1}`;
   sh.setConditionalFormatRules([
@@ -213,7 +218,7 @@ function formatoTrabajos_() {
 function formatoPiezas_() {
   const sh = hoja_(HOJA.PIEZAS), n = ESQUEMA['Piezas'].filasFormato, l = letras_(HOJA.PIEZAS);
   limpiarProtecciones_(sh);
-  colFmt_(sh, 'Reembolso', n, { validacion: checkbox_(), ancho: 85 });
+  colFmt_(sh, 'Reembolso', n, { ancho: 85 });
   colFmt_(sh, 'Matrícula', n, { gris: true, ancho: 100 });
   colFmt_(sh, 'Nº albarán', n, { fmt: FMT.texto, ancho: 95 });
   colFmt_(sh, 'Referencia pieza', n, { ancho: 150 });

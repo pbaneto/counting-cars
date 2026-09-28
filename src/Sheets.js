@@ -86,6 +86,7 @@ function agregarFilas_(tabla, objs) {
   const ultima = inicio + data.length - 1;
   if (ultima > tabla.sh.getMaxRows()) tabla.sh.insertRowsAfter(tabla.sh.getMaxRows(), ultima - tabla.sh.getMaxRows() + 100);
   tabla.sh.getRange(inicio, 1, data.length, ancho).setValues(data);
+  (tabla.esq.casillas || []).forEach(h => tabla.sh.getRange(inicio, tabla.map[h], data.length, 1).setDataValidation(checkbox_()));
   const filas = objs.map((o, k) => {
     tabla.filas.push({ fila: inicio + k, v: Object.assign({}, o) });
     return inicio + k;
@@ -104,14 +105,16 @@ function actualizarFila_(tabla, fila, cambios) {
   if (f) Object.assign(f.v, cambios);
 }
 
-/** Rellena las fórmulas de la fila indicada (por si alguien pegó encima o insertó filas). */
-function asegurarFormulasFila_(tabla, fila) {
+/** Pone en la fila las fórmulas que falten y sus casillas (fila escrita a mano, pegada encima o insertada). */
+function asegurarFila_(tabla, fila) {
   const formulas = FORMULAS[tabla.nombre];
-  if (!formulas) return;
-  const actuales = tabla.sh.getRange(fila, 1, 1, anchoTabla_(tabla)).getFormulas()[0];
-  for (const h in formulas) if (tabla.map[h] && !actuales[tabla.map[h] - 1]) {
-    tabla.sh.getRange(fila, tabla.map[h]).setFormula(loc_(formulas[h](fila)));
+  if (formulas) {
+    const actuales = tabla.sh.getRange(fila, 1, 1, anchoTabla_(tabla)).getFormulas()[0];
+    for (const h in formulas) if (tabla.map[h] && !actuales[tabla.map[h] - 1]) {
+      tabla.sh.getRange(fila, tabla.map[h]).setFormula(loc_(formulas[h](fila)));
+    }
   }
+  (tabla.esq.casillas || []).forEach(h => tabla.sh.getRange(fila, tabla.map[h]).setDataValidation(checkbox_()));
 }
 
 // ---- Fechas (Date <-> "yyyy-mm-dd") ----

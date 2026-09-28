@@ -2,6 +2,8 @@
  * Nombres de pestañas, columnas y valores por defecto. UN solo sitio donde mirar.
  * Regla de oro: el código busca columnas por el NOMBRE de su cabecera (fila 1), nunca por letra.
  * "entradas" = columnas que escribe una persona o el script; el resto son fórmulas (color gris).
+ * "casillas" = columnas con casilla de verificación. Como las fórmulas, sólo van en filas con datos: una casilla
+ * vale siempre TRUE/FALSE, así que en filas vacías hace que Sheets cuente miles de filas "ocupadas" al leer.
  */
 const TZ = 'Europe/Madrid';
 
@@ -20,6 +22,7 @@ const ESQUEMA = {
   'Trabajos': {
     cabeceras: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Recambios facturables', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
     entradas: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Factura', 'Pagado'],
+    casillas: ['Pagado'],
     filasFormato: 800,
   },
   'Piezas': {
@@ -27,6 +30,7 @@ const ESQUEMA = {
       'Precio descontado sin IVA', 'Precio descontado con IVA', 'Fecha reembolso', 'Proveedor', 'Origen', 'Avisos'],
     entradas: ['Reembolso', 'Nº albarán', 'Referencia pieza', 'Descripción', 'Marca', 'Cantidad', 'Precio base', 'Descuento aplicado',
       'Precio descontado sin IVA', 'Fecha reembolso', 'Origen'],
+    casillas: ['Reembolso'],
     filasFormato: 4000,
   },
   'Coches': {

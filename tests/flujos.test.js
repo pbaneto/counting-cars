@@ -54,6 +54,11 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.match(alb.cell(2, 13).f, /DIAS_AVISO/);           // Avisos en las filas con datos (piloto: filas 2-4)
   assert.equal(alb.cell(5, 13), undefined, 'sin fórmulas en filas vacías: leerlas y recalcularlas era lo lento');
   assert.equal(alb.getLastRow(), 4);
+  // Casillas sólo en filas con datos: una casilla vacía vale FALSE y haría leer miles de filas
+  const trab = e.ss.getSheetByName('Trabajos');
+  assert.equal(trab.getLastRow(), 3, 'Trabajos: 2 trabajos del piloto, sin casillas "Pagado" por debajo');
+  assert.equal(e.ss.getSheetByName('Piezas').getLastRow(), 1, 'Piezas vacía: sin casillas "Reembolso" por debajo');
+  assert.equal(trab.valor(3, 10), false, 'la fila nueva lleva su casilla (FALSE = sin pagar)');
   const cfg = tabla(e, 'Config');
   assert.equal(cfg.find(x => x.Clave === 'CARPETA_ENTRADA').Valor, 'ENT');
   assert.equal(cfg.find(x => x.Clave === 'MODELO_GEMINI').Valor, 'gemini-3.5-flash-lite');
@@ -77,6 +82,9 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   // Como la hoja real antes del cambio: fórmulas rellenadas por adelantado muy por debajo de los datos
   for (let r = 5; r <= 1501; r++) { alb.put(r, 3, `=IF(B${r}="","",1)`); alb.put(r, 13, `=IF(G${r}="","",1)`); }
   p.put(4001, 15, '=IF(C4001="","",1)');
+  for (let r = 2; r <= 4001; r++) p.put(r, 1, false);   // casillas "Reembolso" rellenadas hasta la 4001 (valen FALSE)
+  const trab = e.ss.getSheetByName('Trabajos');
+  for (let r = 4; r <= 801; r++) trab.put(r, 10, false); // y "Pagado" hasta la 801
   alb.put(900, 10, 'escrito a mano');                 // valor (no fórmula) en la columna calculada "Coche"
   e.run('repararFormulas()');
   assert.equal(alb.cell(700, 3), undefined, 'Quincena vacía por debajo de los datos');
@@ -86,6 +94,8 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   assert.equal(alb.valor(900, 10), 'escrito a mano', 'no borra un valor escrito a mano');
   assert.ok(e.log.console.some(l => /\[AVISO\] repararFormulas Albaranes!J900/.test(l)));
   assert.equal(p.getLastRow(), 1);
+  assert.equal(trab.getLastRow(), 3, 'Trabajos queda con sus 2 filas de datos');
+  assert.equal(trab.valor(2, 10), true, 'el Pagado de las filas con datos no se toca');
 });
 
 test('repararFormulas añade a Config las claves nuevas sin pisar los valores existentes', () => {
@@ -155,7 +165,7 @@ test('procesarAlbaranes: nuevo, segundo escaneo con R, duplicado sin R y no-alba
   const ab = e.ss.getSheetByName('Abonos');
   assert.equal(ab.valor(31, 5), 'Sin abonar');
   assert.equal(ab.valor(31, 3), 11.31);
-  assert.equal(ab.valor(31, 4), 13.69);
+  assert.equal(ab.cell(31, 4).f, '=ROUND($C31*(1+IVA),2)');  // Precio con IVA: fórmula con el IVA de Config
   assert.match(ab.cell(31, 12).f, /TODAY\(\)/);  // Días pendiente: fórmula viva, no un valor fijo
   // Drive: 3 en Procesados, el no-albarán en Errores
   assert.equal(e.carpetas.PROC.ficheros.length, 3);
@@ -219,7 +229,7 @@ test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; re
   const linea = pre => e.log.console.find(l => l.startsWith(pre)) || '';
   assert.match(linea('⏱ alEditar (Piezas)'), /esperar bloqueo \d+ms, editar Piezas \d+ms \| total \d+ms/);
   assert.match(linea('⏱ editarPiezas_'), /leer Piezas \(1 de 1 filas\) \d+ms, revisar 1 fila\(s\) editada\(s\) \d+ms, reconstruir Abonos \d+ms/);
-  assert.match(linea('⏱ reconstruirAbonos_'), /Piezas ya leída .*leer Líneas RM \(0 de 0 filas\).*leer Albaranes \(3 de 3 filas\).*leer Config .*preparar piezas \(1 marcadas.*cruce .*borrar .*escribir \(1 filas\).*Sin abonar 1/);
+  assert.match(linea('⏱ reconstruirAbonos_'), /Piezas ya leída .*leer Líneas RM \(0 de 0 filas\).*leer Albaranes \(3 de 3 filas\).*preparar piezas \(1 marcadas.*cruce .*borrar .*escribir \(1 filas\).*Sin abonar 1/);
   assert.match(linea('■ alEditar'), /^■ alEditar: \d+ms \(escribir en Registro \d+ms\)$/);
   assert.equal(e.log.console.filter(l => /^\[INFO\] reconstruirAbonos/.test(l)).length, 0, 'el resumen ya no se escribe en Registro');
   assert.equal(p.valor(2, 1), true);

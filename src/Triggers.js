@@ -53,7 +53,7 @@ function editarAlbaranes_(r0, n, c0, nc) {
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }
     const precio = parseNumber(g('Precio con IVA'));
     const jobVal = String(g('Nº trabajo')).trim().toUpperCase();
-    if (filaConDatos_(vals)) asegurarFormulasFila_(tab, r);
+    if (filaConDatos_(vals)) asegurarFila_(tab, r);
 
     if (jobVal === 'NUEVO' && !plate) { set('Nº trabajo', ''); toast_('Escribe primero la matrícula para abrir un trabajo nuevo.', '⚠ Falta matrícula'); continue; }
     if (!(plate && precio > 0)) continue;
@@ -86,7 +86,7 @@ function editarTrabajos_(r0, n, c0, nc) {
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
     const plate = normPlate(g('Matrícula'));
     if (String(g('Matrícula')) !== plate) set('Matrícula', plate);
-    if (filaConDatos_(vals)) asegurarFormulasFila_(tab, r);
+    if (filaConDatos_(vals)) asegurarFila_(tab, r);
     if (!plate) continue;
     if (String(g('Nº trabajo')).trim() === '') {
       const otros = tab.filas.filter(f => f.fila !== r).map(f => f.v['Nº trabajo']);
@@ -109,7 +109,7 @@ function editarPiezas_(r0, n, c0, nc) {
     const fila = tab.filas.find(f => f.fila === r);  // se mantiene al día para pasar la tabla a reconstruirAbonos_ sin releerla
     const g = h => vals[tab.map[h] - 1];
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; if (fila) fila.v[h] = v; };
-    if (filaConDatos_(vals)) asegurarFormulasFila_(tab, r);
+    if (filaConDatos_(vals)) asegurarFila_(tab, r);
     const num = normAlbaran(g('Nº albarán'));
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }
 
