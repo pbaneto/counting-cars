@@ -250,6 +250,29 @@ function buscarFilaManual(rows, plate, total) {
   return rows.find(r => !r.albaran && !r.pdf && normPlate(r.plate) === p && Math.abs(parseNumber(r.total) - total) < 0.02) || null;
 }
 
+/** Bajo este nº de caracteres no se busca por coincidencia parcial: demasiado ambiguo para ser útil. */
+const MATRICULA_LARGO_MIN_BUSQUEDA = 3;
+
+/**
+ * Resuelve lo que se ha escrito en la celda Matrícula contra la lista de coches conocidos, buscando la
+ * combinación en CUALQUIER posición (no sólo al principio, a diferencia del desplegable nativo de Sheets).
+ * plate: ya pasada por normPlate. coches: [{plate, ...}] con plate ya normalizada.
+ * Devuelve { tipo, candidatos }:
+ *  - 'exacta'  -> `plate` ya es una matrícula real; no hay que tocar la celda.
+ *  - 'unica'   -> `plate` no es exacta pero aparece en una sola matrícula de coches: se puede autocompletar con candidatos[0].
+ *  - 'varias'  -> aparece en más de una: no se adivina, se informa de las candidatas.
+ *  - 'ninguna' -> no aparece en ninguna (o el texto es demasiado corto para buscar): sin cambios.
+ */
+function resolverMatricula(plate, coches) {
+  if (!plate) return { tipo: 'ninguna', candidatos: [] };
+  if (coches.some(c => c.plate === plate)) return { tipo: 'exacta', candidatos: [] };
+  if (plate.length < MATRICULA_LARGO_MIN_BUSQUEDA) return { tipo: 'ninguna', candidatos: [] };
+  const candidatos = coches.filter(c => c.plate.indexOf(plate) >= 0);
+  if (candidatos.length === 1) return { tipo: 'unica', candidatos };
+  if (candidatos.length > 1) return { tipo: 'varias', candidatos };
+  return { tipo: 'ninguna', candidatos: [] };
+}
+
 /**
  * Apps Script escribe las fórmulas con la sintaxis de la configuración regional de la hoja.
  * En España (es_ES) los argumentos se separan con ";" y los decimales llevan ",": =SI(A1>0,5;1;2).
@@ -284,5 +307,5 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran,
-    validarFactura, periodoFactura, construirAbonos, aplicarReembolsos, buscarFilaManual, localizarFormula, usaPuntoYComa };
+    validarFactura, periodoFactura, construirAbonos, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
 }

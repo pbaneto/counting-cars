@@ -216,6 +216,44 @@ test('edición manual en Albaranes: fecha, proveedor y trabajo automáticos; NUE
   assert.equal(tabla(e, 'Trabajos').filter(x => x['Matrícula'] === '1234ABC').length, 2);
 });
 
+test('Matrícula en Albaranes: busca por cualquier combinación de letras o dígitos, no sólo al principio', () => {
+  const e = entorno({});  // Coches del piloto: 1234ABC, 4321GHJ, 5678DEF
+  const alb = e.ss.getSheetByName('Albaranes');
+
+  // Coincidencia única por las LETRAS (van al final: el desplegable nativo de Sheets sólo busca desde el principio)
+  alb.put(10, 7, 'ghj');
+  e.ctx.__unica = alb.getRange(10, 7); e.run('alEditar({ range: __unica })');
+  assert.equal(alb.valor(10, 7), '4321GHJ', 'se autocompleta con la única matrícula que contiene "GHJ"');
+  assert.ok(e.log.toasts.some(t => t.includes('"GHJ" → 4321GHJ')), 'avisa de qué matrícula ha puesto');
+
+  // Texto demasiado corto (< 3): no se busca, se deja tal cual y sigue el aviso habitual de "no está en Coches"
+  // (ese aviso sólo se comprueba cuando la fila ya tiene precio, igual que sin este cambio)
+  e.log.toasts.length = 0;
+  alb.put(11, 7, '4'); alb.put(11, 8, 44.54);
+  e.ctx.__corto = alb.getRange(11, 7, 1, 2); e.run('alEditar({ range: __corto })');
+  assert.equal(alb.valor(11, 7), '4', 'texto demasiado corto: se deja tal cual, sin adivinar');
+  assert.equal(e.log.toasts.length, 1);
+  assert.match(e.log.toasts[0], /no está en la pestaña Coches/);
+
+  // Coincide con varias: no adivina, deja lo escrito y lista las candidatas (se añade un coche a propósito)
+  e.log.toasts.length = 0;
+  const coches = e.ss.getSheetByName('Coches');
+  const filaNueva = coches.getLastRow() + 1;
+  coches.put(filaNueva, 1, '4321GHK'); coches.put(filaNueva, 2, 'Otro'); coches.put(filaNueva, 3, 'Otro coche');
+  alb.put(12, 7, '432');
+  e.ctx.__varias = alb.getRange(12, 7); e.run('alEditar({ range: __varias })');
+  assert.equal(alb.valor(12, 7), '432', 'coincide con varias: no adivina, deja lo escrito');
+  assert.equal(e.log.toasts.length, 1);
+  assert.match(e.log.toasts[0], /"432" coincide con 2 matrículas: 4321GHJ, 4321GHK/);
+
+  // Matrícula ya exacta: no hay búsqueda ni aviso de "completada"
+  e.log.toasts.length = 0;
+  alb.put(13, 7, '5678DEF');
+  e.ctx.__exacta = alb.getRange(13, 7); e.run('alEditar({ range: __exacta })');
+  assert.equal(alb.valor(13, 7), '5678DEF');
+  assert.ok(!e.log.toasts.some(t => t.includes('completada')), 'ya era exacta: no hay aviso de autocompletado');
+});
+
 test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; reconstruye Abonos', () => {
   const e = entorno({});
   const p = e.ss.getSheetByName('Piezas');

@@ -101,6 +101,21 @@ test('buscarFilaManual adopta sólo filas manuales con misma matrícula e import
   assert.equal(L.buscarFilaManual(rows, '', 44.54), null);
 });
 
+test('resolverMatricula: busca la combinación en cualquier posición, no sólo al principio', () => {
+  const coches = [{ plate: '7853KCC', cliente: 'Jonthan', coche: 'Range Rover' }, { plate: '1233KCC', cliente: 'Ana', coche: 'Golf' },
+    { plate: '6605HVB', cliente: 'Tomas', coche: 'Mini Cooper' }];
+  assert.equal(L.resolverMatricula('', coches).tipo, 'ninguna');
+  assert.equal(L.resolverMatricula('7853KCC', coches).tipo, 'exacta', 'ya es una matrícula real: no se toca');
+  assert.equal(L.resolverMatricula('HV', coches).tipo, 'ninguna', 'demasiado corto para buscar (< 3)');
+  const unica = L.resolverMatricula('HVB', coches);
+  assert.equal(unica.tipo, 'unica');
+  assert.equal(unica.candidatos[0].plate, '6605HVB');
+  const soloLetras = L.resolverMatricula('KCC', coches);  // las letras van al final: el desplegable nativo no las encuentra
+  assert.equal(soloLetras.tipo, 'varias');
+  assert.deepEqual(soloLetras.candidatos.map(c => c.plate).sort(), ['1233KCC', '7853KCC']);
+  assert.equal(L.resolverMatricula('999', coches).tipo, 'ninguna');
+});
+
 // ---- Factura real FCR 00001 (importes sin IVA por albarán) ----
 const compras = [247.70, 30.31, 75.26, 4.61, 47.33, 299.74, 6.79, 117.53, 25.69, 19.96, 14.95, 109.52, 69.06, 55.13, 7.78, 14.66, 23.75, 184.00, 26.14, 2.77,
   183.80, 67.16, 169.08, 46.36, 0.02, 49.61, 143.57, 24.12, 5.35, 47.48, 104.12, 132.72, 17.58, 23.75, 18.77, 8.22, 74.12, 114.92, 27.68, 94.32, 29.98,

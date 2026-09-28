@@ -41,14 +41,31 @@ function tocada_(tab, h, c0, nc) { const c = tab.map[h]; return c >= c0 && c < c
 
 function editarAlbaranes_(r0, n, c0, nc) {
   const tab = leerTabla_(HOJA.ALB), hoy = hoyISO_(), ancho = anchoTabla_(tab);
-  let trab = null, coches = null;
+  let trab = null, cochesTab = null;
+  // Se carga una sola vez por lote de filas editadas, y sólo si hace falta (alguna fila con matrícula).
+  const coches_ = () => cochesTab || (cochesTab = leerTabla_(HOJA.COCHES).filas.map(
+    f => ({ plate: normPlate(f.v['Matrícula']), cliente: f.v['Cliente'], coche: f.v['Coche'] })));
   for (let r = Math.max(r0, 2); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
     const g = h => vals[tab.map[h] - 1];
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
 
-    const plate = normPlate(g('Matrícula'));
-    if (String(g('Matrícula')) !== plate) set('Matrícula', plate);
+    const escrita = normPlate(g('Matrícula'));
+    if (String(g('Matrícula')) !== escrita) set('Matrícula', escrita);
+    let plate = escrita;
+    if (plate) {
+      const res = resolverMatricula(plate, coches_());
+      if (res.tipo === 'unica') {
+        plate = res.candidatos[0].plate;
+        set('Matrícula', plate);
+        const detalle = [res.candidatos[0].coche, res.candidatos[0].cliente].filter(Boolean).join(' · ');
+        toast_(`"${escrita}" → ${plate}${detalle ? ' (' + detalle + ')' : ''}`, '✓ Matrícula completada', 4);
+      } else if (res.tipo === 'varias') {
+        const lista = res.candidatos.slice(0, 8).map(c => c.plate).join(', ');
+        toast_(`"${escrita}" coincide con ${res.candidatos.length} matrículas: ${lista}${res.candidatos.length > 8 ? '…' : ''}. Escribe más letras o dígitos para acotar.`,
+          '🔎 Varias coincidencias', 8);
+      }
+    }
     const num = normAlbaran(g('Nº albarán'));
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }
     const precio = parseNumber(g('Precio con IVA'));
@@ -72,8 +89,7 @@ function editarAlbaranes_(r0, n, c0, nc) {
       ponerDesplegableTrabajo_(tab, r, trab, plate);
       log_('INFO', 'alEditar', `${HOJA.ALB}!${r}`, `Trabajo ${num2} asignado a ${plate}`);
     }
-    coches = coches || new Set(leerTabla_(HOJA.COCHES).filas.map(f => normPlate(f.v['Matrícula'])));
-    if (!coches.has(plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
+    if (!coches_().some(c => c.plate === plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
   }
 }
 
