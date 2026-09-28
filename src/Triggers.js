@@ -11,7 +11,6 @@ function alAbrir() {
     .addSeparator()
     .addItem('Configurar API key de Gemini', 'configurarApiKey')
     .addItem('Preparar hoja (primera vez)', 'setup')
-    .addItem('Cargar coches y datos del piloto', 'cargarDatosIniciales')
     .addToUi();
 }
 

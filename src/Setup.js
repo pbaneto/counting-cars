@@ -19,7 +19,7 @@ function setup() {
     montarResumen_();
     instalarTriggers_();
     log_('INFO', 'setup', '', 'Hoja preparada');
-    avisar_('Hoja preparada.\n\nSiguientes pasos:\n1) Menú Counting Cars ▸ Configurar API key de Gemini\n2) Menú Counting Cars ▸ Cargar coches y datos del piloto\n3) Menú Counting Cars ▸ Procesar albaranes', 'Counting Cars');
+    avisar_('Hoja preparada.\n\nSiguientes pasos:\n1) Menú Counting Cars ▸ Configurar API key de Gemini\n2) Si hace falta cargar coches y datos del piloto, ejecuta cargarDatosIniciales() desde el editor de Apps Script (no está en el menú)\n3) Menú Counting Cars ▸ Procesar albaranes', 'Counting Cars');
   }));
 }
 
