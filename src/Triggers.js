@@ -99,32 +99,55 @@ function editarTrabajos_(r0, n, c0, nc) {
   }
 }
 
+/**
+ * Primero TODAS las lecturas, luego todas las escrituras y al final se guarda de una vez: en Sheets, una lectura
+ * hecha después de escribir espera a que se recalculen las fórmulas que dependen de Piezas (Albaranes, Trabajos,
+ * Resumen, Abonos), y eso costaba más de un segundo por edición.
+ */
 function editarPiezas_(r0, n, c0, nc) {
   const crono = cronometro_('editarPiezas_');
   const tab = leerTabla_(HOJA.PIEZAS), hoy = hoyISO_(), ancho = anchoTabla_(tab);
   crono.paso(`leer Piezas (${tab.filas.length} de ${tab.leidas} filas)`);
+  const desde = Math.max(r0, 2), hasta = r0 + n;
+  if (hasta <= desde) { crono.fin('sólo la cabecera'); return; }
+  const formulas = tab.sh.getRange(desde, 1, hasta - desde, ancho).getFormulas();
+  const editadas = [];
+  for (let r = desde; r < hasta; r++) {
+    const leida = tab.valores[r - 1] || [];
+    editadas.push({ r, formulas: formulas[r - desde], vals: Array.from({ length: ancho }, (_, i) => (leida[i] === undefined ? '' : leida[i])) });
+  }
+  crono.paso(`leer fórmulas de ${editadas.length} fila(s)`);
+  const iReembolso = tab.map['Reembolso'] - 1;
+  const puedeTocar = tocada_(tab, 'Reembolso', c0, nc) || editadas.some(e => e.vals[iReembolso] === true);
+  let paraAbonos = puedeTocar ? leerParaAbonos_(tab, crono) : null;  // lee con la tabla de Piezas ya leída; se mantiene al día abajo
+
   let toca = false;
-  for (let r = Math.max(r0, 2); r < r0 + n; r++) {
-    const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
-    const fila = tab.filas.find(f => f.fila === r);  // se mantiene al día para pasar la tabla a reconstruirAbonos_ sin releerla
+  editadas.forEach(({ r, vals, formulas: formulasFila }) => {
+    const fila = tab.filas.find(f => f.fila === r);
     const g = h => vals[tab.map[h] - 1];
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; if (fila) fila.v[h] = v; };
-    if (filaConDatos_(vals)) asegurarFila_(tab, r);
+    if (filaConDatos_(vals)) asegurarFila_(tab, r, formulasFila);
     const num = normAlbaran(g('Nº albarán'));
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }
 
     if (tocada_(tab, 'Reembolso', c0, nc)) {
       if (g('Reembolso') === true) {
-        if (!num) { set('Reembolso', false); toast_('Para pedir un reembolso hay que poner antes el nº de albarán de la pieza.', '⚠ Falta el nº de albarán', 10); continue; }
+        if (!num) { set('Reembolso', false); toast_('Para pedir un reembolso hay que poner antes el nº de albarán de la pieza.', '⚠ Falta el nº de albarán', 10); return; }
         if (!g('Fecha reembolso')) set('Fecha reembolso', aFecha_(hoy));
       } else set('Fecha reembolso', '');
       toca = true;
     } else if (g('Reembolso') === true) toca = true;
 
     if (!g('Origen') && (num || g('Descripción') || g('Precio descontado sin IVA') !== '')) set('Origen', 'Manual');
+  });
+  crono.paso(`revisar ${editadas.length} fila(s) editada(s)`);
+  if (toca) {
+    paraAbonos = paraAbonos || leerParaAbonos_(tab, crono);
+    escribirAbonos_(paraAbonos);
+    crono.paso('reconstruir Abonos');
   }
-  crono.paso(`revisar ${n} fila(s) editada(s)`);
-  if (toca) { reconstruirAbonos_(tab); crono.paso('reconstruir Abonos'); }
+  SpreadsheetApp.flush();
+  crono.paso('guardar cambios y recalcular');
   crono.fin(toca ? '' : 'sin cambios en reembolsos: Abonos no se toca');
 }
 

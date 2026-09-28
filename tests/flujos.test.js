@@ -224,12 +224,16 @@ test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; re
   assert.equal(p.valor(2, 1), false, 'sin nº de albarán se desmarca');
   p.put(2, 3, '123456'); p.put(2, 1, true);
   e.log.console.length = 0;
+  e.ss.io.escrito = false; e.ss.io.lecturasTrasEscribir.length = 0;
   e.ctx.__p2 = p.getRange(2, 1); e.run('alEditar({ range: __p2 })');
+  // Todas las lecturas antes de la primera escritura: en Sheets, leer tras escribir espera al recálculo
+  assert.deepEqual(Array.from(e.ss.io.lecturasTrasEscribir), [], 'ninguna lectura después de escribir al marcar una pieza');
   // Tiempos en Apps Script ▸ Ejecuciones: una línea por paso del camino "marcar pieza"
   const linea = pre => e.log.console.find(l => l.startsWith(pre)) || '';
   assert.match(linea('⏱ alEditar (Piezas)'), /esperar bloqueo \d+ms, editar Piezas \d+ms \| total \d+ms/);
-  assert.match(linea('⏱ editarPiezas_'), /leer Piezas \(1 de 1 filas\) \d+ms, revisar 1 fila\(s\) editada\(s\) \d+ms, reconstruir Abonos \d+ms/);
-  assert.match(linea('⏱ reconstruirAbonos_'), /Piezas ya leída .*leer Líneas RM \(0 de 0 filas\).*leer Albaranes \(3 de 3 filas\).*preparar piezas \(1 marcadas.*cruce .*borrar .*escribir \(1 filas\).*Sin abonar 1/);
+  assert.match(linea('⏱ editarPiezas_'), new RegExp('leer Piezas \\(1 de 1 filas\\).*leer fórmulas de 1 fila\\(s\\).*leer Líneas RM \\(0 de 0 filas\\).*' +
+    'leer Albaranes \\(3 de 3 filas\\).*leer tamaño de Abonos.*revisar 1 fila\\(s\\) editada\\(s\\).*reconstruir Abonos.*guardar cambios y recalcular \\d+ms'));
+  assert.match(linea('⏱ escribirAbonos_'), /preparar piezas \(1 marcadas.*cruce .*borrar .*escribir \(1 filas\).*Sin abonar 1/);
   assert.match(linea('■ alEditar'), /^■ alEditar: \d+ms \(escribir en Registro \d+ms\)$/);
   assert.equal(e.log.console.filter(l => /^\[INFO\] reconstruirAbonos/.test(l)).length, 0, 'el resumen ya no se escribe en Registro');
   assert.equal(p.valor(2, 1), true);

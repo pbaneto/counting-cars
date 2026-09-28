@@ -27,21 +27,24 @@ function parseA1(a1) {
 class Rango {
   constructor(sh, r, c, nr, nc) { Object.assign(this, { sh, r, c, nr, nc }); return new Proxy(this, { get: (t, k) => (k in t ? t[k] : chain()) }); }
   _each(fn) { for (let i = 0; i < this.nr; i++) for (let j = 0; j < this.nc; j++) fn(this.r + i, this.c + j, i, j); }
-  getValues() { const o = []; for (let i = 0; i < this.nr; i++) { o.push([]); for (let j = 0; j < this.nc; j++) { const x = this.sh.cell(this.r + i, this.c + j); o[i].push(x ? x.v : ''); } } return o; }
-  getFormulas() { const o = []; for (let i = 0; i < this.nr; i++) { o.push([]); for (let j = 0; j < this.nc; j++) { const x = this.sh.cell(this.r + i, this.c + j); o[i].push(x ? x.f : ''); } } return o; }
-  getValue() { const x = this.sh.cell(this.r, this.c); return x ? x.v : ''; }
-  getFormula() { const x = this.sh.cell(this.r, this.c); return x ? x.f : ''; }
+  // Registro de E/S: en Sheets una lectura hecha tras escribir (sin flush) espera al recálculo de fórmulas.
+  _w() { this.sh.ss.io.escrito = true; return this; }
+  _r(que) { this.sh.ss.io.leer(`${this.sh.name}.${que}`); }
+  getValues() { this._r('getValues'); const o = []; for (let i = 0; i < this.nr; i++) { o.push([]); for (let j = 0; j < this.nc; j++) { const x = this.sh.cell(this.r + i, this.c + j); o[i].push(x ? x.v : ''); } } return o; }
+  getFormulas() { this._r('getFormulas'); const o = []; for (let i = 0; i < this.nr; i++) { o.push([]); for (let j = 0; j < this.nc; j++) { const x = this.sh.cell(this.r + i, this.c + j); o[i].push(x ? x.f : ''); } } return o; }
+  getValue() { this._r('getValue'); const x = this.sh.cell(this.r, this.c); return x ? x.v : ''; }
+  getFormula() { this._r('getFormula'); const x = this.sh.cell(this.r, this.c); return x ? x.f : ''; }
   getRow() { return this.r; } getColumn() { return this.c; } getNumRows() { return this.nr; } getNumColumns() { return this.nc; }
   getSheet() { return this.sh; } getA1Notation() { return `R${this.r}C${this.c}`; }
-  setValues(a) { this._each((r, c, i, j) => this.sh.put(r, c, a[i][j])); return this; }
-  setValue(v) { this._each((r, c) => this.sh.put(r, c, v)); return this; }
-  setFormulas(a) { this._each((r, c, i, j) => this.sh.put(r, c, a[i][j])); return this; }
-  setFormula(f) { this.sh.put(this.r, this.c, f); return this; }
-  clearContent() { this._each((r, c) => this.sh.grid.delete(r + ',' + c)); return this; }
-  clearDataValidations() { return this; }
+  setValues(a) { this._each((r, c, i, j) => this.sh.put(r, c, a[i][j])); return this._w(); }
+  setValue(v) { this._each((r, c) => this.sh.put(r, c, v)); return this._w(); }
+  setFormulas(a) { this._each((r, c, i, j) => this.sh.put(r, c, a[i][j])); return this._w(); }
+  setFormula(f) { this.sh.put(this.r, this.c, f); return this._w(); }
+  clearContent() { this._each((r, c) => this.sh.grid.delete(r + ',' + c)); return this._w(); }
+  clearDataValidations() { return this._w(); }
   /** Como Sheets: una casilla de verificación nunca está vacía, vale FALSE aunque nadie la haya tocado. */
-  setDataValidation(regla) { if (regla && regla.casilla) this._each((r, c) => { if (!this.sh.cell(r, c)) this.sh.put(r, c, false); }); return this; }
-  setNumberFormat() { return this; }
+  setDataValidation(regla) { if (regla && regla.casilla) this._each((r, c) => { if (!this.sh.cell(r, c)) this.sh.put(r, c, false); }); return this._w(); }
+  setNumberFormat() { return this._w(); }
 }
 
 class Hoja {
@@ -59,9 +62,9 @@ class Hoja {
     else this.grid.set(r + ',' + c, { v, f: '' });
   }
   getName() { return this.name; } getSheetId() { return this.id; }
-  getMaxRows() { return this.maxRows; }
-  insertRowsAfter(n, k) { this.maxRows += k; }
-  getLastRow() { let m = 0; this.grid.forEach((x, k) => { const r = Number(k.split(',')[0]); if (r > m) m = r; }); return m; }
+  getMaxRows() { this.ss.io.leer(`${this.name}.getMaxRows`); return this.maxRows; }
+  insertRowsAfter(n, k) { this.maxRows += k; this.ss.io.escrito = true; }
+  getLastRow() { this.ss.io.leer(`${this.name}.getLastRow`); let m = 0; this.grid.forEach((x, k) => { const r = Number(k.split(',')[0]); if (r > m) m = r; }); return m; }
   getLastColumn() { let m = 0; this.grid.forEach((x, k) => { const c = Number(k.split(',')[1]); if (c > m) m = c; }); return m; }
   getDataRange() { return new Rango(this, 1, 1, Math.max(this.getLastRow(), 1), Math.max(this.getLastColumn(), 1)); }
   getRange(a, b, c, d) { if (typeof a === 'string') { const [r, cc, nr, nc] = parseA1(a); return new Rango(this, r, cc, nr, nc); } return new Rango(this, a, b, c || 1, d || 1); }
@@ -81,7 +84,8 @@ class Hoja {
 function crearEntorno(opts = {}) {
   const log = { toasts: [], alerts: [], logger: [], fetch: [], console: [] };
   let idSeq = 1;
-  const ss = { sheets: [], namedRanges: {}, getSpreadsheetLocale: () => opts.locale || 'en_US', toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {},
+  const io = { escrito: false, lecturasTrasEscribir: [], leer(que) { if (io.escrito) io.lecturasTrasEscribir.push(que); } };
+  const ss = { sheets: [], namedRanges: {}, io, getSpreadsheetLocale: () => { io.leer('getSpreadsheetLocale'); return opts.locale || 'en_US'; }, toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {},
     setNamedRange(nombre, rango) { ss.namedRanges[nombre] = rango.getSheet().getName(); }, setActiveSheet() {}, moveActiveSheet() {} };
   const validacion = () => {
     const b = { casilla: false, requireCheckbox() { b.casilla = true; return b; }, build() { return { casilla: b.casilla }; } };
@@ -119,7 +123,7 @@ function crearEntorno(opts = {}) {
   const ctx = {
     console: { log: m => log.console.push(String(m)), warn: m => log.console.push(String(m)), error: m => log.console.push(String(m)) },
     Logger: { log: m => log.logger.push(m) },
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, newDataValidation: validacion, newConditionalFormatRule: reglaCF,
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, flush() { io.escrito = false; }, newDataValidation: validacion, newConditionalFormatRule: reglaCF,
       ProtectionType: { RANGE: 'RANGE' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
     DriveApp: { getFolderById: id => { if (!carpetas[id]) throw new Error('carpeta inexistente ' + id); return carpetas[id]; },
       getFileById: id => archivos[id], getRootFolder: () => carpetas.PADRE },

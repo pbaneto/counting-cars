@@ -48,7 +48,8 @@ function tieneDatos_(esq, v) {
 
 /**
  * Lee una tabla de cabeceras en fila 1 con UNA sola lectura (cabecera + datos).
- * Devuelve {sh, map, filas:[{fila, v:{cabecera: valor}}], libre, leidas}; leidas = filas de datos leídas (con o sin datos).
+ * Devuelve {sh, map, filas:[{fila, v:{cabecera: valor}}], libre, leidas, valores}; leidas = filas de datos leídas
+ * (con o sin datos); valores = lo leído tal cual, fila 1 incluida (valores[r - 1] es la fila r).
  */
 function leerTabla_(nombre) {
   const sh = hoja_(nombre), esq = ESQUEMA[nombre];
@@ -65,7 +66,7 @@ function leerTabla_(nombre) {
     for (const h in map) v[h] = todo[i][map[h] - 1];
     if (tieneDatos_(esq, v)) { filas.push({ fila: i + 1, v }); libre = i + 2; }
   }
-  return { nombre, sh, map, filas, libre, esq, leidas: todo.length - 1 };
+  return { nombre, sh, map, filas, libre, esq, leidas: todo.length - 1, valores: todo };
 }
 
 function anchoTabla_(tabla) { return Math.max.apply(null, Object.keys(tabla.map).map(h => tabla.map[h])); }
@@ -105,11 +106,14 @@ function actualizarFila_(tabla, fila, cambios) {
   if (f) Object.assign(f.v, cambios);
 }
 
-/** Pone en la fila las fórmulas que falten y sus casillas (fila escrita a mano, pegada encima o insertada). */
-function asegurarFila_(tabla, fila) {
+/**
+ * Pone en la fila las fórmulas que falten y sus casillas (fila escrita a mano, pegada encima o insertada).
+ * actuales: fórmulas de la fila si ya se han leído (así esta función sólo escribe).
+ */
+function asegurarFila_(tabla, fila, actuales) {
   const formulas = FORMULAS[tabla.nombre];
   if (formulas) {
-    const actuales = tabla.sh.getRange(fila, 1, 1, anchoTabla_(tabla)).getFormulas()[0];
+    actuales = actuales || tabla.sh.getRange(fila, 1, 1, anchoTabla_(tabla)).getFormulas()[0];
     for (const h in formulas) if (tabla.map[h] && !actuales[tabla.map[h] - 1]) {
       tabla.sh.getRange(fila, tabla.map[h]).setFormula(loc_(formulas[h](fila)));
     }

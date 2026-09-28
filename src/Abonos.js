@@ -5,14 +5,33 @@
  *    Por eso no se edita a mano: se corrige en Piezas (check de Reembolso) o reescaneando la factura.
  */
 
-/** tabP: la tabla de Piezas si quien llama ya la ha leído y la ha mantenido al día (evita leerla dos veces). */
-function reconstruirAbonos_(tabP) {
+function reconstruirAbonos_() {
   const crono = cronometro_('reconstruirAbonos_');
+  const d = leerParaAbonos_(null, crono);
+  crono.fin();
+  return escribirAbonos_(d);
+}
+
+/**
+ * Todo lo que la reconstrucción necesita LEER, para hacerlo antes de escribir nada: en Sheets, una lectura hecha
+ * después de una escritura espera a que se recalculen las fórmulas que dependen de lo escrito.
+ * tabP: la tabla de Piezas si quien llama ya la ha leído (y la mantiene al día con lo que escriba después).
+ */
+function leerParaAbonos_(tabP, crono) {
   const leida = tabla => `${tabla.filas.length} de ${tabla.leidas} filas`;
-  if (tabP) crono.paso('Piezas ya leída');
-  else { tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${leida(tabP)})`); }
+  if (!tabP) { tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${leida(tabP)})`); }
   const tabL = leerTabla_(HOJA.LINEAS); crono.paso(`leer Líneas RM (${leida(tabL)})`);
   const tabA = leerTabla_(HOJA.ALB); crono.paso(`leer Albaranes (${leida(tabA)})`);
+  const sh = hoja_(HOJA.ABONOS), ultFila = sh.getLastRow(), maxFilas = sh.getMaxRows();
+  loc_('');  // la configuración regional también es una lectura: se guarda ya para escribir las fórmulas luego
+  crono.paso('leer tamaño de Abonos');
+  return { tabP, tabL, tabA, sh, ultFila, maxFilas };
+}
+
+/** Rehace la tabla grande de Abonos con lo leído en leerParaAbonos_. No lee nada de la hoja. */
+function escribirAbonos_(d) {
+  const crono = cronometro_('escribirAbonos_');
+  const { tabP, tabL, tabA, sh } = d;
   const hoy = hoyISO_();
   const plateDe = {}, proveedorDe = {};
   tabA.filas.forEach(f => {
@@ -42,13 +61,13 @@ function reconstruirAbonos_(tabP) {
 
   const filas = construirAbonos(marcadas, todas, abonos);
   crono.paso(`cruce (${abonos.length} abonos)`);
-  const sh = hoja_(HOJA.ABONOS), ini = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
-  const ult = Math.max(sh.getLastRow(), ini);
+  const ini = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
+  const ult = Math.max(d.ultFila, ini);
   sh.getRange(ini, 1, ult - ini + 1, ncol).clearContent();
   crono.paso(`borrar (${ult - ini + 1} filas)`);
   if (filas.length) {
     const necesarias = ini + filas.length - 1;
-    if (necesarias > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), necesarias - sh.getMaxRows() + 50);
+    if (necesarias > d.maxFilas) sh.insertRowsAfter(d.maxFilas, necesarias - d.maxFilas + 50);
     // 'Días pendiente' es una fórmula (no un valor calculado aquí) para que se actualice sola día a día sin rehacer Abonos.
     sh.getRange(ini, 1, filas.length, ncol).setValues(filas.map((f, i) => {
       const r = ini + i;
