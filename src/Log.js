@@ -53,7 +53,7 @@ function cronometro_(nombre) {
   let t = t0;
   return {
     paso(etiqueta) { const ahora = Date.now(); pasos.push(`${etiqueta} ${ahora - t}ms`); t = ahora; },
-    fin(extra) { console.log(`⏱ ${nombre}: ${pasos.join(', ')} | total ${Date.now() - t0}ms${extra ? ' | ' + extra : ''}`); },
+    fin(extra) { const txt = `⏱ ${nombre}: ${pasos.join(', ')} | total ${Date.now() - t0}ms${extra ? ' | ' + extra : ''}`; console.log(txt); return txt; },
   };
 }
 

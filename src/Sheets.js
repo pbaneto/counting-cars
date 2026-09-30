@@ -52,9 +52,10 @@ function tieneDatos_(esq, v) {
  * Devuelve {sh, map, filas:[{fila, v:{cabecera: valor}}], libre, leidas, valores}; leidas = filas de datos leídas
  * (con o sin datos); valores = lo leído tal cual, fila 1 incluida (valores[r - 1] es la fila r).
  */
-function leerTabla_(nombre) {
+/** todo: valores de la pestaña ya leídos (getDataRange().getValues()), para no volver a leerla. */
+function leerTabla_(nombre, todo) {
   const sh = hoja_(nombre), esq = ESQUEMA[nombre], fc = esq.filaCabecera || 1;
-  const todo = sh.getDataRange().getValues();
+  todo = todo || sh.getDataRange().getValues();
   const map = {};
   (todo[fc - 1] || []).forEach((h, i) => { if (h !== '') map[String(h).trim()] = i + 1; });
   esq.cabeceras.forEach(h => {

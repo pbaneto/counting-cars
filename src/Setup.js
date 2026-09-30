@@ -26,11 +26,13 @@ function setup() {
 /** Menú: reescribe fórmulas, formato y colores sin tocar los datos. Añade a Config las claves nuevas (sin pisar valores). */
 function repararFormulas() {
   ejecutar_('repararFormulas', () => conBloqueo_(30, () => {
+    const crono = cronometro_('repararFormulas');
     reiniciarCaches_();
-    prepararConfig_();
-    prepararTablas_();
-    montarAbonos_();
-    montarResumen_();  // antes no se reconstruía aquí: si Trabajos cambiaba, el Resumen se quedaba con fórmulas viejas
+    prepararConfig_(); crono.paso('Config');
+    prepararTablas_(crono);
+    montarAbonos_(); crono.paso('Abonos');
+    montarResumen_(); crono.paso('Resumen');  // antes no se reconstruía aquí: si Trabajos cambiaba, el Resumen se quedaba con fórmulas viejas
+    log_('INFO', 'repararFormulas', '', crono.fin());  // tiempos por paso en Registro, para ver qué parte tarda
     toast_('Fórmulas y formato reparados.');
   }));
 }
@@ -56,69 +58,56 @@ function estiloCabecera_(sh, n, filaCab) {
 function prepararConfig_() {
   const sh = hoja_(HOJA.CONFIG);
   escribirCabeceras_(sh, ESQUEMA['Config'].cabeceras);
-  estiloCabecera_(sh, 3);
   const t = leerTabla_(HOJA.CONFIG);
+  let añadidas = false;
   const carpetas = (typeof PRIVATE !== 'undefined' && PRIVATE.CARPETAS) || {};
   CONFIG_DEFECTO.forEach(([clave, valor, desc]) => {
     const f = t.filas.find(x => String(x.v['Clave']).trim() === clave);
     const inicial = valor === '' && carpetas[clave] ? carpetas[clave] : valor;
-    if (!f) agregarFilas_(t, [{ 'Clave': clave, 'Valor': inicial, 'Descripción': desc }]);
-    else { if (f.v['Valor'] === '' && inicial !== '') actualizarFila_(t, f.fila, { 'Valor': inicial }); actualizarFila_(t, f.fila, { 'Descripción': desc }); }
+    if (!f) { agregarFilas_(t, [{ 'Clave': clave, 'Valor': inicial, 'Descripción': desc }]); añadidas = true; return; }
+    // Sólo se escribe lo que cambia: cada escritura innecesaria hace que la siguiente lectura espere al recálculo.
+    if (f.v['Valor'] === '' && inicial !== '') actualizarFila_(t, f.fila, { 'Valor': inicial });
+    if (f.v['Descripción'] !== desc) actualizarFila_(t, f.fila, { 'Descripción': desc });
   });
-  const t2 = leerTabla_(HOJA.CONFIG), ss = ss_();
-  [['IVA', 'IVA'], ['DIAS_AVISO', 'DIAS_AVISO_TRABAJO'], ['TOL_CUADRE', 'TOLERANCIA_CUADRE'], ['DIAS_AVISO_REEMB', 'DIAS_AVISO_REEMBOLSO']].forEach(([nombre, clave]) => {
+  const t2 = añadidas ? leerTabla_(HOJA.CONFIG) : t, ss = ss_();
+  [['IVA', 'IVA'], ['DIAS_AVISO', 'DIAS_AVISO_TRABAJO'], ['DIAS_AVISO_REEMB', 'DIAS_AVISO_REEMBOLSO']].forEach(([nombre, clave]) => {
     const f = t2.filas.find(x => String(x.v['Clave']).trim() === clave);
     ss.setNamedRange(nombre, sh.getRange(f.fila, t2.map['Valor']));
   });
+  estiloCabecera_(sh, 3);
   sh.setColumnWidth(1, 240); sh.setColumnWidth(2, 340); sh.setColumnWidth(3, 620);
   _cfg = null;
 }
 
 /**
- * Migración única: en una hoja de una versión anterior sin `nombreCol`, la columna que le sigue en ESQUEMA
- * está todavía donde ahora va `nombreCol`. Inserta una columna en blanco ahí para no desalinear los datos de
- * las columnas existentes. Idempotente: si `nombreCol` ya está en su sitio (o la pestaña está recién creada,
- * sin cabeceras), no hace nada.
+ * Cabeceras, fórmulas, formato, validaciones y colores de las pestañas de tabla.
+ * Primero se LEE todo (valores y fórmulas de cada pestaña) y después se escribe sólo lo que cambia: en Sheets, cada
+ * lectura hecha tras una escritura espera a que se recalcule la hoja, y con las SUMIFS de Trabajos eso son segundos.
  */
-function insertarColumnaSiFalta_(nombreHoja, nombreCol) {
-  const sh = hoja_(nombreHoja), esq = ESQUEMA[nombreHoja], fc = esq.filaCabecera || 1, pos = esq.cabeceras.indexOf(nombreCol) + 1;
-  const actual = sh.getLastColumn() >= pos ? sh.getRange(fc, pos).getValue() : '';
-  if (actual === nombreCol || actual === '') return;
-  sh.insertColumnBefore(pos);
-  log_('INFO', 'setup', `${nombreHoja}!${colLetra_(pos)}${fc}`, `Columna "${nombreCol}" insertada (migración desde una versión sin esa columna)`);
-}
-
-/**
- * Migración única: si la cabecera de `nombreHoja` sigue en la fila 1 (versión anterior sin panel encima),
- * inserta las filas en blanco que hacen falta para que caiga en `filaCabecera`, sin desalinear los datos.
- * Idempotente: si ya está ahí, o la pestaña está recién creada (fila 1 vacía), no hace nada.
- */
-function insertarFilasSiFalta_(nombreHoja) {
-  const esq = ESQUEMA[nombreHoja], fc = esq.filaCabecera;
-  if (!fc || fc === 1) return;
-  const sh = hoja_(nombreHoja);
-  const actual = sh.getLastRow() >= 1 ? sh.getRange(1, 1).getValue() : '';
-  if (actual !== esq.cabeceras[0]) return;
-  sh.insertRowsBefore(1, fc - 1);
-  log_('INFO', 'setup', `${nombreHoja}!A${fc}`, `${fc - 1} fila(s) insertada(s) arriba (migración desde una versión sin panel de resumen)`);
-}
-
-/** Cabeceras, fórmulas, formato, validaciones y colores de las pestañas de tabla. */
-function prepararTablas_() {
-  const ss = ss_();
-  insertarFilasSiFalta_(HOJA.TRAB);
-  insertarColumnaSiFalta_(HOJA.ALB, 'Mes');
-  insertarColumnaSiFalta_(HOJA.TRAB, 'Mes');
-  insertarColumnaSiFalta_(HOJA.TRAB, 'Recambios facturables RM');
-  insertarColumnaSiFalta_(HOJA.TRAB, 'Recambios facturables Otros');
-  ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'].forEach(nombre => {
-    const sh = ss.getSheetByName(nombre), esq = ESQUEMA[nombre], n = esq.cabeceras.length;
-    escribirCabeceras_(sh, esq.cabeceras, esq.filaCabecera);
-    estiloCabecera_(sh, n, esq.filaCabecera);
+function prepararTablas_(crono) {
+  const paso = etiqueta => crono && crono.paso(etiqueta);
+  const ss = ss_(), TABLAS = ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'];
+  const leido = {};
+  TABLAS.forEach(nombre => {
+    const sh = ss.getSheetByName(nombre), rango = sh.getDataRange(), conFormulas = !!FORMULAS[nombre];
+    leido[nombre] = { sh, valores: rango.getValues(), formulas: conFormulas ? rango.getFormulas() : null, maxRows: conFormulas ? sh.getMaxRows() : 0 };
   });
+  loc_('');  // el idioma de la hoja también es una lectura: se guarda ya para escribir las fórmulas luego
+  paso('leer');
+  let cabNuevas = false;
+  TABLAS.forEach(nombre => {
+    const esq = ESQUEMA[nombre], l = leido[nombre];
+    if (escribirCabeceras_(l.sh, esq.cabeceras, esq.filaCabecera, l.valores)) cabNuevas = true;
+    estiloCabecera_(l.sh, esq.cabeceras.length, esq.filaCabecera);
+  });
+  // escribirCabeceras_ garantiza que cada cabecera está en su posición de ESQUEMA: las letras salen de ahí, sin leer la hoja.
   _letras = {};
-  ['Albaranes', 'Trabajos', 'Piezas', 'Líneas RM'].forEach(escribirFormulas_);
-  formatoAlbaranes_(); formatoTrabajos_(); formatoPiezas_(); formatoCoches_(); formatoFacturas_(); formatoLineas_(); formatoRegistro_();
+  TABLAS.forEach(nombre => { const o = {}; ESQUEMA[nombre].cabeceras.forEach((h, i) => { o[h] = colLetra_(i + 1); }); _letras[nombre] = o; });
+  paso('cabeceras');
+  // Si se ha escrito alguna cabecera (pestaña recién creada), lo leído ya no vale: escribirFormulas_ vuelve a leer.
+  ['Albaranes', 'Trabajos', 'Piezas', 'Líneas RM'].forEach(nombre => { escribirFormulas_(nombre, cabNuevas ? null : leido[nombre]); paso(`fórmulas ${nombre}`); });
+  [['Albaranes', formatoAlbaranes_], ['Trabajos', formatoTrabajos_], ['Piezas', formatoPiezas_], ['Coches', formatoCoches_],
+    ['Facturas RM', formatoFacturas_], ['Líneas RM', formatoLineas_], ['Registro', formatoRegistro_]].forEach(([nombre, fn]) => { fn(); paso(`formato ${nombre}`); });
 }
 
 /**
@@ -127,30 +116,44 @@ function prepararTablas_() {
  * silencio los datos de las filas de abajo con el nombre nuevo (p. ej. una columna "Quincena" heredada
  * de una versión anterior del esquema, que ya no existe en ESQUEMA pero seguía teniendo datos reales).
  */
-function escribirCabeceras_(sh, cabeceras, filaCab) {
+function escribirCabeceras_(sh, cabeceras, filaCab, valores) {
   filaCab = filaCab || 1;
-  const ancho = Math.max(sh.getLastColumn(), cabeceras.length);
-  const actual = ancho > 0 ? sh.getRange(filaCab, 1, 1, ancho).getValues()[0] : [];
+  let actual;
+  if (valores) actual = valores[filaCab - 1] || [];
+  else { const ancho = Math.max(sh.getLastColumn(), cabeceras.length); actual = ancho > 0 ? sh.getRange(filaCab, 1, 1, ancho).getValues()[0] : []; }
+  let escritas = false;
   cabeceras.forEach((h, i) => {
     if (actual[i] === h) return;
     if (actual[i]) throw new Error(`"${sh.getName()}": la columna ${colLetra_(i + 1)} tiene la cabecera "${actual[i]}" en vez de "${h}". ` +
       'Corrígelo a mano (renombra o mueve esa columna) antes de reparar, para no desalinear los datos de las filas de abajo.');
     sh.getRange(filaCab, i + 1).setValue(h);
+    escritas = true;
   });
+  return escritas;
 }
 
 /**
  * Fórmulas y casillas SÓLO en las filas con datos: miles de filas vacías con fórmula o casilla hacían que cada
  * lectura de la pestaña (y cada recálculo) arrastrara todas esas filas. Las filas nuevas las reciben al crearlas
  * (agregarFilas_) o al editarlas a mano (alEditar ▸ asegurarFila_). Quita las de las filas vacías.
+ * leido: {sh, valores, formulas, maxRows} ya leídos por prepararTablas_ (si no, se leen aquí). Una columna sólo se
+ * reescribe si alguna de sus fórmulas ha cambiado: reescribirla obliga a recalcular todo lo que depende de ella.
  */
-function escribirFormulas_(nombre) {
-  const sh = hoja_(nombre), n = ESQUEMA[nombre].filasFormato, fc = ESQUEMA[nombre].filaCabecera || 1;
-  if (sh.getMaxRows() < n + fc) sh.insertRowsAfter(sh.getMaxRows(), n + fc - sh.getMaxRows());
-  const t = leerTabla_(nombre), ultDatos = t.libre - 1, ultHoja = sh.getLastRow();
+function escribirFormulas_(nombre, leido) {
+  const esq = ESQUEMA[nombre], n = esq.filasFormato, fc = esq.filaCabecera || 1;
+  const sh = leido ? leido.sh : hoja_(nombre);
+  const maxRows = leido ? leido.maxRows : sh.getMaxRows();
+  if (maxRows < n + fc) sh.insertRowsAfter(maxRows, n + fc - maxRows);
+  const t = leerTabla_(nombre, leido && leido.valores), ultDatos = t.libre - 1, ultHoja = t.valores.length;
+  const formulas = leido ? leido.formulas : (ultHoja ? sh.getRange(1, 1, ultHoja, Math.max(1, sh.getLastColumn())).getFormulas() : []);
+  const actual = (r, c) => (formulas[r - 1] || [])[c - 1] || '';
   Object.keys(FORMULAS[nombre]).forEach(h => {
-    if (ultDatos >= fc + 1) sh.getRange(fc + 1, t.map[h], ultDatos - fc, 1).setFormulas(Array.from({ length: ultDatos - fc }, (_, i) => [loc_(FORMULAS[nombre][h](i + fc + 1))]));
-    if (ultHoja > ultDatos) limpiarFormulasSobrantes_(t, h, ultDatos + 1, ultHoja);
+    const c = t.map[h];
+    if (ultDatos >= fc + 1) {
+      const deseadas = Array.from({ length: ultDatos - fc }, (_, i) => FORMULAS[nombre][h](i + fc + 1));
+      if (deseadas.some((f, i) => !mismaFormula_(actual(i + fc + 1, c), f))) sh.getRange(fc + 1, c, ultDatos - fc, 1).setFormulas(deseadas.map(f => [loc_(f)]));
+    }
+    if (ultHoja > ultDatos) limpiarFormulasSobrantes_(t, h, ultDatos + 1, ultHoja, actual);
   });
   // Por debajo de los datos una casilla sólo puede valer FALSE (TRUE contaría como dato), así que se quita sin perder nada.
   (t.esq.casillas || []).forEach(h => {
@@ -159,19 +162,38 @@ function escribirFormulas_(nombre) {
   });
 }
 
-/** Vacía una columna calculada por debajo de la última fila con datos. Si ahí hay un valor escrito a mano, no la toca y avisa. */
-function limpiarFormulasSobrantes_(t, h, desde, hasta) {
-  const rango = t.sh.getRange(desde, t.map[h], hasta - desde + 1, 1);
-  const formulas = rango.getFormulas(), valores = rango.getValues();
-  const aMano = valores.findIndex((v, i) => !formulas[i][0] && v[0] !== '' && v[0] !== false);
-  if (aMano >= 0) {
-    log_('AVISO', 'repararFormulas', `${t.nombre}!${colLetra_(t.map[h])}${desde + aMano}`, `Valor escrito a mano en la columna calculada "${h}" por debajo de los datos: esa columna no se limpia`);
-    return;
-  }
-  rango.clearContent();
+/** ¿La fórmula que hay en la celda es ya la deseada? (Sheets puede devolverla con ; o , según el idioma de la hoja). */
+function mismaFormula_(actual, deseada) {
+  if (!actual) return false;
+  if (actual === deseada || actual === loc_(deseada)) return true;
+  const norm = f => String(f).replace(/\s+/g, '').toUpperCase();
+  return norm(actual) === norm(deseada) || norm(actual) === norm(loc_(deseada));
 }
 
-function colDe_(sh, h, filaCab) { return sh.getRange(filaCab || 1, 1, 1, sh.getLastColumn()).getValues()[0].indexOf(h) + 1; }
+/**
+ * Vacía una columna calculada por debajo de la última fila con datos, usando lo ya leído (sin volver a leer la hoja).
+ * Si ahí hay un valor escrito a mano, no la toca y avisa. Si ya está vacía, no escribe nada.
+ */
+function limpiarFormulasSobrantes_(t, h, desde, hasta, formulaEn) {
+  const c = t.map[h];
+  let hayAlgo = false;
+  for (let r = desde; r <= hasta; r++) {
+    const v = (t.valores[r - 1] || [])[c - 1], f = formulaEn(r, c);
+    if (!f && v !== '' && v !== false && v != null) {
+      log_('AVISO', 'repararFormulas', `${t.nombre}!${colLetra_(c)}${r}`, `Valor escrito a mano en la columna calculada "${h}" por debajo de los datos: esa columna no se limpia`);
+      return;
+    }
+    if (f || (v !== '' && v != null)) hayAlgo = true;
+  }
+  if (hayAlgo) t.sh.getRange(desde, c, hasta - desde + 1, 1).clearContent();
+}
+
+/**
+ * Columna de una cabecera según ESQUEMA, sin leer la hoja: escribirCabeceras_ ya ha garantizado que coinciden.
+ * Antes se leía la fila de cabeceras en cada llamada, y cada lectura entre escrituras obliga a Sheets a esperar
+ * al recálculo de toda la hoja (unas 60 veces por reparación).
+ */
+function colDe_(sh, h) { return ESQUEMA[sh.getName()].cabeceras.indexOf(h) + 1; }
 
 /**
  * Aplica formato a una columna por nombre: n filas desde la siguiente a la cabecera. Una columna gris
@@ -181,7 +203,7 @@ function colDe_(sh, h, filaCab) { return sh.getRange(filaCab || 1, 1, 1, sh.getL
  */
 function colFmt_(sh, h, n, o, filaCab) {
   filaCab = filaCab || 1;
-  const c = colDe_(sh, h, filaCab);
+  const c = colDe_(sh, h);
   if (!c) return;
   const r = sh.getRange(filaCab + 1, c, n, 1);
   if (o.fmt) r.setNumberFormat(o.fmt);
@@ -192,10 +214,32 @@ function colFmt_(sh, h, n, o, filaCab) {
   if (o.gris) proteger_(r);
 }
 
-function proteger_(rango) { rango.protect().setDescription(PROTECCION).setWarningOnly(true); }
-
+/**
+ * Protecciones (avisos al editar columnas calculadas). Crear o quitar una protección es de las llamadas más lentas de
+ * Sheets, así que no se rehacen todas cada vez: limpiarProtecciones_ apunta las que ya hay, proteger_ reutiliza la
+ * del mismo rango si existe, y cerrarProtecciones_ quita sólo las que ya no hacen falta.
+ */
+let _prot = null;
 function limpiarProtecciones_(sh) {
-  sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(p => { if (p.getDescription() === PROTECCION) p.remove(); });
+  cerrarProtecciones_();
+  const existentes = {};
+  sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(p => {
+    if (p.getDescription() !== PROTECCION) return;
+    const a1 = p.getRange().getA1Notation();
+    if (existentes[a1]) p.remove(); else existentes[a1] = p;  // duplicada de alguna versión anterior
+  });
+  _prot = { hoja: sh.getName(), existentes };
+}
+
+function proteger_(rango) {
+  const a1 = rango.getA1Notation();
+  if (_prot && _prot.hoja === rango.getSheet().getName() && _prot.existentes[a1]) { delete _prot.existentes[a1]; return; }
+  rango.protect().setDescription(PROTECCION).setWarningOnly(true);
+}
+
+function cerrarProtecciones_() {
+  if (_prot) Object.keys(_prot.existentes).forEach(a1 => _prot.existentes[a1].remove());
+  _prot = null;
 }
 
 function regla_(sh, a1, formula, color) {
@@ -234,13 +278,12 @@ function formatoAlbaranes_() {
     regla_(sh, R('Nota escaneo'), `=$${l['Nota escaneo']}2<>""`, COLORES.naranja),
     regla_(sh, R('Coche'), `=LEFT($${l['Coche']}2,1)="⚠"`, COLORES.naranja),
   ]);
+  cerrarProtecciones_();
 }
 
 function formatoTrabajos_() {
   const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB), fc = ESQUEMA['Trabajos'].filaCabecera;
   limpiarProtecciones_(sh);
-  // Limpieza única del panel lateral de una versión anterior (columnas P en adelante, filas 1-10): ahora va encima.
-  sh.getRange(1, 16, 10, 8).breakApart().clearContent().clearFormat().clearDataValidations();
   const cf = (h, o) => colFmt_(sh, h, n, o, fc);
   cf('Nº trabajo', { ancho: 95 });
   cf('Fecha apertura', { fmt: FMT.fecha, ancho: 105 });
@@ -265,6 +308,7 @@ function formatoTrabajos_() {
     regla_(sh, R('Coche'), `=LEFT($${l['Coche']}${fc + 1},1)="⚠"`, COLORES.naranja),
   ]);
   panelResumenTrabajos_(sh, n, l, fc);
+  cerrarProtecciones_();
 }
 
 /**
@@ -319,6 +363,7 @@ function formatoPiezas_() {
     regla_(sh, `A2:${ult}${n + 1}`, `=$${l['Reembolso']}2=TRUE`, COLORES.amarillo),
     regla_(sh, `${l['Avisos']}2:${l['Avisos']}${n + 1}`, `=$${l['Avisos']}2<>""`, COLORES.naranja),
   ]);
+  cerrarProtecciones_();
 }
 
 function formatoCoches_() {
@@ -348,7 +393,12 @@ function formatoLineas_() {
   colFmt_(sh, 'Descuento', n, { fmt: FMT.pct });
   colFmt_(sh, 'Importe sin IVA', n, { fmt: FMT.euro, ancho: 120 });
   colFmt_(sh, 'Conciliación', n, { gris: true, ancho: 190 });
-  sh.setConditionalFormatRules([regla_(sh, `${l['Conciliación']}2:${l['Conciliación']}${n + 1}`, `=LEFT($${l['Conciliación']}2,1)="⚠"`, COLORES.naranja)]);
+  const ultCol = colLetra_(ESQUEMA['Líneas RM'].cabeceras.length);
+  sh.setConditionalFormatRules([
+    regla_(sh, `${l['Conciliación']}2:${l['Conciliación']}${n + 1}`, `=LEFT($${l['Conciliación']}2,1)="⚠"`, COLORES.naranja),
+    regla_(sh, `A2:${ultCol}${n + 1}`, `=$${l['Tipo']}2="Abono"`, COLORES.amarillo),  // fila entera de las líneas de abono
+  ]);
+  cerrarProtecciones_();
 }
 
 function formatoRegistro_() {
@@ -364,17 +414,19 @@ function formatoRegistro_() {
 /** Resumen por quincena (arriba) + panel "Pendientes de RM" + tabla grande de piezas reembolsadas y abonos (debajo). */
 function montarAbonos_() {
   const sh = hoja_(HOJA.ABONOS), a = letras_(HOJA.ALB), f = letras_(HOJA.FACT);
-  limpiarProtecciones_(sh);
   const cab = ABONOS.cabResumen, ini = ABONOS.filaIni, tb = ABONOS.filaTabla, fin = tb + ABONOS.maxTabla - 1;
-  if (sh.getMaxRows() < fin) sh.insertRowsAfter(sh.getMaxRows(), fin - sh.getMaxRows());
+  // Lecturas antes de escribir nada. El año (B1) está dentro de la zona que se limpia: hay que guardarlo antes.
+  const anio = sh.getRange(ABONOS.celdaAnio).getValue(), maxRows = sh.getMaxRows();
+  limpiarProtecciones_(sh);
+  if (maxRows < fin) sh.insertRowsAfter(maxRows, fin - maxRows);
   // Limpia la zona de resumen+panel (filas 1..27) antes de reescribirla: si una versión anterior tenía más o menos
   // columnas, no se queda una cabecera, fórmula o validación fantasma en una columna que ya no se reescribe.
   sh.getRange(1, 1, fin, 20).clearDataValidations();
   sh.getRange(1, 1, ini + ABONOS.filas - 1, 20).clearContent().clearFormat();
   sh.getRange('A1').setValue('Año').setFontWeight('bold').setHorizontalAlignment('right');
-  if (sh.getRange(ABONOS.celdaAnio).getValue() === '') sh.getRange(ABONOS.celdaAnio).setValue(2026);
+  sh.getRange(ABONOS.celdaAnio).setValue(anio === '' ? 2026 : anio);
   sh.getRange(ABONOS.celdaAnio).setFontWeight('bold').setBackground(COLORES.amarillo).setNumberFormat('0');
-  sh.getRange('D1').setValue('Cuadre: (Recambios − Abonado) = Total factura  ·  Naranja = revisar la factura').setFontStyle('italic').setFontColor('#666666');
+  sh.getRange('D1').setValue('Diferencia = Total factura − (Recambios − Abonado). Normal que no sea 0: los abonos suelen llegar en la factura siguiente').setFontStyle('italic').setFontColor('#666666');
 
   sh.getRange(ABONOS.filaCabResumen, 1, 1, cab.length).setValues([cab]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   // Rangos de la tabla grande (piezas/abonos), usados tanto por el cuadre por quincena como por el panel de pendientes.
@@ -389,13 +441,13 @@ function montarAbonos_() {
     const abonado = `=SUMIFS(${CONIVA_},${ESTADO_},"Abonada",${rangoFecha(rg('A'))})+SUMIFS(${CONIVA_},${ESTADO_},"Sin solicitar",${rangoFecha(rg('A'))})`;
     const crit = `'Facturas RM'!$${f['Año']}:$${f['Año']},$B$1,'Facturas RM'!$${f['Mes']}:$${f['Mes']},${mes},'Facturas RM'!$${f['Quincena']}:$${f['Quincena']},${q}`;
     const totalFactura = `=IF(COUNTIFS(${crit})=0,"",SUMIFS('Facturas RM'!$${f['Total']}:$${f['Total']},${crit}))`;
-    // Sólo compara la factura de esta quincena con lo que ELLA MISMA contiene (compras + sus propios abonos): no depende de cuándo se pidió el reembolso.
-    const estado = `=IF(E${r}="",IF(AND(C${r}=0,D${r}=0),"","· Sin factura escaneada"),` +
-      `IF(ABS(C${r}-D${r}-E${r})>TOL_CUADRE,"⚠ La factura no cuadra con los albaranes (dif. "&TEXT(E${r}-(C${r}-D${r}),"0.00")&" €): ¿falta algún albarán o hay un error de escaneo?","✔ Cuadra"))`;
+    // Diferencia informativa, sin aviso: los abonos de RM suelen llegar en la factura siguiente, así que una quincena
+    // no tiene por qué cuadrar con sus propios albaranes.
+    const estado = `=IF(E${r}="","",ROUND(E${r}-(C${r}-D${r}),2))`;
     sh.getRange(r, 2, 1, 5).setValues([locFila_([q, recambios, abonado, totalFactura, estado])]);
   }
   sh.getRange(ini, 2, ABONOS.filas, 1).setHorizontalAlignment('center');
-  sh.getRange(ini, 3, ABONOS.filas, 3).setNumberFormat(FMT.euro).setBackground(COLORES.gris);
+  sh.getRange(ini, 3, ABONOS.filas, 4).setNumberFormat(FMT.euro).setBackground(COLORES.gris);
   sh.getRange(ini, 6, ABONOS.filas, 1).setBackground(COLORES.gris);
   proteger_(sh.getRange(ini, 1, ABONOS.filas, cab.length));
 
@@ -431,13 +483,13 @@ function montarAbonos_() {
   sh.setColumnWidth(2, 260); sh.setColumnWidth(8, 420); sh.setColumnWidth(11, 260);
   sh.setFrozenRows(ABONOS.filaCabResumen);
   sh.setConditionalFormatRules([
-    regla_(sh, `A${ini}:${colLetra_(cab.length)}${ini + ABONOS.filas - 1}`, `=LEFT($F${ini},1)="⚠"`, COLORES.naranja),
     regla_(sh, `${colLetra_(pc)}5:${colLetra_(pv)}5`, `=${colLetra_(pv)}5>0`, COLORES.naranja),
     regla_(sh, `A${tb}:L${fin}`, `=AND($E${tb}="Sin abonar",$L${tb}>${UMBRAL_})`, COLORES.naranja),
     regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Abonada"`, COLORES.verde),
     regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin abonar"`, COLORES.rojo),
     regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin solicitar"`, COLORES.amarillo),
   ]);
+  cerrarProtecciones_();
 }
 
 function instalarTriggers_() {

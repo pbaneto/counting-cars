@@ -103,4 +103,5 @@ function montarResumen_() {
 
   [70, 120, 110, 120, 110, 120, 170, 140, 30, 140, 110, 140, 110].forEach((w, i) => sh.setColumnWidth(i + 1, w));
   sh.setFrozenRows(0);
+  cerrarProtecciones_();
 }

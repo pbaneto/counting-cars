@@ -1,7 +1,7 @@
 /**
  * Fórmulas de las columnas automáticas (grises). Todas por fila: funcionan con ordenar, filtrar e insertar filas.
  * Se construyen con las letras REALES de las cabeceras (letras_), así que insertar una columna no las rompe al reparar.
- * Named ranges usados: IVA, DIAS_AVISO, TOL_CUADRE (apuntan a la pestaña Config).
+ * Named ranges usados: IVA, DIAS_AVISO, DIAS_AVISO_REEMB (apuntan a la pestaña Config).
  */
 
 const FORMULAS = {

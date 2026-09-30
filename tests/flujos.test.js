@@ -72,8 +72,8 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.equal(trab.valor(2, 1), 'Trabajos'); assert.equal(trab.valor(2, 5), 'Morosos');
   assert.match(trab.cell(3, 5).f, /SUMPRODUCT/);
   // Ninguna columna calculada (gris) se queda con una validación residual; las de entrada no se tocan
-  assert.deepEqual(new Set(trab.validacionesLimpiadas), new Set([3, 5, 6, 7, 8, 9, 10, 12, 14, 16]),
-    'Mes, Coche, Cliente, Recambios, Recambios facturables, Recambios facturables RM/Otros, Beneficio, Avisos, y la limpieza del panel lateral antiguo');
+  assert.deepEqual(new Set(trab.validacionesLimpiadas), new Set([3, 5, 6, 7, 8, 9, 10, 12, 14]),
+    'Mes, Coche, Cliente, Recambios, Recambios facturables, Recambios facturables RM/Otros, Beneficio, Avisos');
   const cfg = tabla(e, 'Config');
   assert.equal(cfg.find(x => x.Clave === 'CARPETA_ENTRADA').Valor, 'ENT');
   assert.equal(cfg.find(x => x.Clave === 'MODELO_GEMINI').Valor, 'gemini-3.5-flash-lite');
@@ -83,7 +83,7 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.match(abonos.cell(4, 3).f, /">="&DATE\(\$B\$1,1,1\).*"<="&DATE\(\$B\$1,1,15\)/);
   assert.match(abonos.cell(5, 4).f, /">="&DATE\(\$B\$1,1,16\).*"<="&EOMONTH\(DATE\(\$B\$1,1,1\),0\)/);
   assert.equal(abonos.cell(3, 7), undefined);               // ya no hay columna "Desde"
-  assert.match(abonos.cell(4, 6).f, /TOL_CUADRE/);          // Estado (cuadre factura vs albaranes)
+  assert.match(abonos.cell(4, 6).f, /^=IF\(E4="","",ROUND\(E4-\(C4-D4\),2\)\)$/); // Diferencia informativa, sin aviso
   assert.equal(abonos.cell(4, 12).f, '=DIAS_AVISO_REEMB');  // panel: umbral copiado de Config a esta pestaña
   assert.match(abonos.cell(5, 12).f, /COUNTIFS.*\$L\$4/);    // panel: fuera de plazo, contra el umbral de la misma pestaña
   e.run('repararFormulas()');
@@ -114,71 +114,32 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   assert.equal(trab.valor(5, 13), true, 'el Pagado de las filas con datos no se toca');
 });
 
-test('Trabajos: la migración a la columna "Mes" no desalinea una hoja de la versión anterior', () => {
-  const e = entorno({});  // entorno() ya corre setup() una vez: Trabajos ya tiene "Mes" en su sitio (D=Matrícula, M=Pagado)
-  const trab = e.ss.getSheetByName('Trabajos');
-  const matriculaAntes = trab.valor(5, 4), pagadoAntes = trab.valor(5, 13);
-  assert.equal(matriculaAntes, '4321GHJ');
-  // Deshace la migración a mano para simular una hoja real todavía sin la columna "Mes" (Matrícula en la C, como antes)
-  const vieja = new Map();
-  trab.grid.forEach((v, k) => {
-    const [r, c] = k.split(',').map(Number);
-    if (c === 3) return;  // la columna "Mes" no existía
-    vieja.set(r + ',' + (c > 3 ? c - 1 : c), v);
-  });
-  trab.grid = vieja;
-  assert.equal(trab.valor(5, 3), matriculaAntes, 'hoja "vieja": Matrícula está en la C, sin columna Mes');
-
+test('repararFormulas conserva el año elegido en Abonos', () => {
+  const e = entorno({});
+  const ab = e.ss.getSheetByName('Abonos');
+  ab.put(1, 2, 2027);
   e.run('repararFormulas()');
-  assert.equal(trab.valor(4, 3), 'Mes', 'ahora la C es "Mes"');
-  assert.match(trab.cell(5, 3).f, /CHOOSE\(MONTH\(/);
-  assert.equal(trab.valor(5, 4), matriculaAntes, 'Matrícula se ha desplazado a la D con su valor intacto');
-  assert.equal(trab.valor(5, 13), pagadoAntes, 'Pagado se ha desplazado con su valor intacto');
-
-  // Repetir la reparación es idempotente: no vuelve a insertar otra columna de más
-  const anchoAntes = trab.getLastColumn();
-  e.run('repararFormulas()');
-  assert.equal(trab.getLastColumn(), anchoAntes, 'segunda reparación: no inserta otra columna');
-  assert.equal(trab.valor(5, 4), matriculaAntes, 'Matrícula sigue en la D');
+  assert.equal(ab.valor(1, 2), 2027);
 });
 
-test('Trabajos: el panel de resumen se migra desde una hoja de la versión anterior (cabecera en la fila 1) sin desalinear datos', () => {
-  const e = entorno({});  // entorno() ya corre setup() una vez: el panel ya está migrado
-  const trab = e.ss.getSheetByName('Trabajos');
-  const matriculaAntes = trab.valor(5, 4), facturaAntes = trab.valor(5, 11);
-  assert.equal(matriculaAntes, '4321GHJ');
-  // Deshace la migración del panel a mano: quita las filas 1-3 para simular una hoja real con la cabecera en la 1
-  const vieja = new Map();
-  trab.grid.forEach((v, k) => {
-    const [r, c] = k.split(',').map(Number);
-    if (r <= 3) return;  // filas del panel: no existían
-    vieja.set((r - 3) + ',' + c, v);
-  });
-  trab.grid = vieja;
-  assert.equal(trab.valor(1, 1), 'Nº trabajo', 'hoja "vieja": la cabecera real está en la fila 1');
-  assert.equal(trab.valor(2, 4), matriculaAntes);
-
-  e.run('repararFormulas()');
-  assert.equal(trab.valor(1, 1), 'Resumen (según filtro)', 'el panel ocupa ahora la fila 1');
-  assert.equal(trab.valor(4, 1), 'Nº trabajo', 'la cabecera real se ha desplazado a la fila 4');
-  assert.equal(trab.valor(5, 4), matriculaAntes, 'Matrícula conserva su valor tras el desplazamiento');
-  assert.equal(trab.valor(5, 11), facturaAntes, 'Factura conserva su valor tras el desplazamiento');
-  assert.match(trab.cell(3, 5).f, /SUMPRODUCT/, 'Morosos, en su sitio del panel');
-
-  // Repetir la reparación es idempotente: no vuelve a insertar filas de más
-  const altoAntes = trab.getLastRow();
-  e.run('repararFormulas()');
-  assert.equal(trab.getLastRow(), altoAntes, 'segunda reparación: no inserta más filas');
-  assert.equal(trab.valor(5, 4), matriculaAntes, 'Matrícula sigue en su sitio');
-});
-
-test('Trabajos: el panel nuevo (encima de la cabecera) limpia el panel lateral de la versión anterior', () => {
+test('repararFormulas sólo reescribe las fórmulas que han cambiado', () => {
   const e = entorno({});
   const trab = e.ss.getSheetByName('Trabajos');
-  // Simula lo que dejó la versión anterior: un panel a la derecha, en las columnas P en adelante
-  trab.put(2, 16, 'Resumen (según filtro)'); trab.put(3, 16, 'Trabajos'); trab.put(4, 20, '=SUMPRODUCT(1)');
+  const escritas = [];
+  e.ss.sheets.forEach(sh => {
+    const put = sh.put.bind(sh);
+    sh.put = (r, c, v) => { if (typeof v === 'string' && v.charAt(0) === '=') escritas.push(`${sh.name}!${r},${c}`); return put(r, c, v); };
+  });
+  const tablas = ['Albaranes!', 'Trabajos!', 'Piezas!', 'Líneas RM!'];
+  const enTablas = () => escritas.filter(x => tablas.some(t => x.startsWith(t)) && !x.startsWith('Trabajos!3,'));  // fila 3 = panel
   e.run('repararFormulas()');
-  for (let c = 16; c <= 21; c++) { assert.equal(trab.valor(2, c), '', `columna ${c}, fila 2`); assert.equal(trab.valor(4, c), '', `columna ${c}, fila 4`); }
+  assert.deepEqual(enTablas(), [], 'sin cambios: ninguna fórmula de las tablas se reescribe');
+  const buena = trab.cell(5, 12).f;
+  trab.put(5, 12, '=1');  // alguien ha pisado la fórmula de Beneficio
+  escritas.length = 0;
+  e.run('repararFormulas()');
+  assert.equal(trab.cell(5, 12).f, buena, 'la fórmula pisada se restaura');
+  assert.ok(enTablas().every(x => x.startsWith('Trabajos!') && x.endsWith(',12')), 'sólo se reescribe esa columna');
 });
 
 test('repararFormulas añade a Config las claves nuevas sin pisar los valores existentes', () => {
