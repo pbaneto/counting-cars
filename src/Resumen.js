@@ -26,7 +26,7 @@ function datosResumen_() {
 
 function montarResumen_() {
   const sh = hoja_(HOJA.RESUMEN), d = datosResumen_(), t = letras_(HOJA.TRAB);
-  limpiarProtecciones_(sh);
+  quitarProtecciones_(sh);
   sh.getCharts().forEach(c => sh.removeChart(c));
   sh.getRange('A1').setValue('Resumen').setFontSize(16).setFontWeight('bold');
   sh.getRange('C1').clearContent().clearFormat();  // sin textos de explicación en la hoja (borra el de versiones anteriores)
@@ -103,5 +103,4 @@ function montarResumen_() {
 
   [70, 120, 110, 120, 110, 120, 170, 140, 30, 140, 110, 140, 110].forEach((w, i) => sh.setColumnWidth(i + 1, w));
   sh.setFrozenRows(0);
-  cerrarProtecciones_();
 }

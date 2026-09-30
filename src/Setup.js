@@ -214,35 +214,23 @@ function colFmt_(sh, h, n, o, filaCab) {
   if (o.ancho) sh.setColumnWidth(c, o.ancho);
   if (o.validacion) r.setDataValidation(o.validacion);
   else if (o.gris) r.clearDataValidations();
-  if (o.gris) proteger_(r);
+  if (o.gris) soloFormulas_(r);
 }
 
 /**
- * Protecciones (avisos al editar columnas calculadas). Crear o quitar una protección es de las llamadas más lentas de
- * Sheets, así que no se rehacen todas cada vez: limpiarProtecciones_ apunta las que ya hay, proteger_ reutiliza la
- * del mismo rango si existe, y cerrarProtecciones_ quita sólo las que ya no hacen falta.
+ * Columnas automáticas: una validación que sólo admite fórmulas, así que escribir un valor a mano se rechaza (las
+ * escrituras del script no pasan por la validación). Antes eran protecciones con aviso, pero Sheets sacaba ese aviso
+ * también al cambiar el ancho de una columna, ordenar, etc.
  */
-let _prot = null;
-function limpiarProtecciones_(sh) {
-  cerrarProtecciones_();
-  const existentes = {};
-  sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(p => {
-    if (p.getDescription() !== PROTECCION) return;
-    const a1 = p.getRange().getA1Notation();
-    if (existentes[a1]) p.remove(); else existentes[a1] = p;  // duplicada de alguna versión anterior
-  });
-  _prot = { hoja: sh.getName(), existentes };
+function soloFormulas_(rango) {
+  const celda = colLetra_(rango.getColumn()) + rango.getRow();  // relativa: Sheets la ajusta en cada celda del rango
+  rango.setDataValidation(SpreadsheetApp.newDataValidation().requireFormulaSatisfied(`=ISFORMULA(${celda})`)
+    .setAllowInvalid(false).setHelpText('Columna automática: se rellena sola.').build());
 }
 
-function proteger_(rango) {
-  const a1 = rango.getA1Notation();
-  if (_prot && _prot.hoja === rango.getSheet().getName() && _prot.existentes[a1]) { delete _prot.existentes[a1]; return; }
-  rango.protect().setDescription(PROTECCION).setWarningOnly(true);
-}
-
-function cerrarProtecciones_() {
-  if (_prot) Object.keys(_prot.existentes).forEach(a1 => _prot.existentes[a1].remove());
-  _prot = null;
+/** Quita las protecciones con aviso que ponían versiones anteriores en las columnas automáticas. */
+function quitarProtecciones_(sh) {
+  sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(p => { if (p.getDescription() === PROTECCION) p.remove(); });
 }
 
 function regla_(sh, a1, formula, color) {
@@ -259,7 +247,7 @@ function matriculaValidacion_() {
 
 function formatoAlbaranes_() {
   const sh = hoja_(HOJA.ALB), n = ESQUEMA['Albaranes'].filasFormato, l = letras_(HOJA.ALB);
-  limpiarProtecciones_(sh);
+  quitarProtecciones_(sh);
   colFmt_(sh, 'Fecha escaneo', n, { fmt: FMT.fecha, ancho: 105 });
   colFmt_(sh, 'Fecha albarán', n, { fmt: FMT.fecha, ancho: 105 });
   colFmt_(sh, 'Mes', n, { gris: true, ancho: 70 });
@@ -281,12 +269,11 @@ function formatoAlbaranes_() {
     regla_(sh, R('Nota escaneo'), `=$${l['Nota escaneo']}2<>""`, COLORES.naranja),
     regla_(sh, R('Coche'), `=LEFT($${l['Coche']}2,1)="⚠"`, COLORES.naranja),
   ]);
-  cerrarProtecciones_();
 }
 
 function formatoTrabajos_() {
   const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB), fc = ESQUEMA['Trabajos'].filaCabecera;
-  limpiarProtecciones_(sh);
+  quitarProtecciones_(sh);
   const cf = (h, o) => colFmt_(sh, h, n, o, fc);
   cf('Nº trabajo', { ancho: 95 });
   cf('Fecha apertura', { fmt: FMT.fecha, ancho: 105 });
@@ -311,7 +298,6 @@ function formatoTrabajos_() {
     regla_(sh, R('Coche'), `=LEFT($${l['Coche']}${fc + 1},1)="⚠"`, COLORES.naranja),
   ]);
   panelResumenTrabajos_(sh, n, l, fc);
-  cerrarProtecciones_();
 }
 
 /**
@@ -340,12 +326,12 @@ function panelResumenTrabajos_(sh, n, l, fc) {
     .setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setHorizontalAlignment('center');
   cols.forEach(([, formula, fmt], i) => sh.getRange(3, 1 + i).setValue(loc_(formula)).setNumberFormat(fmt));
   sh.getRange(3, 1, 1, cols.length).setHorizontalAlignment('center').setBackground(COLORES.gris);
-  proteger_(sh.getRange(1, 1, 3, cols.length));
+  soloFormulas_(sh.getRange(3, 1, 1, cols.length));
 }
 
 function formatoPiezas_() {
   const sh = hoja_(HOJA.PIEZAS), n = ESQUEMA['Piezas'].filasFormato, l = letras_(HOJA.PIEZAS);
-  limpiarProtecciones_(sh);
+  quitarProtecciones_(sh);
   colFmt_(sh, 'Reembolso', n, { ancho: 85 });
   colFmt_(sh, 'Matrícula', n, { gris: true, ancho: 100 });
   colFmt_(sh, 'Nº albarán', n, { fmt: FMT.texto, ancho: 95 });
@@ -366,7 +352,6 @@ function formatoPiezas_() {
     regla_(sh, `A2:${ult}${n + 1}`, `=$${l['Reembolso']}2=TRUE`, COLORES.amarillo),
     regla_(sh, `${l['Avisos']}2:${l['Avisos']}${n + 1}`, `=$${l['Avisos']}2<>""`, COLORES.naranja),
   ]);
-  cerrarProtecciones_();
 }
 
 function formatoCoches_() {
@@ -388,7 +373,7 @@ function formatoFacturas_() {
 
 function formatoLineas_() {
   const sh = hoja_(HOJA.LINEAS), n = ESQUEMA['Líneas RM'].filasFormato, l = letras_(HOJA.LINEAS);
-  limpiarProtecciones_(sh);
+  quitarProtecciones_(sh);
   colFmt_(sh, 'Nº albarán', n, { fmt: FMT.texto, ancho: 95 });
   colFmt_(sh, 'Fecha albarán', n, { fmt: FMT.fecha, ancho: 105 });
   colFmt_(sh, 'Albarán origen', n, { fmt: FMT.texto, ancho: 105 });
@@ -401,7 +386,6 @@ function formatoLineas_() {
     regla_(sh, `${l['Conciliación']}2:${l['Conciliación']}${n + 1}`, `=LEFT($${l['Conciliación']}2,1)="⚠"`, COLORES.naranja),
     regla_(sh, `A2:${ultCol}${n + 1}`, `=$${l['Tipo']}2="Abono"`, COLORES.amarillo),  // fila entera de las líneas de abono
   ]);
-  cerrarProtecciones_();
 }
 
 function formatoRegistro_() {
@@ -422,7 +406,7 @@ function montarAbonos_() {
   const anio = sh.getRange(ABONOS.celdaAnio).getValue(), maxRows = sh.getMaxRows(), ultFila = sh.getLastRow();
   // La tabla crece hacia abajo al insertar filas nuevas arriba: los rangos cubren como mínimo hasta la última fila con datos.
   const cab = ABONOS.cabResumen, ini = ABONOS.filaIni, tb = ABONOS.filaTabla, fin = Math.max(tb + ABONOS.maxTabla - 1, ultFila);
-  limpiarProtecciones_(sh);
+  quitarProtecciones_(sh);
   if (maxRows < fin) sh.insertRowsAfter(maxRows, fin - maxRows);
   // Limpia la zona de resumen+panel (filas 1..27) antes de reescribirla: si una versión anterior tenía más o menos
   // columnas, no se queda una cabecera, fórmula o validación fantasma en una columna que ya no se reescribe.
@@ -456,7 +440,7 @@ function montarAbonos_() {
   sh.getRange(ini, 2, ABONOS.filas, 1).setHorizontalAlignment('center');
   sh.getRange(ini, 3, ABONOS.filas, 4).setNumberFormat(FMT.euro).setBackground(COLORES.gris);
   sh.getRange(ini, 6, ABONOS.filas, 1).setBackground(COLORES.gris);
-  proteger_(sh.getRange(ini, 1, ABONOS.filas, cab.length));
+  soloFormulas_(sh.getRange(ini, 3, ABONOS.filas, cab.length - 2));  // Recambios … Diferencia (A y B son mes y quincena)
 
   // ---- Panel "Pendientes de RM": piezas 'Sin abonar' de toda la tabla, no atadas a la quincena en que se pidieron ----
   // El umbral se copia a una celda de ESTA pestaña (UMBRAL_): una regla de formato condicional no puede leer Config.
@@ -487,8 +471,6 @@ function montarAbonos_() {
   sh.getRange(tb, 9, n, 1).setNumberFormat(FMT.fecha);
   sh.getRange(tb, 12, n, 1).setNumberFormat('0');
   [90, 80, 130, 130, 130, 150, 110, 110, 120, 110, 120, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
-  // Aviso al editar o borrar la cabecera: si desaparece, la tabla se desplaza (ver recolocarTablaAbonos_).
-  proteger_(sh.getRange(ABONOS.filaCabTabla, 1, 1, ct.length));
   sh.hideColumns(ct.length);  // "Clave": une cada fila con su pieza / línea de abono; no se toca a mano
   // Filtro que incluye la columna oculta: ordenar con él mueve la clave junto con su fila.
   if (!sh.getFilter()) sh.getRange(ABONOS.filaCabTabla, 1, fin - ABONOS.filaCabTabla + 1, ct.length).createFilter();
@@ -503,7 +485,6 @@ function montarAbonos_() {
     regla_(sh, `A${fcT}:L${fin}`, `=$E${fcT}="Sin abonar"`, COLORES.rojo),
     regla_(sh, `A${fcT}:L${fin}`, `=$E${fcT}="Sin solicitar"`, COLORES.amarillo),
   ]);
-  cerrarProtecciones_();
 }
 
 function instalarTriggers_() {
