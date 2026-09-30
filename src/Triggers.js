@@ -5,7 +5,6 @@ function alAbrir() {
     .addItem('Procesar albaranes (carpeta Entrada)', 'procesarAlbaranes')
     .addItem('Procesar facturas RM', 'procesarFacturasRM')
     .addItem('Actualizar Abonos', 'actualizarAbonos')
-    .addItem('Recuperar estados de Abonos (historial)', 'recuperarEstadosAbonos')
     .addSeparator()
     .addItem('Diagnóstico (buscar problemas)', 'diagnostico')
     .addItem('Reparar fórmulas y formato', 'repararFormulas')

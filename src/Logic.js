@@ -300,31 +300,6 @@ function clavesDeFilasAntiguas(filas, marcadas, abonos) {
 }
 
 /**
- * Recuperación de estados desde el historial: qué Estado de una versión antigua de Abonos se copia a la tabla actual.
- *  viejas: [{clave, estado}] filas de la versión antigua con su clave (ver clavesDeFilasAntiguas)
- *  actuales: [{clave, estado}] filas de ahora, en orden de la tabla
- * Sólo se cambia una fila que ahora sigue en un estado automático ("Sin solicitar" / "Sin abonar"): lo que ya se haya
- * cambiado a mano después no se pisa. Devuelve [{i, clave, antes, ahora, accion: 'cambiar'|'igual'|'no automático'|'no está'}].
- */
-function planRecuperacion(viejas, actuales) {
-  const filaDe = {};
-  actuales.forEach((f, i) => partirClaves(f.clave).forEach(k => { if (!(k in filaDe)) filaDe[k] = i; }));
-  const hechas = new Set();
-  return viejas.filter(v => v.clave && ESTADOS_ABONO_.indexOf(v.estado) >= 0).map(v => {
-    const i = partirClaves(v.clave).map(k => filaDe[k]).find(x => x !== undefined);
-    if (i === undefined) return { i: -1, clave: v.clave, antes: v.estado, ahora: '', accion: 'no está' };
-    const ahora = actuales[i].estado;
-    let accion = 'cambiar';
-    if (ahora === v.estado) accion = 'igual';
-    else if (ahora !== 'Sin solicitar' && ahora !== 'Sin abonar') accion = 'no automático';
-    else if (hechas.has(i)) accion = 'igual';
-    if (accion === 'cambiar') hechas.add(i);
-    return { i, clave: v.clave, antes: v.estado, ahora, accion };
-  });
-}
-const ESTADOS_ABONO_ = ['Abonada', 'Sin abonar', 'Sin solicitar'];
-
-/**
  * Segundo escaneo de un albarán que ya existe: decide qué piezas marcar como reembolso.
  * existentes: [{ref, desc, reembolso}]  lineas: líneas de Gemini (con .reembolso)
  * Devuelve { marcar: [índices en existentes], añadir: [líneas nuevas], yaMarcadas: n }
@@ -411,5 +386,5 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran,
-    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, planRecuperacion, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
+    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
 }
