@@ -89,6 +89,7 @@ const ABONOS = {
     'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente', 'Clave'],  // Clave: columna oculta (ver clavesPiezas en Logic.js)
 };
 
+const TITULO_TABLA_ABONOS = 'Piezas reembolsadas y abonos de RM — lo nuevo se añade arriba (Piezas ▸ Reembolso ✓ y facturas RM). Se puede editar; borrar la fila de una pieza la desmarca en Piezas.';
 const ESTADOS_ABONO = ['Abonada', 'Sin abonar', 'Sin solicitar'];
 const COLORES = {
   cabecera: '#1f3a5f', gris: '#efefef', rojo: '#f4cccc', verde: '#d9ead3', amarillo: '#fff2cc', naranja: '#fce5cd', azul: '#cfe2f3',

@@ -416,6 +416,7 @@ function formatoRegistro_() {
 
 /** Resumen por quincena (arriba) + panel "Pendientes de RM" + tabla grande de piezas reembolsadas y abonos (debajo). */
 function montarAbonos_() {
+  recolocarTablaAbonos_();  // antes de escribir en las filas fijas: si la tabla se ha desplazado, se pisarían datos
   const sh = hoja_(HOJA.ABONOS), a = letras_(HOJA.ALB), f = letras_(HOJA.FACT);
   // Lecturas antes de escribir nada. El año (B1) está dentro de la zona que se limpia: hay que guardarlo antes.
   const anio = sh.getRange(ABONOS.celdaAnio).getValue(), maxRows = sh.getMaxRows(), ultFila = sh.getLastRow();
@@ -476,7 +477,7 @@ function montarAbonos_() {
   sh.getRange(2, pv, 5, 1).setHorizontalAlignment('center');
   sh.setColumnWidth(pc, 170); sh.setColumnWidth(pv, 90);
 
-  sh.getRange(ABONOS.filaTitulo, 1).setValue('Piezas reembolsadas y abonos de RM — lo nuevo se añade arriba (Piezas ▸ Reembolso ✓ y facturas RM). Se puede editar; borrar la fila de una pieza la desmarca en Piezas.').setFontWeight('bold').setFontSize(11);
+  sh.getRange(ABONOS.filaTitulo, 1).setValue(TITULO_TABLA_ABONOS).setFontWeight('bold').setFontSize(11);
   const ct = ABONOS.cabTabla;
   sh.getRange(ABONOS.filaCabTabla, 1, 1, ct.length).setValues([ct]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   const n = fin - tb + 1;
@@ -487,6 +488,8 @@ function montarAbonos_() {
   sh.getRange(tb, 9, n, 1).setNumberFormat(FMT.fecha);
   sh.getRange(tb, 12, n, 1).setNumberFormat('0');
   [90, 80, 130, 130, 130, 150, 110, 110, 120, 110, 120, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  // Aviso al editar o borrar el título y la cabecera: si desaparecen, la tabla se desplaza (ver recolocarTablaAbonos_).
+  proteger_(sh.getRange(ABONOS.filaTitulo, 1, ABONOS.filaCabTabla - ABONOS.filaTitulo + 1, ct.length));
   sh.hideColumns(ct.length);  // "Clave": une cada fila con su pieza / línea de abono; no se toca a mano
   // Filtro que incluye la columna oculta: ordenar con él mueve la clave junto con su fila.
   if (!sh.getFilter()) sh.getRange(ABONOS.filaCabTabla, 1, fin - ABONOS.filaCabTabla + 1, ct.length).createFilter();

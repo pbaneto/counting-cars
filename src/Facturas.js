@@ -44,9 +44,10 @@ function registrarFactura_(archivo, doc, truncado) {
   }
   // Los bloques de abono traen "MATRICULA:" vacía: se pone la del albarán original (de esta factura, de otra ya
   // procesada o de la pestaña Albaranes). Si el original tampoco la tiene, se queda vacía.
+  // Sólo valores que sean matrícula: en ese campo RM a veces pone un bastidor (ZFA2300000) o una referencia.
   const matriculaDe = mapaMatriculas(doc.albaranes.filter(a => !a.es_abono).map(a => [a.numero_albaran, a.matricula])
     .concat(tabL.filas.filter(f => f.v['Tipo'] === 'Compra').map(f => [f.v['Nº albarán'], f.v['Matrícula']]))
-    .concat(leerTabla_(HOJA.ALB).filas.map(f => [f.v['Nº albarán'], f.v['Matrícula']])));
+    .concat(leerTabla_(HOJA.ALB).filas.map(f => [f.v['Nº albarán'], f.v['Matrícula']])), validadorMatricula_(matriculasConocidas_()));
   const filas = [];
   doc.albaranes.forEach(a => {
     const tipo = a.es_abono ? 'Abono' : 'Compra';

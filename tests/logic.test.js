@@ -202,8 +202,24 @@ test('mapaMatriculas y sincronizarAbonos: rellena sólo las matrículas vacías'
   const m = L.mapaMatriculas([['100', ''], ['100', '1234 abc'], ['100', '9999ZZZ'], ['', 'X']]);
   assert.deepEqual(m, { 100: '1234ABC' });
   const existentes = [{ clave: 'x', albaran: '100', matricula: '' }, { clave: 'y', albaran: '100', matricula: 'A MANO' }, { clave: 'z', albaran: '200', matricula: '' }];
-  const r = L.sincronizarAbonos(existentes, [], [], [], new Set(), [], m);
+  const r = L.sincronizarAbonos(existentes, [], [], [], new Set(), [], { matriculas: m });
   assert.deepEqual(r.cambios, [{ i: 0, v: { matricula: '1234ABC' } }]);
+  // Un valor del campo MATRICULA que no es matrícula (lo copió una versión anterior) se cambia o se vacía
+  const r2 = L.sincronizarAbonos([{ clave: 'a', albaran: '100', matricula: 'ZFA2300000' }, { clave: 'b', albaran: '300', matricula: 'ZFA2300000' }],
+    [], [], [], new Set(), [], { matriculas: m, basura: { 100: 'ZFA2300000', 300: 'ZFA2300000' } });
+  assert.deepEqual(r2.cambios, [{ i: 0, v: { matricula: '1234ABC' } }, { i: 1, v: { matricula: '' } }]);
+});
+
+test('planRecuperacion: sólo devuelve el estado viejo a filas que siguen en estado automático', () => {
+  const viejas = [{ clave: 'A|F|1|X|1', estado: 'Abonada' }, { clave: 'A|F|2|Y|1', estado: 'Abonada' }, { clave: 'A|F|3|Z|1', estado: 'Sin solicitar' },
+    { clave: 'A|F|4|W|1', estado: 'Abonada' }, { clave: '', estado: 'Abonada' }];
+  const actuales = [{ clave: 'A|F|1|X|1', estado: 'Sin solicitar' }, { clave: 'P|2|Y|1;A|F|2|Y|1', estado: 'Sin abonar' }, { clave: 'A|F|3|Z|1', estado: 'Abonada' }];
+  assert.deepEqual(L.planRecuperacion(viejas, actuales).map(x => [x.i, x.accion]), [[0, 'cambiar'], [1, 'cambiar'], [2, 'no automático'], [-1, 'no está']]);
+});
+
+test('pareceMatricula: formatos españoles sí; bastidores, referencias y texto no', () => {
+  for (const p of ['1234BCD', '1234 bcd', 'M1234AB', 'B1234C', 'E1234BCD', 'R1234BBB']) assert.ok(L.pareceMatricula(p), p);
+  for (const p of ['ZFA2300000', '10063', '105627', 'ACEITE', '', '123ABC']) assert.ok(!L.pareceMatricula(p), p);
 });
 
 test('sincronizarAbonos empareja por importe si la referencia no coincide', () => {

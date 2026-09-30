@@ -34,10 +34,19 @@ function albaranOrigen(s) {
  * {nº albarán: matrícula} a partir de pares [albarán, matrícula] en orden de prioridad (gana el primero que la tenga).
  * Sirve para los abonos de RM: su bloque en la factura trae la matrícula vacía, pero su albarán original sí la tiene.
  */
-function mapaMatriculas(pares) {
+function mapaMatriculas(pares, valida) {
   const m = {};
-  pares.forEach(([a, p]) => { const k = normAlbaran(a), v = normPlate(p); if (k && v && !m[k]) m[k] = v; });
+  pares.forEach(([a, p]) => { const k = normAlbaran(a), v = normPlate(p); if (k && v && !m[k] && (!valida || valida(v))) m[k] = v; });
   return m;
+}
+
+/**
+ * ¿Parece una matrícula española? Actual (1234BCD), provincial antigua (M1234AB, B1234C) o especial (E/H/R/C/P/T/V
+ * + 1234BCD). En el campo MATRICULA de RM a veces hay otra cosa (ZFA2300000 = bastidor, 10063 = referencia, ACEITE).
+ */
+function pareceMatricula(p) {
+  const s = normPlate(p);
+  return /^\d{4}[A-Z]{3}$/.test(s) || /^[A-Z]{1,2}\d{4}[A-Z]{1,2}$/.test(s) || /^[EHRCPTV]\d{4}[A-Z]{3}$/.test(s);
 }
 
 /** Clave para comparar referencias de pieza. */
@@ -204,10 +213,13 @@ function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x =>
  *  marcadas / todasPiezas: {clave, albaran, ref, desc, sinIva, fechaReembolso, matricula}
  *  abonos: {clave, factura, fecha, albaranOrigen, ref, desc, importe, matricula}
  *  vistas: Set de claves A añadidas alguna vez (una fila de abono borrada a mano no vuelve a aparecer)
- *  matriculas: {nº albarán: matrícula} para rellenar la Matrícula de las filas que la tengan vacía
+ *  opts.matriculas: {nº albarán: matrícula} para rellenar la Matrícula de las filas que la tengan vacía
+ *  opts.basura: {nº albarán: valor del campo MATRICULA de la factura que NO es una matrícula}: si una fila tiene justo
+ *    ese valor (lo puso una versión anterior), se cambia por la matrícula buena o se vacía
  * Devuelve { nuevas (en el orden en que van arriba: la más reciente primero), cambios: [{i, v}], borrar: [i], registrar: [claves A] }.
  */
-function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, quitar, matriculas) {
+function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, quitar, opts) {
+  const matriculas = (opts && opts.matriculas) || {}, basura = (opts && opts.basura) || {};
   quitar = new Set(quitar || []);
   const borrar = [], enTabla = new Set(), cambios = {};
   existentes.forEach((f, i) => {
@@ -266,8 +278,10 @@ function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, qu
   });
   // Matrícula vacía en una fila existente: se rellena con la de su albarán (hueco, no pisa nada escrito).
   existentes.forEach((f, i) => {
-    const m = (matriculas || {})[normAlbaran(f.albaran)];
-    if (borrar.indexOf(i) < 0 && m && !String(f.matricula == null ? '' : f.matricula).trim()) cambios[i] = Object.assign(cambios[i] || {}, { matricula: m });
+    if (borrar.indexOf(i) >= 0) return;
+    const alb = normAlbaran(f.albaran), m = matriculas[alb] || '', actual = normPlate(f.matricula);
+    const mala = actual && basura[alb] && actual === basura[alb];
+    if ((!actual && m) || (mala && m !== actual)) cambios[i] = Object.assign(cambios[i] || {}, { matricula: m });
   });
   const fecha = f => f.fechaAbono || f.fechaSolicitud || '';
   const orden = nuevas.map((f, i) => ({ f, i })).sort((x, y) => fecha(y.f).localeCompare(fecha(x.f)) || x.i - y.i).map(x => x.f);
@@ -295,6 +309,31 @@ function clavesDeFilasAntiguas(filas, marcadas, abonos) {
     return ks.join(';');
   });
 }
+
+/**
+ * Recuperación de estados desde el historial: qué Estado de una versión antigua de Abonos se copia a la tabla actual.
+ *  viejas: [{clave, estado}] filas de la versión antigua con su clave (ver clavesDeFilasAntiguas)
+ *  actuales: [{clave, estado}] filas de ahora, en orden de la tabla
+ * Sólo se cambia una fila que ahora sigue en un estado automático ("Sin solicitar" / "Sin abonar"): lo que ya se haya
+ * cambiado a mano después no se pisa. Devuelve [{i, clave, antes, ahora, accion: 'cambiar'|'igual'|'no automático'|'no está'}].
+ */
+function planRecuperacion(viejas, actuales) {
+  const filaDe = {};
+  actuales.forEach((f, i) => partirClaves(f.clave).forEach(k => { if (!(k in filaDe)) filaDe[k] = i; }));
+  const hechas = new Set();
+  return viejas.filter(v => v.clave && ESTADOS_ABONO_.indexOf(v.estado) >= 0).map(v => {
+    const i = partirClaves(v.clave).map(k => filaDe[k]).find(x => x !== undefined);
+    if (i === undefined) return { i: -1, clave: v.clave, antes: v.estado, ahora: '', accion: 'no está' };
+    const ahora = actuales[i].estado;
+    let accion = 'cambiar';
+    if (ahora === v.estado) accion = 'igual';
+    else if (ahora !== 'Sin solicitar' && ahora !== 'Sin abonar') accion = 'no automático';
+    else if (hechas.has(i)) accion = 'igual';
+    if (accion === 'cambiar') hechas.add(i);
+    return { i, clave: v.clave, antes: v.estado, ahora, accion };
+  });
+}
+const ESTADOS_ABONO_ = ['Abonada', 'Sin abonar', 'Sin solicitar'];
 
 /**
  * Segundo escaneo de un albarán que ya existe: decide qué piezas marcar como reembolso.
@@ -381,7 +420,7 @@ function usaPuntoYComa(locale) {
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 if (typeof module !== 'undefined') {
-  module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
+  module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, pareceMatricula, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran,
-    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
+    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, planRecuperacion, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
 }
