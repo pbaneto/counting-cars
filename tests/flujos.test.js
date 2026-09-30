@@ -365,6 +365,10 @@ test('factura RM: guarda líneas, detecta abonos (Abonada / Sin solicitar) y avi
   const estados = Array.from([31, 32].map(r => ab.valor(r, 5))).sort();
   assert.equal(ab.valor(33, 5), '');
   assert.deepEqual(estados, ['Abonada', 'Sin solicitar']);
+  // El bloque de abono trae la matrícula vacía: se toma la del albarán original (compra 443645 de la misma factura)
+  const lineaAbono = tabla(e, 'Líneas RM').find(x => x['Tipo'] === 'Abono' && x['Referencia'] === 'VARTAA8');
+  assert.equal(lineaAbono['Matrícula'], '5678DEF');
+  assert.equal([31, 32].map(r => ab.valor(r, 8)).filter(Boolean).join(), '5678DEF', 'y llega a Abonos; la del 439139 (no está en ninguna parte) queda vacía');
   assert.equal(e.carpetas.FRAP.ficheros.length, 1);
   // Reprocesar la misma factura no duplica líneas
   subir(e, ['fra.pdf'], 'FRA');
@@ -434,6 +438,11 @@ test('Abonos editable: el abono de la factura completa la fila de su pieza; una 
   assert.ok(esFecha(ab.valor(32, 1)), 'fecha del abono');
   assert.equal(ab.valor(32, 11), 'pedido por teléfono');
   assert.equal(ab.valor(33, 5), '');
+  // Matrícula vacía en una fila ya existente: se rellena al sincronizar (sin pisar una escrita a mano)
+  ab.put(32, 8, ''); ab.put(31, 8, 'A MANO');
+  e.run('actualizarAbonos()');
+  assert.equal(ab.valor(32, 8), '5678DEF');
+  assert.equal(ab.valor(31, 8), 'A MANO');
   // Se borra a mano la fila "Sin solicitar" y se reprocesa la factura: no vuelve y Piezas no cambia
   ab.deleteRow(31);
   e.ss.getActiveSheet = () => ab;

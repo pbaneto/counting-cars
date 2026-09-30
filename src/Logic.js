@@ -30,6 +30,16 @@ function albaranOrigen(s) {
   return d.length > 6 && d.indexOf('01000') === 0 ? d.slice(5) : d;
 }
 
+/**
+ * {nº albarán: matrícula} a partir de pares [albarán, matrícula] en orden de prioridad (gana el primero que la tenga).
+ * Sirve para los abonos de RM: su bloque en la factura trae la matrícula vacía, pero su albarán original sí la tiene.
+ */
+function mapaMatriculas(pares) {
+  const m = {};
+  pares.forEach(([a, p]) => { const k = normAlbaran(a), v = normPlate(p); if (k && v && !m[k]) m[k] = v; });
+  return m;
+}
+
 /** Clave para comparar referencias de pieza. */
 function refKey(s) { return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
@@ -194,9 +204,10 @@ function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x =>
  *  marcadas / todasPiezas: {clave, albaran, ref, desc, sinIva, fechaReembolso, matricula}
  *  abonos: {clave, factura, fecha, albaranOrigen, ref, desc, importe, matricula}
  *  vistas: Set de claves A añadidas alguna vez (una fila de abono borrada a mano no vuelve a aparecer)
+ *  matriculas: {nº albarán: matrícula} para rellenar la Matrícula de las filas que la tengan vacía
  * Devuelve { nuevas (en el orden en que van arriba: la más reciente primero), cambios: [{i, v}], borrar: [i], registrar: [claves A] }.
  */
-function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, quitar) {
+function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, quitar, matriculas) {
   quitar = new Set(quitar || []);
   const borrar = [], enTabla = new Set(), cambios = {};
   existentes.forEach((f, i) => {
@@ -252,6 +263,11 @@ function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, qu
     nuevas.push({ clave: a.clave, fechaAbono: a.fecha, descripcion: a.desc, sinIva: sin, estado: 'Sin solicitar', albaran: a.albaranOrigen,
       referencia: a.ref || '', matricula: a.matricula || '', fechaSolicitud: '', factura: a.factura,
       nota: existe ? 'La pieza existe en Piezas pero no tiene Reembolso marcado' : '' });
+  });
+  // Matrícula vacía en una fila existente: se rellena con la de su albarán (hueco, no pisa nada escrito).
+  existentes.forEach((f, i) => {
+    const m = (matriculas || {})[normAlbaran(f.albaran)];
+    if (borrar.indexOf(i) < 0 && m && !String(f.matricula == null ? '' : f.matricula).trim()) cambios[i] = Object.assign(cambios[i] || {}, { matricula: m });
   });
   const fecha = f => f.fechaAbono || f.fechaSolicitud || '';
   const orden = nuevas.map((f, i) => ({ f, i })).sort((x, y) => fecha(y.f).localeCompare(fecha(x.f)) || x.i - y.i).map(x => x.f);
@@ -365,7 +381,7 @@ function usaPuntoYComa(locale) {
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 if (typeof module !== 'undefined') {
-  module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, refKey, jobPrefix, nextJobNumber,
+  module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran,
     validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
 }

@@ -46,12 +46,10 @@ function leerParaAbonos_(tabP, crono) {
  * Piezas de RM (las de proveedor "Otros" no se reclaman) con su clave P. La numeración de la clave cuenta TODAS las
  * piezas, marcadas o no, para que no cambie al marcar o desmarcar otra pieza del mismo albarán y referencia.
  */
-function piezasParaAbonos_(tabP, tabA) {
-  const plateDe = {}, proveedorDe = {};
-  tabA.filas.forEach(f => {
-    const n = normAlbaran(f.v['Nº albarán']);
-    if (n) { plateDe[n] = f.v['Matrícula']; proveedorDe[n] = f.v['Proveedor']; }
-  });
+function piezasParaAbonos_(tabP, tabA, tabL) {
+  const proveedorDe = {};
+  tabA.filas.forEach(f => { const n = normAlbaran(f.v['Nº albarán']); if (n) proveedorDe[n] = f.v['Proveedor']; });
+  const plateDe = matriculasDeAlbaranes_(tabA, tabL);
   const todas = [];
   tabP.filas.forEach(p => {
     const alb = normAlbaran(p.v['Nº albarán']);
@@ -63,6 +61,16 @@ function piezasParaAbonos_(tabP, tabA) {
 }
 
 /**
+ * {nº albarán: matrícula}: primero la pestaña Albaranes (la que se corrige a mano), después las líneas de compra de las
+ * facturas RM, que traen la matrícula de TODOS los albaranes aunque no se hayan escaneado.
+ */
+function matriculasDeAlbaranes_(tabA, tabL) {
+  const pares = tabA.filas.map(f => [f.v['Nº albarán'], f.v['Matrícula']]);
+  if (tabL) tabL.filas.forEach(f => { if (f.v['Tipo'] === 'Compra') pares.push([f.v['Nº albarán'], f.v['Matrícula']]); });
+  return mapaMatriculas(pares);
+}
+
+/**
  * Aplica a la tabla de Abonos lo leído en leerParaAbonos_. No lee nada de la hoja.
  * filasDesmarcadas: filas de Piezas a las que se acaba de quitar el Reembolso (su fila de Abonos se borra).
  */
@@ -70,7 +78,7 @@ function escribirAbonos_(d, filasDesmarcadas) {
   const crono = cronometro_('escribirAbonos_');
   const { tabP, tabL, tabA, sh } = d;
   const hoy = hoyISO_(), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
-  const { todas, plateDe } = piezasParaAbonos_(tabP, tabA);
+  const { todas, plateDe } = piezasParaAbonos_(tabP, tabA, tabL);
   const marcadas = todas.filter(p => p.marcada);
   let fechasEscritas = 0;
   marcadas.forEach(p => {
@@ -81,12 +89,14 @@ function escribirAbonos_(d, filasDesmarcadas) {
 
   const abonos = clavesAbonos(tabL.filas.filter(f => f.v['Tipo'] === 'Abono').map(f => ({
     factura: f.v['Nº factura'], fecha: aISO_(f.v['Fecha albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']),
-    ref: f.v['Referencia'], desc: f.v['Descripción'], importe: parseNumber(f.v['Importe sin IVA']), matricula: plateDe[albaranOrigen(f.v['Albarán origen'])] || '',
+    ref: f.v['Referencia'], desc: f.v['Descripción'], importe: parseNumber(f.v['Importe sin IVA']),
+    // El bloque de abono de la factura trae la matrícula vacía: la buena es la de su albarán original.
+    matricula: plateDe[albaranOrigen(f.v['Albarán origen'])] || normPlate(f.v['Matrícula']),
   })));
   if (d.migrar) { migrarAbonos_(d, marcadas, abonos); crono.paso('migrar a tabla editable'); }
 
-  const existentes = d.tabla.map(r => ({ clave: r[12], fechaAbono: r[0], descripcion: r[1], sinIva: r[2], estado: r[4], albaran: r[5], ref: r[6], factura: r[9], nota: r[10] }));
-  const res = sincronizarAbonos(existentes, marcadas, todas, abonos, d.vistas, quitar);
+  const existentes = d.tabla.map(r => ({ clave: r[12], fechaAbono: r[0], descripcion: r[1], sinIva: r[2], estado: r[4], albaran: r[5], ref: r[6], matricula: r[7], factura: r[9], nota: r[10] }));
+  const res = sincronizarAbonos(existentes, marcadas, todas, abonos, d.vistas, quitar, plateDe);
   crono.paso(`cruce (${abonos.length} abonos)`);
 
   // 1) Celdas vacías de filas existentes (antes de borrar o insertar: los índices aún valen).
@@ -156,7 +166,7 @@ function desmarcarPiezasBorradas_() {
   const enTabla = new Set();
   if (ult >= tb) sh.getRange(tb, ncol, ult - tb + 1, 1).getValues().forEach(r => partirClaves(r[0]).forEach(k => enTabla.add(k)));
   const tabP = leerTabla_(HOJA.PIEZAS);
-  const { todas } = piezasParaAbonos_(tabP, leerTabla_(HOJA.ALB));
+  const { todas } = piezasParaAbonos_(tabP, leerTabla_(HOJA.ALB), null);
   const quitar = todas.filter(p => p.marcada && !enTabla.has(p.clave));
   quitar.forEach(p => actualizarFila_(tabP, p.fila, { 'Reembolso': false, 'Fecha reembolso': '' }));
   if (quitar.length) {

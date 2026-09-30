@@ -42,12 +42,18 @@ function registrarFactura_(archivo, doc, truncado) {
     vaciarTabla_(tabL);
     agregarFilas_(tabL, resto);
   }
+  // Los bloques de abono traen "MATRICULA:" vacía: se pone la del albarán original (de esta factura, de otra ya
+  // procesada o de la pestaña Albaranes). Si el original tampoco la tiene, se queda vacía.
+  const matriculaDe = mapaMatriculas(doc.albaranes.filter(a => !a.es_abono).map(a => [a.numero_albaran, a.matricula])
+    .concat(tabL.filas.filter(f => f.v['Tipo'] === 'Compra').map(f => [f.v['Nº albarán'], f.v['Matrícula']]))
+    .concat(leerTabla_(HOJA.ALB).filas.map(f => [f.v['Nº albarán'], f.v['Matrícula']])));
   const filas = [];
   doc.albaranes.forEach(a => {
     const tipo = a.es_abono ? 'Abono' : 'Compra';
     const ls = a.lineas.length ? a.lineas : [{ referencia: '', descripcion: '(sin detalle de líneas)', importe: a.importe, albaran_origen: '' }];
     ls.forEach(l => filas.push({
-      'Nº factura': doc.numero_factura, 'Nº albarán': a.numero_albaran, 'Fecha albarán': aFecha_(a.fecha), 'Matrícula': a.matricula, 'Tipo': tipo,
+      'Nº factura': doc.numero_factura, 'Nº albarán': a.numero_albaran, 'Fecha albarán': aFecha_(a.fecha), 'Tipo': tipo,
+      'Matrícula': a.matricula || (tipo === 'Abono' ? matriculaDe[albaranOrigen(l.albaran_origen)] || '' : ''),
       'Albarán origen': tipo === 'Abono' ? l.albaran_origen : '', 'Referencia': l.referencia, 'Descripción': l.descripcion,
       'Cantidad': l.cantidad == null ? '' : l.cantidad, 'Precio': l.precio_unitario == null ? '' : l.precio_unitario,
       'Descuento': l.descuento_pct == null ? '' : l.descuento_pct / 100, 'Importe sin IVA': l.importe == null ? 0 : l.importe,

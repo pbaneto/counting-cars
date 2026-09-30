@@ -198,6 +198,14 @@ test('sincronizarAbonos: una fila de abono borrada no vuelve; una pieza desmarca
   assert.equal(r2.nuevas.length, 1, 'la otra pieza marcada, que faltaba, sí se añade');
 });
 
+test('mapaMatriculas y sincronizarAbonos: rellena sólo las matrículas vacías', () => {
+  const m = L.mapaMatriculas([['100', ''], ['100', '1234 abc'], ['100', '9999ZZZ'], ['', 'X']]);
+  assert.deepEqual(m, { 100: '1234ABC' });
+  const existentes = [{ clave: 'x', albaran: '100', matricula: '' }, { clave: 'y', albaran: '100', matricula: 'A MANO' }, { clave: 'z', albaran: '200', matricula: '' }];
+  const r = L.sincronizarAbonos(existentes, [], [], [], new Set(), [], m);
+  assert.deepEqual(r.cambios, [{ i: 0, v: { matricula: '1234ABC' } }]);
+});
+
 test('sincronizarAbonos empareja por importe si la referencia no coincide', () => {
   const p = L.clavesPiezas([{ albaran: '1', ref: 'ABC', desc: 'd', sinIva: 10, fechaReembolso: '2026-09-01' }]);
   const r = L.sincronizarAbonos([], p, p, L.clavesAbonos([{ factura: 'F', fecha: '2026-09-02', albaranOrigen: '1', ref: 'XYZ', desc: 'd', importe: -10 }]), new Set());
