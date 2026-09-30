@@ -79,6 +79,17 @@ class Hoja {
     this.maxRows += k;
     this.ss.io.escrito = true;
   }
+  /** Borra la fila r y sube todo lo de debajo, como Sheets. */
+  deleteRow(r) {
+    const nuevo = new Map();
+    this.grid.forEach((v, key) => {
+      const [row, col] = key.split(',').map(Number);
+      if (row !== r) nuevo.set((row > r ? row - 1 : row) + ',' + col, v);
+    });
+    this.grid = nuevo;
+    this.maxRows -= 1;
+    this.ss.io.escrito = true;
+  }
   /** Desplaza a la derecha, como Sheets, todo lo que esté en la columna c o a partir de ella. */
   insertColumnBefore(c) {
     const nuevo = new Map();
@@ -149,13 +160,13 @@ function crearEntorno(opts = {}) {
     console: { log: m => log.console.push(String(m)), warn: m => log.console.push(String(m)), error: m => log.console.push(String(m)) },
     Logger: { log: m => log.logger.push(m) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, flush() { io.escrito = false; }, newDataValidation: validacion, newConditionalFormatRule: reglaCF,
-      ProtectionType: { RANGE: 'RANGE' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
+      ProtectionType: { RANGE: 'RANGE' }, CopyPasteType: { PASTE_FORMAT: 'F', PASTE_DATA_VALIDATION: 'V' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
     DriveApp: { getFolderById: id => { if (!carpetas[id]) throw new Error('carpeta inexistente ' + id); return carpetas[id]; },
       getFileById: id => archivos[id], getRootFolder: () => carpetas.PADRE },
     UrlFetchApp: { fetchAll: reqs => reqs.map(r => { log.fetch.push(r); const x = opts.gemini(r); return { getResponseCode: () => x.code || 200, getContentText: () => x.body }; }) },
     Utilities: { formatDate: (d, tz, f) => { const s = new Intl.DateTimeFormat('sv-SE', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); return f === 'yyyy-MM-dd' ? s : s; },
       base64Encode: () => 'AAAA', sleep() {} },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = String(v); } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => 'test@example.com' }) },
     ScriptApp: { newTrigger: chain, getProjectTriggers: () => [], deleteTrigger() {} },

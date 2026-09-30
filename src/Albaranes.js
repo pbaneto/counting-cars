@@ -23,7 +23,7 @@ function procesarAlbaranes() {
         log_('ERROR', 'procesarAlbaranes', nombre, `${(e && e.stack) || e} (el PDF sigue en Entrada)`);
       }
     });
-    if (ctx.tocaAbonos) reconstruirAbonos_();
+    if (ctx.tocaAbonos) sincronizarAbonos_();
     const msg = `Albaranes nuevos: ${cuenta.creado}\nReembolsos marcados: ${cuenta.reembolso}\nDuplicados ignorados: ${cuenta.duplicado}\n` +
       `No legibles (carpeta Errores): ${cuenta.error}\nPendientes por fallo temporal: ${cuenta.pendiente}` +
       (cuenta.error + cuenta.pendiente ? '\n\nDetalle en la pestaña Registro.' : '');

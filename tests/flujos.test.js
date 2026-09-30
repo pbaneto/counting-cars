@@ -298,7 +298,7 @@ test('Matrícula en Albaranes: busca por cualquier combinación de letras o díg
   assert.ok(!e.log.toasts.some(t => t.includes('completada')), 'ya era exacta: no hay aviso de autocompletado');
 });
 
-test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; reconstruye Abonos', () => {
+test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; añade la fila a Abonos', () => {
   const e = entorno({});
   const p = e.ss.getSheetByName('Piezas');
   p.put(2, 1, true); p.put(2, 5, 'Pieza a mano'); p.put(2, 10, 50);
@@ -314,8 +314,8 @@ test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; re
   const linea = pre => e.log.console.find(l => l.startsWith(pre)) || '';
   assert.match(linea('⏱ alEditar (Piezas)'), /esperar bloqueo \d+ms, editar Piezas \d+ms \| total \d+ms/);
   assert.match(linea('⏱ editarPiezas_'), new RegExp('leer Piezas \\(1 de 1 filas\\).*leer fórmulas de 1 fila\\(s\\).*leer Líneas RM \\(0 de 0 filas\\).*' +
-    'leer Albaranes \\(3 de 3 filas\\).*leer tamaño de Abonos.*revisar 1 fila\\(s\\) editada\\(s\\).*reconstruir Abonos.*guardar cambios y recalcular \\d+ms'));
-  assert.match(linea('⏱ escribirAbonos_'), /preparar piezas \(1 marcadas.*cruce .*borrar .*escribir \(1 filas\).*Sin abonar 1/);
+    'leer Albaranes \\(3 de 3 filas\\).*leer Abonos \\(0 filas, 0 claves vistas\\).*revisar 1 fila\\(s\\) editada\\(s\\).*sincronizar Abonos.*guardar cambios y recalcular \\d+ms'));
+  assert.match(linea('⏱ escribirAbonos_'), /preparar piezas \(1 marcadas.*cruce .*escribir \(1 nuevas, 0 completadas, 0 borradas\).*Sin abonar 1/);
   assert.match(linea('■ alEditar'), /^■ alEditar: \d+ms \(escribir en Registro \d+ms\)$/);
   assert.equal(e.log.console.filter(l => /^\[INFO\] reconstruirAbonos/.test(l)).length, 0, 'el resumen ya no se escribe en Registro');
   assert.equal(p.valor(2, 1), true);
@@ -330,7 +330,7 @@ test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; re
   e.ctx.__p4 = p.getRange(3, 1); e.run('alEditar({ range: __p4 })');
   assert.equal(e.ss.getSheetByName('Abonos').valor(31, 6), '123456');
   assert.equal(e.ss.getSheetByName('Abonos').valor(32, 6), '', 'la pieza de "Otros" no entra en Abonos');
-  // desmarcar limpia la fecha y la fila de Abonos
+  // desmarcar limpia la fecha y borra su fila de Abonos
   p.put(2, 1, false);
   e.ctx.__p3 = p.getRange(2, 1); e.run('alEditar({ range: __p3 })');
   assert.equal(p.valor(2, 12), '');
@@ -371,6 +371,104 @@ test('factura RM: guarda líneas, detecta abonos (Abonada / Sin solicitar) y avi
   e.run('procesarFacturasRM()');
   assert.equal(tabla(e, 'Líneas RM').length, 4);
   assert.equal(tabla(e, 'Facturas RM').length, 1);
+});
+
+test('Abonos editable: lo nuevo va arriba y no pisa lo cambiado a mano; borrar una fila desmarca la pieza', () => {
+  const e = entorno({});
+  const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos');
+  const marcar = (fila, alb, ref, precio) => {
+    p.put(fila, 3, alb); p.put(fila, 4, ref); p.put(fila, 5, 'Pieza ' + ref); p.put(fila, 10, precio); p.put(fila, 1, true);
+    e.ctx.__r = p.getRange(fila, 1); e.run('alEditar({ range: __r })');
+  };
+  marcar(2, '100', 'AAA', 10);
+  marcar(3, '200', 'BBB', 20);
+  assert.equal(ab.valor(31, 7), 'BBB', 'la última pieza marcada va la primera');
+  assert.equal(ab.valor(32, 7), 'AAA');
+  assert.equal(ab.valor(31, 13), 'P|200|BBB|1', 'clave en la columna oculta');
+  assert.equal(ab.cell(31, 4).f, '=ROUND($C31*(1+IVA),2)');
+  // Cambios a mano: se respetan en la siguiente sincronización
+  ab.put(32, 5, 'Abonada'); ab.put(32, 11, 'Llamé a RM');
+  ab.put(33, 2, 'Fila escrita a mano'); ab.put(33, 5, 'Sin solicitar');
+  marcar(4, '300', 'CCC', 30);
+  assert.deepEqual([31, 32, 33, 34].map(r => ab.valor(r, 7)), ['CCC', 'BBB', 'AAA', '']);
+  assert.equal(ab.valor(33, 5), 'Abonada');
+  assert.equal(ab.valor(33, 11), 'Llamé a RM');
+  assert.equal(ab.valor(34, 2), 'Fila escrita a mano');
+  e.run('actualizarAbonos()');
+  assert.equal(ab.valor(35, 2), '', 'actualizar no duplica nada');
+
+  // Desmarcar en Piezas borra sólo su fila
+  p.put(3, 1, false); e.ctx.__r = p.getRange(3, 1); e.run('alEditar({ range: __r })');
+  assert.deepEqual([31, 32, 33].map(r => ab.valor(r, 7)), ['CCC', 'AAA', '']);
+  assert.equal(ab.valor(32, 5), 'Abonada', 'la fila cambiada a mano sigue igual');
+
+  // Vaciar una fila en Abonos (seleccionarla y Suprimir) = borrarla: se quita el hueco y se desmarca la pieza
+  for (let c = 1; c <= 13; c++) ab.put(31, c, '');
+  e.ctx.__a = ab.getRange(31, 1, 1, 13); e.run('alEditar({ range: __a })');
+  assert.equal(p.valor(4, 1), false, 'CCC desmarcada en Piezas');
+  assert.equal(p.valor(4, 12), '', 'y sin fecha de reembolso');
+  assert.equal(ab.valor(31, 7), 'AAA', 'sin hueco');
+
+  // Borrar la fila con "Eliminar fila" (trigger onChange)
+  ab.deleteRow(31);
+  e.ss.getActiveSheet = () => ab;
+  e.ctx.__e = { changeType: 'REMOVE_ROW', source: e.ss }; e.run('alCambiar(__e)');
+  assert.equal(p.valor(2, 1), false, 'AAA desmarcada en Piezas');
+  assert.equal(p.valor(3, 1), false);
+  assert.equal(ab.valor(31, 2), 'Fila escrita a mano', 'la fila manual no afecta a nada');
+});
+
+test('Abonos editable: el abono de la factura completa la fila de su pieza; una fila de abono borrada no vuelve', () => {
+  const e = entorno({ 'fra.pdf': facturaRaw(), 'fra2.pdf': facturaRaw() });
+  ['FRA', 'FRAP', 'ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
+  const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos');
+  p.put(2, 3, '443645'); p.put(2, 4, 'VARTAA8'); p.put(2, 5, 'A8 AGM'); p.put(2, 10, 130.10); p.put(2, 1, true);
+  e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
+  ab.put(31, 11, 'pedido por teléfono');
+  subir(e, ['fra.pdf'], 'FRA');
+  e.run('procesarFacturasRM()');
+  // Arriba el "Sin solicitar" nuevo; debajo, la fila de la pieza completada con el abono y su nota intacta
+  assert.equal(ab.valor(31, 5), 'Sin solicitar');
+  assert.equal(ab.valor(32, 5), 'Abonada');
+  assert.equal(ab.valor(32, 10), 'FCR 00001');
+  assert.ok(esFecha(ab.valor(32, 1)), 'fecha del abono');
+  assert.equal(ab.valor(32, 11), 'pedido por teléfono');
+  assert.equal(ab.valor(33, 5), '');
+  // Se borra a mano la fila "Sin solicitar" y se reprocesa la factura: no vuelve y Piezas no cambia
+  ab.deleteRow(31);
+  e.ss.getActiveSheet = () => ab;
+  e.ctx.__e = { changeType: 'REMOVE_ROW', source: e.ss }; e.run('alCambiar(__e)');
+  assert.equal(p.valor(2, 1), true, 'borrar una fila sin pieza no desmarca nada');
+  subir(e, ['fra2.pdf'], 'FRA');
+  e.run('procesarFacturasRM()');
+  assert.equal(ab.valor(31, 5), 'Abonada');
+  assert.equal(ab.valor(32, 5), '', 'la fila borrada no reaparece');
+});
+
+test('Abonos: migración de la tabla regenerada (versión anterior) a editable sin cambiar ningún valor', () => {
+  const e = entorno({});
+  const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos'), l = e.ss.getSheetByName('Líneas RM');
+  // Estado de una hoja de la versión anterior: sin claves y sin la marca de tabla editable
+  delete e.props.ABONOS_EDITABLE;
+  e.ss.getSheetByName('Abonos (claves)').clear();
+  p.put(2, 1, true); p.put(2, 3, '555'); p.put(2, 4, 'PPP'); p.put(2, 5, 'Pedida'); p.put(2, 10, 5); p.put(2, 12, e.run('new Date(2026, 8, 20)'));
+  const linea = (r, fra, ref, imp) => { l.put(r, 1, fra); l.put(r, 2, '9' + r); l.put(r, 3, e.run('new Date(2026, 6, 4)')); l.put(r, 5, 'Abono'); l.put(r, 6, '01000' + '444' + r); l.put(r, 7, ref); l.put(r, 8, 'D' + ref); l.put(r, 12, imp); };
+  linea(2, 'FCR 1', 'R1', -10); linea(3, 'FCR 1', 'R2', -20);
+  const vieja = [
+    [e.run('new Date(2026, 6, 4)'), 'DR1', 10, '=ROUND($C31*(1+IVA),2)', 'Sin solicitar', '4442', 'R1', '', '', 'FCR 1', '', '=IF(1,1,1)'],
+    [e.run('new Date(2026, 6, 4)'), 'DR2', 20, '=ROUND($C32*(1+IVA),2)', 'Sin solicitar', '4443', 'R2', '', '', 'FCR 1', '', '=IF(1,1,1)'],
+    ['', 'Pedida', 5, '=ROUND($C33*(1+IVA),2)', 'Sin abonar', '555', 'PPP', '', e.run('new Date(2026, 8, 20)'), '', '', '=IF(1,1,1)'],
+  ];
+  vieja.forEach((f, i) => f.forEach((v, j) => ab.put(31 + i, j + 1, v)));
+  e.run('repararFormulas()');
+  assert.deepEqual([31, 32, 33].map(r => ab.valor(r, 13)), ['A|FCR 1|4442|R1|1', 'A|FCR 1|4443|R2|1', 'P|555|PPP|1']);
+  vieja.forEach((f, i) => f.forEach((v, j) => { if (j !== 3 && j !== 11) assert.deepEqual(ab.valor(31 + i, j + 1), v, `fila ${31 + i} col ${j + 1}`); }));
+  assert.equal(e.props.ABONOS_EDITABLE, '1');
+  assert.ok(e.log.console.some(x => /Tabla editable: 3 filas con clave, 0 sin reconocer/.test(x)));
+  // Después, lo nuevo va arriba y lo antiguo sigue igual
+  p.put(3, 3, '666'); p.put(3, 4, 'NEW'); p.put(3, 5, 'Nueva'); p.put(3, 10, 1); p.put(3, 1, true);
+  e.ctx.__r = p.getRange(3, 1); e.run('alEditar({ range: __r })');
+  assert.deepEqual([31, 32, 33, 34, 35].map(r => ab.valor(r, 7)), ['NEW', 'R1', 'R2', 'PPP', '']);
 });
 
 test('diagnóstico lista problemas con enlaces', () => {

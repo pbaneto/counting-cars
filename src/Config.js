@@ -10,6 +10,7 @@ const TZ = 'Europe/Madrid';
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', COCHES: 'Coches', RESUMEN: 'Resumen',
   FACT: 'Facturas RM', LINEAS: 'Líneas RM', CONFIG: 'Config', REG: 'Registro', DIAG: 'Diagnóstico',
+  CLAVES: 'Abonos (claves)',  // oculta: claves de abonos de factura ya añadidos alguna vez a Abonos
 };
 
 const ESQUEMA = {
@@ -85,7 +86,7 @@ const ABONOS = {
   panelCol: 11, // K (etiqueta) / L (valor): panel "Pendientes de RM", no depende de la quincena en que se pidió el reembolso
   cabResumen: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso abonado', 'Total factura RM', 'Diferencia'],
   cabTabla: ['Fecha abono', 'Descripción pieza', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia', 'Matrícula',
-    'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente'],
+    'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente', 'Clave'],  // Clave: columna oculta (ver clavesPiezas en Logic.js)
 };
 
 const ESTADOS_ABONO = ['Abonada', 'Sin abonar', 'Sin solicitar'];

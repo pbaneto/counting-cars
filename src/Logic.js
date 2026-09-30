@@ -164,60 +164,120 @@ function periodoFactura(doc) {
 }
 
 /**
- * Construye las filas de la tabla grande de Abonos.
- *  piezas:      piezas de RM con Reembolso marcado  {albaran, ref, desc, sinIva, fechaReembolso, matricula}
- *  todasPiezas: todas las piezas RM (para avisar si un abono corresponde a una pieza sin marcar) {albaran, ref}
- *  abonos:      líneas de abono de facturas RM      {factura, fecha, albaranOrigen, ref, desc, importe (negativo o positivo), matricula}
- * Emparejado: mismo albarán + misma referencia; si no, mismo albarán + mismo importe.
+ * Claves de la tabla de Abonos: cada fila lleva en una columna oculta las claves de lo que la originó, separadas por ";".
+ *  P|albarán|referencia|n  pieza de Piezas con Reembolso ✓ (n = nº de orden entre las piezas con el mismo albarán y referencia)
+ *  A|factura|albarán origen|referencia|n  línea de abono de una factura RM
+ * Una fila que es a la vez pieza pedida y abono recibido lleva las dos.
  */
-function construirAbonos(piezas, todasPiezas, abonos, iva) {
-  iva = iva == null ? IVA_DEFECTO : iva;
-  const usadas = new Set(), filas = [];
-  const conIva = x => round2(x * (1 + iva));
-  const ordenados = abonos.map((a, i) => Object.assign({ _i: i }, a)).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)) || a._i - b._i);
-  const casadas = [];
-  const buscar = (a, porRef) => {
-    for (let i = 0; i < piezas.length; i++) {
-      if (usadas.has(i) || normAlbaran(piezas[i].albaran) !== normAlbaran(a.albaranOrigen)) continue;
-      if (porRef ? (refKey(piezas[i].ref) && refKey(piezas[i].ref) === refKey(a.ref))
-                 : Math.abs(Math.abs(parseNumber(a.importe)) - parseNumber(piezas[i].sinIva)) < 0.02) return i;
+function ponerClaves(items, prefijo, partes) {
+  const vistos = {};
+  items.forEach(it => {
+    const base = [prefijo].concat(partes(it)).join('|');
+    vistos[base] = (vistos[base] || 0) + 1;
+    it.clave = base + '|' + vistos[base];
+  });
+  return items;
+}
+function refODesc_(ref, desc) { return refKey(ref) || 'D' + refKey(desc); }
+function clavesPiezas(piezas) { return ponerClaves(piezas, 'P', p => [normAlbaran(p.albaran), refODesc_(p.ref, p.desc)]); }
+function clavesAbonos(abonos) { return ponerClaves(abonos, 'A', a => [String(a.factura || '').trim(), normAlbaran(a.albaranOrigen), refODesc_(a.ref, a.desc)]); }
+function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x => x.trim()).filter(Boolean); }
+
+/**
+ * Sincroniza la tabla EDITABLE de Abonos sin tocar lo que ya hay escrito:
+ *  - pieza marcada que no está en la tabla → fila nueva "Sin abonar";
+ *  - línea de abono nueva (ni en la tabla ni vista antes) → rellena la fila "Sin abonar" de su pieza (mismo albarán +
+ *    referencia, o mismo importe) y la pasa a "Abonada"; si no hay pieza pedida, fila nueva "Sin solicitar";
+ *  - quitar: claves P de piezas desmarcadas → se borran sus filas.
+ * De las filas existentes sólo se rellenan celdas VACÍAS, y el Estado sólo cambia si seguía en "Sin abonar".
+ *  existentes: filas de la tabla, en orden {clave, estado, albaran, ref, sinIva, fechaAbono, factura, nota}
+ *  marcadas / todasPiezas: {clave, albaran, ref, desc, sinIva, fechaReembolso, matricula}
+ *  abonos: {clave, factura, fecha, albaranOrigen, ref, desc, importe, matricula}
+ *  vistas: Set de claves A añadidas alguna vez (una fila de abono borrada a mano no vuelve a aparecer)
+ * Devuelve { nuevas (en el orden en que van arriba: la más reciente primero), cambios: [{i, v}], borrar: [i], registrar: [claves A] }.
+ */
+function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, quitar) {
+  quitar = new Set(quitar || []);
+  const borrar = [], enTabla = new Set(), cambios = {};
+  existentes.forEach((f, i) => {
+    const ks = partirClaves(f.clave);
+    if (ks.some(k => quitar.has(k))) { borrar.push(i); return; }
+    ks.forEach(k => enTabla.add(k));
+  });
+  const nuevas = [];
+  marcadas.forEach(p => {
+    if (enTabla.has(p.clave) || quitar.has(p.clave)) return;
+    enTabla.add(p.clave);
+    nuevas.push({ clave: p.clave, fechaAbono: '', descripcion: p.desc, sinIva: round2(parseNumber(p.sinIva)), estado: 'Sin abonar',
+      albaran: normAlbaran(p.albaran), referencia: p.ref || '', matricula: p.matricula || '', fechaSolicitud: p.fechaReembolso || '', factura: '', nota: '' });
+  });
+  // Candidatas a recibir un abono: filas de pieza pedida (clave P) que aún no tienen abono (clave A).
+  const candidatas = [];
+  existentes.forEach((f, i) => {
+    const ks = partirClaves(f.clave);
+    if (borrar.indexOf(i) < 0 && ks.some(k => k.indexOf('P|') === 0) && !ks.some(k => k.indexOf('A|') === 0)) {
+      candidatas.push({ existente: i, albaran: f.albaran, ref: f.ref, sinIva: f.sinIva, estado: f.estado, vacias: f });
     }
-    return -1;
-  };
+  });
+  nuevas.forEach(n => candidatas.push({ nueva: n, albaran: n.albaran, ref: n.referencia, sinIva: n.sinIva, estado: n.estado }));
+  const buscar = (a, porRef) => candidatas.findIndex(c => normAlbaran(c.albaran) === normAlbaran(a.albaranOrigen) && (porRef
+    ? refKey(c.ref) && refKey(c.ref) === refKey(a.ref)
+    : Math.abs(Math.abs(parseNumber(a.importe)) - parseNumber(c.sinIva)) < 0.02));
+  const registrar = [];
+  const ordenados = abonos.map((a, i) => Object.assign({ _i: i }, a)).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)) || x._i - y._i);
   ordenados.forEach(a => {
-    let i = buscar(a, true);
-    if (i < 0) i = buscar(a, false);
-    if (i >= 0) usadas.add(i);
-    casadas.push([a, i]);
-  });
-  casadas.forEach(([a, i]) => {
+    if (enTabla.has(a.clave) || vistas.has(a.clave)) return;
+    enTabla.add(a.clave);
+    registrar.push(a.clave);
     const sin = round2(Math.abs(parseNumber(a.importe)));
-    const fila = {
-      fechaAbono: a.fecha, descripcion: a.desc, sinIva: sin, conIva: conIva(sin), estado: i >= 0 ? 'Abonada' : 'Sin solicitar',
-      albaran: a.albaranOrigen, referencia: a.ref || '', matricula: a.matricula || '',
-      fechaSolicitud: i >= 0 ? (piezas[i].fechaReembolso || '') : '', factura: a.factura, nota: '',
-    };
-    if (i >= 0) {
-      const pedido = round2(parseNumber(piezas[i].sinIva));
-      if (Math.abs(pedido - sin) > 0.02) fila.nota = `Importe abonado distinto: se pidió ${pedido} sin IVA`;
-      if (!fila.matricula) fila.matricula = piezas[i].matricula || '';
-    } else if (todasPiezas.some(p => normAlbaran(p.albaran) === normAlbaran(a.albaranOrigen) && refKey(p.ref) && refKey(p.ref) === refKey(a.ref))) {
-      fila.nota = 'La pieza existe en Piezas pero no tiene Reembolso marcado';
+    let j = buscar(a, true);
+    if (j < 0) j = buscar(a, false);
+    if (j >= 0) {
+      const c = candidatas.splice(j, 1)[0], pedido = round2(parseNumber(c.sinIva));
+      const nota = Math.abs(pedido - sin) > 0.02 ? `Importe abonado distinto: se pidió ${pedido} sin IVA` : '';
+      if (c.nueva) {
+        Object.assign(c.nueva, { clave: c.nueva.clave + ';' + a.clave, fechaAbono: a.fecha, estado: 'Abonada', factura: a.factura, nota });
+        if (!c.nueva.matricula) c.nueva.matricula = a.matricula || '';
+        return;
+      }
+      const f = c.vacias, v = { clave: partirClaves(f.clave).concat(a.clave).join(';') };
+      if (f.estado === 'Sin abonar') v.estado = 'Abonada';
+      if (!f.fechaAbono) v.fechaAbono = a.fecha;
+      if (!f.factura) v.factura = a.factura;
+      if (!f.nota && nota) v.nota = nota;
+      cambios[c.existente] = v;
+      return;
     }
-    filas.push(fila);
+    const existe = todasPiezas.some(p => normAlbaran(p.albaran) === normAlbaran(a.albaranOrigen) && refKey(p.ref) && refKey(p.ref) === refKey(a.ref));
+    nuevas.push({ clave: a.clave, fechaAbono: a.fecha, descripcion: a.desc, sinIva: sin, estado: 'Sin solicitar', albaran: a.albaranOrigen,
+      referencia: a.ref || '', matricula: a.matricula || '', fechaSolicitud: '', factura: a.factura,
+      nota: existe ? 'La pieza existe en Piezas pero no tiene Reembolso marcado' : '' });
   });
-  piezas.forEach((p, i) => {
-    if (usadas.has(i)) return;
-    const sin = round2(parseNumber(p.sinIva));
-    filas.push({
-      fechaAbono: '', descripcion: p.desc, sinIva: sin, conIva: conIva(sin), estado: 'Sin abonar',
-      albaran: p.albaran, referencia: p.ref || '', matricula: p.matricula || '',
-      fechaSolicitud: p.fechaReembolso || '', factura: '', nota: '',
-    });
+  const fecha = f => f.fechaAbono || f.fechaSolicitud || '';
+  const orden = nuevas.map((f, i) => ({ f, i })).sort((x, y) => fecha(y.f).localeCompare(fecha(x.f)) || x.i - y.i).map(x => x.f);
+  return { nuevas: orden, cambios: Object.keys(cambios).map(i => ({ i: Number(i), v: cambios[i] })), borrar, registrar };
+}
+
+/**
+ * Migración a la tabla editable: calcula las claves de las filas que ya había (generadas por la versión anterior),
+ * emparejando cada fila con su línea de abono (factura + albarán + referencia, o descripción e importe) y su pieza marcada.
+ * Devuelve un array paralelo a `filas` con la clave de cada una ('' si no se reconoce: se queda como fila manual).
+ */
+function clavesDeFilasAntiguas(filas, marcadas, abonos) {
+  const usadasA = new Set(), usadasP = new Set();
+  return filas.map(f => {
+    const ks = [];
+    if (String(f.factura || '').trim()) {
+      const a = abonos.find(x => !usadasA.has(x.clave) && String(x.factura).trim() === String(f.factura).trim() && normAlbaran(x.albaranOrigen) === normAlbaran(f.albaran)
+        && (refKey(x.ref) ? refKey(x.ref) === refKey(f.ref) : refKey(x.desc) === refKey(f.descripcion) && Math.abs(Math.abs(parseNumber(x.importe)) - parseNumber(f.sinIva)) < 0.02));
+      if (a) { usadasA.add(a.clave); ks.push(a.clave); }
+    }
+    if (f.fechaSolicitud || f.estado === 'Sin abonar') {
+      const p = marcadas.find(x => !usadasP.has(x.clave) && normAlbaran(x.albaran) === normAlbaran(f.albaran) && refODesc_(x.ref, x.desc) === refODesc_(f.ref, f.descripcion));
+      if (p) { usadasP.add(p.clave); ks.push(p.clave); }
+    }
+    return ks.join(';');
   });
-  const clave = f => f.fechaAbono || f.fechaSolicitud || '9999';
-  return filas.map((f, i) => Object.assign({ _i: i }, f)).sort((a, b) => clave(a).localeCompare(clave(b)) || a._i - b._i)
-    .map(f => { delete f._i; return f; });
 }
 
 /**
@@ -307,5 +367,5 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran,
-    validarFactura, periodoFactura, construirAbonos, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
+    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
 }

@@ -3,7 +3,7 @@
  * Es IDEMPOTENTE: se puede ejecutar las veces que haga falta; nunca borra datos de entrada.
  */
 
-const ORDEN_HOJAS = [HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.ABONOS, HOJA.COCHES, HOJA.RESUMEN, HOJA.FACT, HOJA.LINEAS, HOJA.CONFIG, HOJA.REG];
+const ORDEN_HOJAS = [HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.ABONOS, HOJA.COCHES, HOJA.RESUMEN, HOJA.FACT, HOJA.LINEAS, HOJA.CONFIG, HOJA.REG, HOJA.CLAVES];
 const PROTECCION = 'counting-cars:auto';
 
 function setup() {
@@ -18,6 +18,7 @@ function setup() {
     montarAbonos_();
     montarResumen_();
     instalarTriggers_();
+    sincronizarAbonos_();  // en una hoja nueva deja Abonos ya como tabla editable
     log_('INFO', 'setup', '', 'Hoja preparada');
     avisar_('Hoja preparada.\n\nSiguientes pasos:\n1) Menú Counting Cars ▸ Configurar API key de Gemini\n2) Si hace falta cargar coches y datos del piloto, ejecuta cargarDatosIniciales() desde el editor de Apps Script (no está en el menú)\n3) Menú Counting Cars ▸ Procesar albaranes', 'Counting Cars');
   }));
@@ -32,6 +33,8 @@ function repararFormulas() {
     prepararTablas_(crono);
     montarAbonos_(); crono.paso('Abonos');
     montarResumen_(); crono.paso('Resumen');  // antes no se reconstruía aquí: si Trabajos cambiaba, el Resumen se quedaba con fórmulas viejas
+    instalarTriggers_(); crono.paso('triggers');  // así un trigger nuevo (alCambiar) llega sin volver a ejecutar setup
+    sincronizarAbonos_(); crono.paso('sincronizar Abonos');  // la primera vez pasa Abonos a tabla editable (migrarAbonos_)
     log_('INFO', 'repararFormulas', '', crono.fin());  // tiempos por paso en Registro, para ver qué parte tarda
     toast_('Fórmulas y formato reparados.');
   }));
@@ -414,9 +417,10 @@ function formatoRegistro_() {
 /** Resumen por quincena (arriba) + panel "Pendientes de RM" + tabla grande de piezas reembolsadas y abonos (debajo). */
 function montarAbonos_() {
   const sh = hoja_(HOJA.ABONOS), a = letras_(HOJA.ALB), f = letras_(HOJA.FACT);
-  const cab = ABONOS.cabResumen, ini = ABONOS.filaIni, tb = ABONOS.filaTabla, fin = tb + ABONOS.maxTabla - 1;
   // Lecturas antes de escribir nada. El año (B1) está dentro de la zona que se limpia: hay que guardarlo antes.
-  const anio = sh.getRange(ABONOS.celdaAnio).getValue(), maxRows = sh.getMaxRows();
+  const anio = sh.getRange(ABONOS.celdaAnio).getValue(), maxRows = sh.getMaxRows(), ultFila = sh.getLastRow();
+  // La tabla crece hacia abajo al insertar filas nuevas arriba: los rangos cubren como mínimo hasta la última fila con datos.
+  const cab = ABONOS.cabResumen, ini = ABONOS.filaIni, tb = ABONOS.filaTabla, fin = Math.max(tb + ABONOS.maxTabla - 1, ultFila);
   limpiarProtecciones_(sh);
   if (maxRows < fin) sh.insertRowsAfter(maxRows, fin - maxRows);
   // Limpia la zona de resumen+panel (filas 1..27) antes de reescribirla: si una versión anterior tenía más o menos
@@ -430,7 +434,10 @@ function montarAbonos_() {
 
   sh.getRange(ABONOS.filaCabResumen, 1, 1, cab.length).setValues([cab]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   // Rangos de la tabla grande (piezas/abonos), usados tanto por el cuadre por quincena como por el panel de pendientes.
-  const rg = col => `$${col}$${tb}:$${col}$${fin}`, ESTADO_ = rg('E'), CONIVA_ = rg('D'), DIAS_ = rg('L');
+  // Empiezan en la CABECERA (no en la primera fila de datos): las filas nuevas se insertan justo debajo de ella, y un
+  // rango sólo crece si la fila se inserta dentro de él. La cabecera es texto, no cuenta en SUMIFS/COUNTIFS/MAXIFS.
+  const fcT = ABONOS.filaCabTabla;
+  const rg = col => `$${col}$${fcT}:$${col}$${fin}`, ESTADO_ = rg('E'), CONIVA_ = rg('D'), DIAS_ = rg('L');
   for (let k = 0; k < ABONOS.filas; k++) {
     const r = ini + k, mes = Math.floor(k / 2) + 1, q = (k % 2) + 1;
     if (q === 1) { sh.getRange(r, 1, 2, 1).merge().setValue(MESES[mes - 1]).setVerticalAlignment('middle').setHorizontalAlignment('center').setFontWeight('bold'); }
@@ -469,10 +476,10 @@ function montarAbonos_() {
   sh.getRange(2, pv, 5, 1).setHorizontalAlignment('center');
   sh.setColumnWidth(pc, 170); sh.setColumnWidth(pv, 90);
 
-  sh.getRange(ABONOS.filaTitulo, 1).setValue('Piezas reembolsadas y abonos de RM — se rellena sola desde Piezas (Reembolso ✓) y las facturas RM. No editar a mano.').setFontWeight('bold').setFontSize(11);
+  sh.getRange(ABONOS.filaTitulo, 1).setValue('Piezas reembolsadas y abonos de RM — lo nuevo se añade arriba (Piezas ▸ Reembolso ✓ y facturas RM). Se puede editar; borrar la fila de una pieza la desmarca en Piezas.').setFontWeight('bold').setFontSize(11);
   const ct = ABONOS.cabTabla;
   sh.getRange(ABONOS.filaCabTabla, 1, 1, ct.length).setValues([ct]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
-  const n = ABONOS.maxTabla;
+  const n = fin - tb + 1;
   sh.getRange(tb, 1, n, 1).setNumberFormat(FMT.fecha);
   sh.getRange(tb, 3, n, 2).setNumberFormat(FMT.euro);
   sh.getRange(tb, 5, n, 1).setDataValidation(listaValidacion_(ESTADOS_ABONO));
@@ -480,21 +487,27 @@ function montarAbonos_() {
   sh.getRange(tb, 9, n, 1).setNumberFormat(FMT.fecha);
   sh.getRange(tb, 12, n, 1).setNumberFormat('0');
   [90, 80, 130, 130, 130, 150, 110, 110, 120, 110, 120, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.hideColumns(ct.length);  // "Clave": une cada fila con su pieza / línea de abono; no se toca a mano
+  // Filtro que incluye la columna oculta: ordenar con él mueve la clave junto con su fila.
+  if (!sh.getFilter()) sh.getRange(ABONOS.filaCabTabla, 1, fin - ABONOS.filaCabTabla + 1, ct.length).createFilter();
+  const shC = ss_().getSheetByName(HOJA.CLAVES);
+  if (shC) shC.hideSheet();
   sh.setColumnWidth(2, 260); sh.setColumnWidth(8, 420); sh.setColumnWidth(11, 260);
   sh.setFrozenRows(ABONOS.filaCabResumen);
   sh.setConditionalFormatRules([
     regla_(sh, `${colLetra_(pc)}5:${colLetra_(pv)}5`, `=${colLetra_(pv)}5>0`, COLORES.naranja),
-    regla_(sh, `A${tb}:L${fin}`, `=AND($E${tb}="Sin abonar",$L${tb}>${UMBRAL_})`, COLORES.naranja),
-    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Abonada"`, COLORES.verde),
-    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin abonar"`, COLORES.rojo),
-    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin solicitar"`, COLORES.amarillo),
+    regla_(sh, `A${fcT}:L${fin}`, `=AND($E${fcT}="Sin abonar",$L${fcT}>${UMBRAL_})`, COLORES.naranja),
+    regla_(sh, `A${fcT}:L${fin}`, `=$E${fcT}="Abonada"`, COLORES.verde),
+    regla_(sh, `A${fcT}:L${fin}`, `=$E${fcT}="Sin abonar"`, COLORES.rojo),
+    regla_(sh, `A${fcT}:L${fin}`, `=$E${fcT}="Sin solicitar"`, COLORES.amarillo),
   ]);
   cerrarProtecciones_();
 }
 
 function instalarTriggers_() {
   const ss = ss_();
-  ScriptApp.getProjectTriggers().forEach(t => { if (['alEditar', 'alAbrir'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t); });
+  ScriptApp.getProjectTriggers().forEach(t => { if (['alEditar', 'alAbrir', 'alCambiar'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('alEditar').forSpreadsheet(ss).onEdit().create();
+  ScriptApp.newTrigger('alCambiar').forSpreadsheet(ss).onChange().create();  // borrar filas en Abonos desmarca la pieza
   ScriptApp.newTrigger('alAbrir').forSpreadsheet(ss).onOpen().create();
 }

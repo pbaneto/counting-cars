@@ -144,34 +144,77 @@ test('periodoFactura: quincena de la última compra', () => {
   assert.deepEqual(L.periodoFactura(facturaReal()), { year: 2026, month: 9, quincena: 1 });
 });
 
-test('construirAbonos: Abonada / Sin abonar / Sin solicitar', () => {
-  const piezas = [
-    { albaran: '443645', ref: 'VARTAA8', desc: 'A8 AGM VARTA', sinIva: 130.10, fechaReembolso: '2026-09-04', matricula: '5678DEF' },
-    { albaran: '462446', ref: 'DAYCO6PK1090EE', desc: 'CORREA', sinIva: 11.31, fechaReembolso: '2026-09-16', matricula: '1234ABC' },
-  ];
-  const todas = piezas.concat([{ albaran: '439139', ref: 'WALKE80477' }]);
-  const abonos = [
-    { factura: 'FCR 00001', fecha: '2026-09-04', albaranOrigen: '443645', ref: 'VARTAA8', desc: 'A8 AGM VARTA 60 AH', importe: -130.10 },
-    { factura: 'FCR 00001', fecha: '2026-09-07', albaranOrigen: '439139', ref: 'WALKE80477', desc: 'SPECIAL CLAMP', importe: -6.79 },
-    { factura: 'FCR 00001', fecha: '2026-09-07', albaranOrigen: '396363', ref: 'EFI8115', desc: 'CABLES', importe: -22.51 },
-  ];
-  const f = L.construirAbonos(piezas, todas, abonos);
-  const por = e => f.filter(x => x.estado === e);
-  assert.equal(por('Abonada').length, 1);
-  assert.equal(por('Abonada')[0].conIva, 157.42);
-  assert.equal(por('Abonada')[0].fechaSolicitud, '2026-09-04');
-  assert.equal(por('Sin abonar').length, 1);
-  assert.equal(por('Sin abonar')[0].albaran, '462446');
-  assert.equal(por('Sin solicitar').length, 2);
-  assert.match(por('Sin solicitar').find(x => x.albaran === '439139').nota, /sin Reembolso marcado|no tiene Reembolso/);
-  assert.equal(f[0].fechaAbono, '2026-09-04'); // ordenadas por fecha
+const piezasEj = () => L.clavesPiezas([
+  { albaran: '443645', ref: 'VARTAA8', desc: 'A8 AGM VARTA', sinIva: 130.10, fechaReembolso: '2026-09-04', matricula: '5678DEF' },
+  { albaran: '462446', ref: 'DAYCO6PK1090EE', desc: 'CORREA', sinIva: 11.31, fechaReembolso: '2026-09-16', matricula: '1234ABC' },
+]);
+const abonosEj = () => L.clavesAbonos([
+  { factura: 'FCR 00001', fecha: '2026-09-04', albaranOrigen: '443645', ref: 'VARTAA8', desc: 'A8 AGM VARTA 60 AH', importe: -130.10 },
+  { factura: 'FCR 00001', fecha: '2026-09-07', albaranOrigen: '439139', ref: 'WALKE80477', desc: 'SPECIAL CLAMP', importe: -6.79 },
+]);
+
+test('claves: estables y distintas para piezas repetidas del mismo albarán', () => {
+  const p = L.clavesPiezas([{ albaran: '1', ref: 'ab-1' }, { albaran: '1', ref: 'AB1' }, { albaran: '1', ref: '', desc: 'Filtro' }]);
+  assert.deepEqual(p.map(x => x.clave), ['P|1|AB1|1', 'P|1|AB1|2', 'P|1|DFILTRO|1']);
+  assert.equal(L.clavesAbonos([{ factura: 'F 1', albaranOrigen: '9', ref: 'X' }])[0].clave, 'A|F 1|9|X|1');
+  assert.deepEqual(L.partirClaves(' P|1|A|1 ; A|F|1|A|1 '), ['P|1|A|1', 'A|F|1|A|1']);
 });
 
-test('construirAbonos empareja por importe si la referencia no coincide', () => {
-  const f = L.construirAbonos([{ albaran: '1', ref: 'ABC', desc: 'd', sinIva: 10, fechaReembolso: '2026-09-01' }], [],
-    [{ factura: 'F', fecha: '2026-09-02', albaranOrigen: '1', ref: 'XYZ', desc: 'd', importe: -10 }]);
-  assert.equal(f.length, 1);
-  assert.equal(f[0].estado, 'Abonada');
+test('sincronizarAbonos: tabla vacía → piezas "Sin abonar" y abonos (Abonada / Sin solicitar), lo más reciente arriba', () => {
+  const piezas = piezasEj(), todas = piezas.concat(L.clavesPiezas([{ albaran: '439139', ref: 'WALKE80477' }]));
+  const r = L.sincronizarAbonos([], piezas, todas, abonosEj(), new Set());
+  assert.deepEqual(r.nuevas.map(f => f.estado), ['Sin abonar', 'Sin solicitar', 'Abonada']);
+  const abonada = r.nuevas[2];
+  assert.equal(abonada.fechaSolicitud, '2026-09-04');
+  assert.equal(abonada.factura, 'FCR 00001');
+  assert.equal(abonada.clave, 'P|443645|VARTAA8|1;A|FCR 00001|443645|VARTAA8|1');
+  assert.match(r.nuevas[1].nota, /no tiene Reembolso/);
+  assert.deepEqual(r.registrar.sort(), ['A|FCR 00001|439139|WALKE80477|1', 'A|FCR 00001|443645|VARTAA8|1']);
+});
+
+test('sincronizarAbonos: no toca lo que ya hay; sólo rellena huecos de la fila de la pieza al llegar su abono', () => {
+  const piezas = piezasEj();
+  const existentes = [
+    { clave: piezas[0].clave, estado: 'Sin abonar', albaran: '443645', ref: 'VARTAA8', sinIva: 130.10, fechaAbono: '', factura: '', nota: 'mi nota' },
+    { clave: piezas[1].clave, estado: 'Abonada', albaran: '462446', ref: 'DAYCO6PK1090EE', sinIva: 11.31, fechaAbono: '', factura: '', nota: '' },  // cambiado a mano
+    { clave: 'A|FCR 00001|439139|WALKE80477|1', estado: 'Abonada', albaran: '439139', ref: 'WALKE80477' },  // "Sin solicitar" cambiado a mano
+  ];
+  const r = L.sincronizarAbonos(existentes, piezas, piezas, abonosEj(), new Set(['A|FCR 00001|439139|WALKE80477|1']));
+  assert.equal(r.nuevas.length, 0);
+  assert.deepEqual(r.cambios, [{ i: 0, v: { clave: 'P|443645|VARTAA8|1;A|FCR 00001|443645|VARTAA8|1', estado: 'Abonada', fechaAbono: '2026-09-04', factura: 'FCR 00001' } }]);
+  // Una segunda sincronización no cambia nada más
+  existentes[0].clave = r.cambios[0].v.clave;
+  const r2 = L.sincronizarAbonos(existentes, piezas, piezas, abonosEj(), new Set(r.registrar.concat('A|FCR 00001|439139|WALKE80477|1')));
+  assert.deepEqual([r2.nuevas.length, r2.cambios.length, r2.borrar.length], [0, 0, 0]);
+});
+
+test('sincronizarAbonos: una fila de abono borrada no vuelve; una pieza desmarcada borra su fila', () => {
+  const piezas = piezasEj();
+  const r = L.sincronizarAbonos([], [], piezas, abonosEj(), new Set(['A|FCR 00001|439139|WALKE80477|1', 'A|FCR 00001|443645|VARTAA8|1']));
+  assert.equal(r.nuevas.length, 0);
+  const existentes = [{ clave: 'X' }, { clave: piezas[1].clave + ';A|F|1|X|1', estado: 'Abonada' }, { clave: '' }];
+  const r2 = L.sincronizarAbonos(existentes, [piezas[0]], piezas, [], new Set(), [piezas[1].clave]);
+  assert.deepEqual(r2.borrar, [1]);
+  assert.equal(r2.nuevas.length, 1, 'la otra pieza marcada, que faltaba, sí se añade');
+});
+
+test('sincronizarAbonos empareja por importe si la referencia no coincide', () => {
+  const p = L.clavesPiezas([{ albaran: '1', ref: 'ABC', desc: 'd', sinIva: 10, fechaReembolso: '2026-09-01' }]);
+  const r = L.sincronizarAbonos([], p, p, L.clavesAbonos([{ factura: 'F', fecha: '2026-09-02', albaranOrigen: '1', ref: 'XYZ', desc: 'd', importe: -10 }]), new Set());
+  assert.equal(r.nuevas.length, 1);
+  assert.equal(r.nuevas[0].estado, 'Abonada');
+});
+
+test('clavesDeFilasAntiguas: reconoce las filas de la tabla generada por la versión anterior', () => {
+  const piezas = piezasEj(), abonos = abonosEj();
+  const filas = [
+    { factura: 'FCR 00001', albaran: '443645', ref: 'VARTAA8', fechaSolicitud: '2026-09-04', estado: 'Abonada' },
+    { factura: 'FCR 00001', albaran: '439139', ref: 'WALKE80477', estado: 'Sin solicitar' },
+    { albaran: '462446', ref: 'DAYCO6PK1090EE', fechaSolicitud: '2026-09-16', estado: 'Sin abonar' },
+    { descripcion: 'fila escrita a mano' },
+  ];
+  assert.deepEqual(L.clavesDeFilasAntiguas(filas, piezas, abonos), [
+    'A|FCR 00001|443645|VARTAA8|1;P|443645|VARTAA8|1', 'A|FCR 00001|439139|WALKE80477|1', 'P|462446|DAYCO6PK1090EE|1', '']);
 });
 
 test('localizarFormula: ";" y decimal con coma fuera de las comillas (Sheets en español)', () => {

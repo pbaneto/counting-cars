@@ -17,7 +17,7 @@ function alAbrir() {
 function alEditar(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet(), nombre = sh.getName();
-  if ([HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.COCHES].indexOf(nombre) < 0) return;
+  if ([HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.COCHES, HOJA.ABONOS].indexOf(nombre) < 0) return;
   ejecutar_('alEditar', () => {
     if (e.source) _ss = e.source;  // la hoja ya viene abierta en el evento: evita abrirla otra vez por ID
     const crono = cronometro_(`alEditar (${nombre})`);
@@ -29,10 +29,25 @@ function alEditar(e) {
       if (nombre === HOJA.ALB) editarAlbaranes_(r0, n, c0, nc);
       else if (nombre === HOJA.TRAB) editarTrabajos_(r0, n, c0, nc);
       else if (nombre === HOJA.PIEZAS) editarPiezas_(r0, n, c0, nc);
+      else if (nombre === HOJA.ABONOS) editarAbonos_(r0, n);
       else editarCoches_(r0, n);
       crono.paso(`editar ${nombre}`);
       crono.fin();
     } finally { lock.releaseLock(); }
+  }, true);
+}
+
+/**
+ * Trigger INSTALABLE onChange: borrar filas no dispara onEdit. Si se borran filas en Abonos, las piezas cuya fila ya
+ * no está se desmarcan en Piezas. Los cambios hechos por el propio script no disparan este trigger.
+ */
+function alCambiar(e) {
+  if (!e || e.changeType !== 'REMOVE_ROW') return;
+  const activa = e.source && e.source.getActiveSheet();
+  if (!activa || activa.getName() !== HOJA.ABONOS) return;
+  ejecutar_('alCambiar', () => {
+    if (e.source) _ss = e.source;
+    conBloqueo_(20, desmarcarPiezasBorradas_);
   }, true);
 }
 
@@ -138,6 +153,7 @@ function editarPiezas_(r0, n, c0, nc) {
   let paraAbonos = puedeTocar ? leerParaAbonos_(tab, crono) : null;  // lee con la tabla de Piezas ya leída; se mantiene al día abajo
 
   let toca = false;
+  const desmarcadas = [];
   editadas.forEach(({ r, vals, formulas: formulasFila }) => {
     const fila = tab.filas.find(f => f.fila === r);
     const g = h => vals[tab.map[h] - 1];
@@ -150,7 +166,7 @@ function editarPiezas_(r0, n, c0, nc) {
       if (g('Reembolso') === true) {
         if (!num) { set('Reembolso', false); toast_('Para pedir un reembolso hay que poner antes el nº de albarán de la pieza.', '⚠ Falta el nº de albarán', 10); return; }
         if (!g('Fecha reembolso')) set('Fecha reembolso', aFecha_(hoy));
-      } else set('Fecha reembolso', '');
+      } else { set('Fecha reembolso', ''); desmarcadas.push(r); }
       toca = true;
     } else if (g('Reembolso') === true) toca = true;
 
@@ -159,8 +175,8 @@ function editarPiezas_(r0, n, c0, nc) {
   crono.paso(`revisar ${editadas.length} fila(s) editada(s)`);
   if (toca) {
     paraAbonos = paraAbonos || leerParaAbonos_(tab, crono);
-    escribirAbonos_(paraAbonos);
-    crono.paso('reconstruir Abonos');
+    escribirAbonos_(paraAbonos, desmarcadas);
+    crono.paso('sincronizar Abonos');
   }
   SpreadsheetApp.flush();
   crono.paso('guardar cambios y recalcular');

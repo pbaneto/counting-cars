@@ -1,4 +1,4 @@
-/** Facturas quincenales de RM: leer con Gemini, validar el IVA, guardar cabecera + líneas y reconstruir Abonos. */
+/** Facturas quincenales de RM: leer con Gemini, validar el IVA, guardar cabecera + líneas y añadir sus abonos a Abonos. */
 
 function procesarFacturasRM() {
   ejecutar_('procesarFacturasRM', () => conBloqueo_(10, () => {
@@ -19,7 +19,7 @@ function procesarFacturasRM() {
         lineas.push(`${res.numero} (${MESES[res.periodo.month - 1]} quincena ${res.periodo.quincena}): ${res.estado}`);
       } catch (e) { log_('ERROR', 'procesarFacturasRM', nombre, (e && e.stack) || e); lineas.push(`${nombre}: error, mira Registro`); }
     });
-    reconstruirAbonos_();
+    sincronizarAbonos_();
     avisar_(lineas.join('\n'), 'Facturas RM');
   }));
 }

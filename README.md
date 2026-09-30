@@ -11,7 +11,7 @@ el resto son fórmulas de la hoja. Diseñado para que sea sencillo de entender y
 | **Albaranes** | Una fila por albarán (escaneado o a mano). Suma su precio al *trabajo* sin pagar de esa matrícula, o abre uno nuevo. |
 | **Trabajos** | Un trabajo = una reparación de un coche. Nº = último dígito + letras + contador (`7853KCC` → `3KCC-1`). Recambios y beneficio salen por fórmula. Puede haber varios trabajos sin pagar del mismo coche. |
 | **Piezas** | Líneas de cada albarán. El check **Reembolso** resta esa pieza del precio facturable del albarán y del trabajo. |
-| **Abonos** | Arriba, cuadre por quincena (albaranes RM ↔ reembolsos ↔ factura RM). Debajo, piezas reembolsadas y abonadas (`Abonada` / `Sin abonar` / `Sin solicitar`). |
+| **Abonos** | Arriba, cuadre por quincena (albaranes RM ↔ reembolsos ↔ factura RM). Debajo, tabla **editable** de piezas reembolsadas y abonos (`Abonada` / `Sin abonar` / `Sin solicitar`): lo nuevo se añade arriba sin tocar lo que ya hay; desmarcar una pieza borra su fila y borrar la fila de una pieza la desmarca en Piezas. |
 | **Coches** | Matrícula, cliente y coche (se rellena a mano). |
 | **Resumen** | Ingresos, recambios y beneficio por mes, gastos fijos y gráficos anuales. |
 | *Facturas RM, Líneas RM* | Datos leídos de las facturas quincenales (una fila por línea). |
