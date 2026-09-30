@@ -454,7 +454,7 @@ test('Abonos editable: el abono de la factura completa la fila de su pieza; una 
   assert.equal(ab.valor(32, 5), '', 'la fila borrada no reaparece');
 });
 
-test('Abonos: si se borra el título (la tabla sube una fila) se recoloca sin tocar datos; ZFA2300000 no es matrícula', () => {
+test('Abonos: si se borra el título (la tabla sube una fila) se recoloca sin tocar datos; matrícula tal cual la pone RM', () => {
   const e = entorno({});
   const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos'), l = e.ss.getSheetByName('Líneas RM');
   // Compra con un bastidor en el campo MATRICULA y su abono
@@ -462,11 +462,7 @@ test('Abonos: si se borra el título (la tabla sube una fila) se recoloca sin to
   l.put(3, 1, 'FCR 9'); l.put(3, 2, '314672'); l.put(3, 3, e.run('new Date(2026, 5, 22)')); l.put(3, 5, 'Abono'); l.put(3, 6, '01000302751'); l.put(3, 7, 'DAYCO5PK1090'); l.put(3, 8, 'CORREA'); l.put(3, 12, -9.24);
   e.run('actualizarAbonos()');
   assert.equal(ab.valor(31, 7), 'DAYCO5PK1090');
-  assert.equal(ab.valor(31, 8), '', 'el bastidor no se copia como matrícula');
-  // Una versión anterior ya lo había copiado: se limpia
-  ab.put(31, 8, 'ZFA2300000');
-  e.run('actualizarAbonos()');
-  assert.equal(ab.valor(31, 8), '');
+  assert.equal(ab.valor(31, 8), 'ZFA2300000', 'la matrícula tal cual la pone RM');
   // Alguien borra la fila del título: la cabecera sube a la 29 y los datos a la 30
   ab.deleteRow(29);
   assert.equal(ab.valor(29, 1), 'Fecha abono');

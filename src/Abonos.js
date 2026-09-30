@@ -33,7 +33,6 @@ function leerParaAbonos_(tabP, crono) {
   if (!tabP) { tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${leida(tabP)})`); }
   const tabL = leerTabla_(HOJA.LINEAS); crono.paso(`leer Líneas RM (${leida(tabL)})`);
   const tabA = leerTabla_(HOJA.ALB); crono.paso(`leer Albaranes (${leida(tabA)})`);
-  const conocidas = matriculasConocidas_(); crono.paso(`leer Coches (${conocidas.size})`);
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ultFila = sh.getLastRow();
   const tabla = ultFila >= tb ? sh.getRange(tb, 1, ultFila - tb + 1, ncol).getValues() : [];
   const shC = ss_().getSheetByName(HOJA.CLAVES), ultC = shC ? shC.getLastRow() : 0;
@@ -41,17 +40,17 @@ function leerParaAbonos_(tabP, crono) {
   loc_('');  // la configuración regional también es una lectura: se guarda ya para escribir las fórmulas luego
   crono.paso(`leer Abonos (${tabla.length} filas, ${vistas.size} claves vistas)`);
   const migrar = PropertiesService.getScriptProperties().getProperty(PROP_ABONOS_EDITABLE_) !== '1';
-  return { tabP, tabL, tabA, sh, tabla, vistas, migrar, conocidas };
+  return { tabP, tabL, tabA, sh, tabla, vistas, migrar };
 }
 
 /**
  * Piezas de RM (las de proveedor "Otros" no se reclaman) con su clave P. La numeración de la clave cuenta TODAS las
  * piezas, marcadas o no, para que no cambie al marcar o desmarcar otra pieza del mismo albarán y referencia.
  */
-function piezasParaAbonos_(tabP, tabA, tabL, conocidas) {
+function piezasParaAbonos_(tabP, tabA, tabL) {
   const proveedorDe = {};
   tabA.filas.forEach(f => { const n = normAlbaran(f.v['Nº albarán']); if (n) proveedorDe[n] = f.v['Proveedor']; });
-  const { plateDe, basura } = matriculasDeAlbaranes_(tabA, tabL, conocidas);
+  const plateDe = matriculasDeAlbaranes_(tabA, tabL);
   const todas = [];
   tabP.filas.forEach(p => {
     const alb = normAlbaran(p.v['Nº albarán']);
@@ -59,29 +58,17 @@ function piezasParaAbonos_(tabP, tabA, tabL, conocidas) {
     todas.push({ fila: p.fila, marcada: p.v['Reembolso'] === true && !!alb, albaran: alb, ref: p.v['Referencia pieza'], desc: p.v['Descripción'],
       sinIva: p.v['Precio descontado sin IVA'], fechaReembolso: aISO_(p.v['Fecha reembolso']), matricula: p.v['Matrícula'] || plateDe[alb] || '' });
   });
-  return { todas: clavesPiezas(todas), plateDe, basura };
+  return { todas: clavesPiezas(todas), plateDe };
 }
-
-/** Matrículas de la pestaña Coches (normalizadas): cuentan como válidas aunque no tengan forma de matrícula (TALLER…). */
-function matriculasConocidas_() {
-  return new Set(leerTabla_(HOJA.COCHES).filas.map(f => normPlate(f.v['Matrícula'])).filter(Boolean));
-}
-
-/** Validador de matrículas: con forma de matrícula española o dada de alta en Coches. */
-function validadorMatricula_(conocidas) { return p => pareceMatricula(p) || (!!conocidas && conocidas.has(normPlate(p))); }
 
 /**
  * {nº albarán: matrícula}: primero la pestaña Albaranes (la que se corrige a mano), después las líneas de compra de las
- * facturas RM, que traen la matrícula de TODOS los albaranes aunque no se hayan escaneado. Sólo valores que sean una
- * matrícula (validadorMatricula_): en el campo MATRICULA de RM a veces hay un bastidor o una referencia.
- * basura: {albarán: ese valor que no es matrícula}, para limpiar lo que copió una versión anterior.
+ * facturas RM, que traen la matrícula de TODOS los albaranes aunque no se hayan escaneado. Se copia tal cual la pone RM.
  */
-function matriculasDeAlbaranes_(tabA, tabL, conocidas) {
-  const valida = validadorMatricula_(conocidas);
+function matriculasDeAlbaranes_(tabA, tabL) {
   const pares = tabA.filas.map(f => [f.v['Nº albarán'], f.v['Matrícula']]);
   if (tabL) tabL.filas.forEach(f => { if (f.v['Tipo'] === 'Compra') pares.push([f.v['Nº albarán'], f.v['Matrícula']]); });
-  const basura = mapaMatriculas(pares, p => !valida(p));
-  return { plateDe: mapaMatriculas(pares, valida), basura };
+  return mapaMatriculas(pares);
 }
 
 /**
@@ -92,7 +79,7 @@ function escribirAbonos_(d, filasDesmarcadas) {
   const crono = cronometro_('escribirAbonos_');
   const { tabP, tabL, tabA, sh } = d;
   const hoy = hoyISO_(), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
-  const { todas, plateDe, basura } = piezasParaAbonos_(tabP, tabA, tabL, d.conocidas);
+  const { todas, plateDe } = piezasParaAbonos_(tabP, tabA, tabL);
   const marcadas = todas.filter(p => p.marcada);
   let fechasEscritas = 0;
   marcadas.forEach(p => {
@@ -101,11 +88,11 @@ function escribirAbonos_(d, filasDesmarcadas) {
   const quitar = todas.filter(p => (filasDesmarcadas || []).indexOf(p.fila) >= 0).map(p => p.clave);
   crono.paso(`preparar piezas (${marcadas.length} marcadas, ${fechasEscritas} fechas escritas)`);
 
-  const abonos = abonosDeLineas_(tabL, plateDe, d.conocidas);
+  const abonos = abonosDeLineas_(tabL, plateDe);
   if (d.migrar) { migrarAbonos_(d, marcadas, abonos); crono.paso('migrar a tabla editable'); }
 
   const existentes = d.tabla.map(r => ({ clave: r[12], fechaAbono: r[0], descripcion: r[1], sinIva: r[2], estado: r[4], albaran: r[5], ref: r[6], matricula: r[7], factura: r[9], nota: r[10] }));
-  const res = sincronizarAbonos(existentes, marcadas, todas, abonos, d.vistas, quitar, { matriculas: plateDe, basura });
+  const res = sincronizarAbonos(existentes, marcadas, todas, abonos, d.vistas, quitar, { matriculas: plateDe });
   crono.paso(`cruce (${abonos.length} abonos)`);
 
   // 1) Celdas vacías de filas existentes (antes de borrar o insertar: los índices aún valen).
@@ -132,13 +119,12 @@ function escribirAbonos_(d, filasDesmarcadas) {
 }
 
 /** Líneas de abono de las facturas RM, con su clave A. */
-function abonosDeLineas_(tabL, plateDe, conocidas) {
-  const valida = validadorMatricula_(conocidas);
+function abonosDeLineas_(tabL, plateDe) {
   return clavesAbonos(tabL.filas.filter(f => f.v['Tipo'] === 'Abono').map(f => ({
     factura: f.v['Nº factura'], fecha: aISO_(f.v['Fecha albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']),
     ref: f.v['Referencia'], desc: f.v['Descripción'], importe: parseNumber(f.v['Importe sin IVA']),
     // El bloque de abono de la factura trae la matrícula vacía: la buena es la de su albarán original.
-    matricula: plateDe[albaranOrigen(f.v['Albarán origen'])] || (valida(f.v['Matrícula']) ? normPlate(f.v['Matrícula']) : ''),
+    matricula: plateDe[albaranOrigen(f.v['Albarán origen'])] || normPlate(f.v['Matrícula']),
   })));
 }
 
@@ -187,7 +173,7 @@ function desmarcarPiezasBorradas_() {
   const enTabla = new Set();
   if (ult >= tb) sh.getRange(tb, ncol, ult - tb + 1, 1).getValues().forEach(r => partirClaves(r[0]).forEach(k => enTabla.add(k)));
   const tabP = leerTabla_(HOJA.PIEZAS);
-  const { todas } = piezasParaAbonos_(tabP, leerTabla_(HOJA.ALB), null, null);
+  const { todas } = piezasParaAbonos_(tabP, leerTabla_(HOJA.ALB), null);
   const quitar = todas.filter(p => p.marcada && !enTabla.has(p.clave));
   quitar.forEach(p => actualizarFila_(tabP, p.fila, { 'Reembolso': false, 'Fecha reembolso': '' }));
   if (quitar.length) {
@@ -305,9 +291,9 @@ function recuperarEstadosAbonos() {
     props.setProperty(PROP, JSON.stringify(Array.from(sinAbonada)));
 
     recolocarTablaAbonos_();
-    const tabP = leerTabla_(HOJA.PIEZAS), tabA = leerTabla_(HOJA.ALB), tabL = leerTabla_(HOJA.LINEAS), conocidas = matriculasConocidas_();
-    const { todas, plateDe } = piezasParaAbonos_(tabP, tabA, tabL, conocidas);
-    const abonos = abonosDeLineas_(tabL, plateDe, conocidas);
+    const tabP = leerTabla_(HOJA.PIEZAS), tabA = leerTabla_(HOJA.ALB), tabL = leerTabla_(HOJA.LINEAS);
+    const { todas, plateDe } = piezasParaAbonos_(tabP, tabA, tabL);
+    const abonos = abonosDeLineas_(tabL, plateDe);
     const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ult = sh.getLastRow();
     const actuales = ult >= tb ? sh.getRange(tb, 1, ult - tb + 1, ncol).getValues() : [];
 

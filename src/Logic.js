@@ -34,20 +34,12 @@ function albaranOrigen(s) {
  * {nº albarán: matrícula} a partir de pares [albarán, matrícula] en orden de prioridad (gana el primero que la tenga).
  * Sirve para los abonos de RM: su bloque en la factura trae la matrícula vacía, pero su albarán original sí la tiene.
  */
-function mapaMatriculas(pares, valida) {
+function mapaMatriculas(pares) {
   const m = {};
-  pares.forEach(([a, p]) => { const k = normAlbaran(a), v = normPlate(p); if (k && v && !m[k] && (!valida || valida(v))) m[k] = v; });
+  pares.forEach(([a, p]) => { const k = normAlbaran(a), v = normPlate(p); if (k && v && !m[k]) m[k] = v; });
   return m;
 }
 
-/**
- * ¿Parece una matrícula española? Actual (1234BCD), provincial antigua (M1234AB, B1234C) o especial (E/H/R/C/P/T/V
- * + 1234BCD). En el campo MATRICULA de RM a veces hay otra cosa (ZFA2300000 = bastidor, 10063 = referencia, ACEITE).
- */
-function pareceMatricula(p) {
-  const s = normPlate(p);
-  return /^\d{4}[A-Z]{3}$/.test(s) || /^[A-Z]{1,2}\d{4}[A-Z]{1,2}$/.test(s) || /^[EHRCPTV]\d{4}[A-Z]{3}$/.test(s);
-}
 
 /** Clave para comparar referencias de pieza. */
 function refKey(s) { return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
@@ -214,12 +206,10 @@ function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x =>
  *  abonos: {clave, factura, fecha, albaranOrigen, ref, desc, importe, matricula}
  *  vistas: Set de claves A añadidas alguna vez (una fila de abono borrada a mano no vuelve a aparecer)
  *  opts.matriculas: {nº albarán: matrícula} para rellenar la Matrícula de las filas que la tengan vacía
- *  opts.basura: {nº albarán: valor del campo MATRICULA de la factura que NO es una matrícula}: si una fila tiene justo
- *    ese valor (lo puso una versión anterior), se cambia por la matrícula buena o se vacía
  * Devuelve { nuevas (en el orden en que van arriba: la más reciente primero), cambios: [{i, v}], borrar: [i], registrar: [claves A] }.
  */
 function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, quitar, opts) {
-  const matriculas = (opts && opts.matriculas) || {}, basura = (opts && opts.basura) || {};
+  const matriculas = (opts && opts.matriculas) || {};
   quitar = new Set(quitar || []);
   const borrar = [], enTabla = new Set(), cambios = {};
   existentes.forEach((f, i) => {
@@ -279,9 +269,8 @@ function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, qu
   // Matrícula vacía en una fila existente: se rellena con la de su albarán (hueco, no pisa nada escrito).
   existentes.forEach((f, i) => {
     if (borrar.indexOf(i) >= 0) return;
-    const alb = normAlbaran(f.albaran), m = matriculas[alb] || '', actual = normPlate(f.matricula);
-    const mala = actual && basura[alb] && actual === basura[alb];
-    if ((!actual && m) || (mala && m !== actual)) cambios[i] = Object.assign(cambios[i] || {}, { matricula: m });
+    const m = matriculas[normAlbaran(f.albaran)];
+    if (m && !String(f.matricula == null ? '' : f.matricula).trim()) cambios[i] = Object.assign(cambios[i] || {}, { matricula: m });
   });
   const fecha = f => f.fechaAbono || f.fechaSolicitud || '';
   const orden = nuevas.map((f, i) => ({ f, i })).sort((x, y) => fecha(y.f).localeCompare(fecha(x.f)) || x.i - y.i).map(x => x.f);
@@ -420,7 +409,7 @@ function usaPuntoYComa(locale) {
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 if (typeof module !== 'undefined') {
-  module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, pareceMatricula, refKey, jobPrefix, nextJobNumber,
+  module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran,
     validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, planRecuperacion, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
 }
