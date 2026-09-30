@@ -48,6 +48,8 @@ class Rango {
   setNumberFormat() { return this._w(); }
   // merge/breakApart no cambian valores: sólo hace falta que sigan encadenando (como en Sheets, Range.merge() devuelve el Range).
   merge() { return this; }
+  insertCells(dim) { if (dim !== 'ROWS') throw new Error('sólo ROWS'); this.sh.desplazarCeldas(this.r, this.c, this.nc, this.nr); return this; }
+  deleteCells(dim) { if (dim !== 'ROWS') throw new Error('sólo ROWS'); this.sh.desplazarCeldas(this.r, this.c, this.nc, -this.nr); return this; }
   breakApart() { return this; }
 }
 
@@ -77,6 +79,20 @@ class Hoja {
     });
     this.grid = nuevo;
     this.maxRows += k;
+    this.ss.io.escrito = true;
+  }
+  deleteRows(r, k) { for (let i = 0; i < k; i++) this.deleteRow(r); }
+  /** Desplaza sólo las columnas c..c+nc-1 desde la fila r: k > 0 inserta k celdas (baja), k < 0 borra -k celdas (sube). */
+  desplazarCeldas(r, c, nc, k) {
+    const nuevo = new Map();
+    this.grid.forEach((v, key) => {
+      const [row, col] = key.split(',').map(Number);
+      const enCols = col >= c && col < c + nc;
+      if (!enCols || row < r) { nuevo.set(key, v); return; }
+      if (k < 0 && row < r - k) return;  // celdas borradas
+      nuevo.set((row + k) + ',' + col, v);
+    });
+    this.grid = nuevo;
     this.ss.io.escrito = true;
   }
   /** Borra la fila r y sube todo lo de debajo, como Sheets. */
@@ -160,7 +176,7 @@ function crearEntorno(opts = {}) {
     console: { log: m => log.console.push(String(m)), warn: m => log.console.push(String(m)), error: m => log.console.push(String(m)) },
     Logger: { log: m => log.logger.push(m) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, flush() { io.escrito = false; }, newDataValidation: validacion, newConditionalFormatRule: reglaCF,
-      ProtectionType: { RANGE: 'RANGE' }, CopyPasteType: { PASTE_FORMAT: 'F', PASTE_DATA_VALIDATION: 'V' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
+      ProtectionType: { RANGE: 'RANGE' }, CopyPasteType: { PASTE_FORMAT: 'F', PASTE_DATA_VALIDATION: 'V' }, Dimension: { ROWS: 'ROWS', COLUMNS: 'COLUMNS' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
     DriveApp: { getFolderById: id => { if (!carpetas[id]) throw new Error('carpeta inexistente ' + id); return carpetas[id]; },
       getFileById: id => archivos[id], getRootFolder: () => carpetas.PADRE },
     UrlFetchApp: { fetchAll: reqs => reqs.map(r => { log.fetch.push(r); const x = opts.gemini(r); return { getResponseCode: () => x.code || 200, getContentText: () => x.body }; }) },

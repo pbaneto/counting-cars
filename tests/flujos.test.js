@@ -78,14 +78,15 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.equal(cfg.find(x => x.Clave === 'CARPETA_ENTRADA').Valor, 'ENT');
   assert.equal(cfg.find(x => x.Clave === 'MODELO_GEMINI').Valor, 'gemini-3.5-flash-lite');
   const abonos = e.ss.getSheetByName('Abonos');
-  assert.match(abonos.cell(4, 3).f, /SUMIFS\(Albaranes!/);
+  assert.equal(abonos.valor(1, 1), 'Fecha abono', 'la tabla grande arriba del todo');
+  assert.match(abonos.cell(4, 17).f, /SUMIFS\(Albaranes!/);  // resumen por quincena a la derecha (columna Q)
   // Fechas de cada quincena dentro de la fórmula (sin columnas Desde/Hasta): ene 1ª = 1-15, ene 2ª = 16-fin de mes
-  assert.match(abonos.cell(4, 3).f, /">="&DATE\(\$B\$1,1,1\).*"<="&DATE\(\$B\$1,1,15\)/);
-  assert.match(abonos.cell(5, 4).f, /">="&DATE\(\$B\$1,1,16\).*"<="&EOMONTH\(DATE\(\$B\$1,1,1\),0\)/);
-  assert.equal(abonos.cell(3, 7), undefined);               // ya no hay columna "Desde"
-  assert.match(abonos.cell(4, 6).f, /^=IF\(E4="","",ROUND\(E4-\(C4-D4\),2\)\)$/); // Diferencia informativa, sin aviso
-  assert.equal(abonos.cell(4, 12).f, '=DIAS_AVISO_REEMB');  // panel: umbral copiado de Config a esta pestaña
-  assert.match(abonos.cell(5, 12).f, /COUNTIFS.*\$L\$4/);    // panel: fuera de plazo, contra el umbral de la misma pestaña
+  assert.match(abonos.cell(4, 17).f, /">="&DATE\(\$P\$1,1,1\).*"<="&DATE\(\$P\$1,1,15\)/);
+  assert.match(abonos.cell(5, 18).f, /SUMIFS\(\$D:\$D,\$E:\$E,"Abonada",\$A:\$A,">="&DATE\(\$P\$1,1,16\).*"<="&EOMONTH\(DATE\(\$P\$1,1,1\),0\)/);
+  assert.match(abonos.cell(4, 20).f, /^=IF\(S4="","",ROUND\(S4-\(Q4-R4\),2\)\)$/); // Diferencia informativa, sin aviso
+  assert.equal(abonos.valor(1, 15), 'Año'); assert.equal(abonos.valor(1, 16), 2026);
+  assert.equal(abonos.cell(4, 23).f, '=DIAS_AVISO_REEMB');  // panel: umbral copiado de Config a esta pestaña
+  assert.match(abonos.cell(5, 23).f, /COUNTIFS.*\$W\$4/);    // panel: fuera de plazo, contra el umbral de la misma pestaña
   e.run('repararFormulas()');
   const errores = e.log.console.filter(m => /^\[ERROR\]/.test(m));
   assert.deepEqual(errores, [], 'setup y repararFormulas deben terminar sin errores');
@@ -117,9 +118,9 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
 test('repararFormulas conserva el año elegido en Abonos', () => {
   const e = entorno({});
   const ab = e.ss.getSheetByName('Abonos');
-  ab.put(1, 2, 2027);
+  ab.put(1, 16, 2027);
   e.run('repararFormulas()');
-  assert.equal(ab.valor(1, 2), 2027);
+  assert.equal(ab.valor(1, 16), 2027);
 });
 
 test('repararFormulas sólo reescribe las fórmulas que han cambiado', () => {
@@ -207,10 +208,10 @@ test('procesarAlbaranes: nuevo, segundo escaneo con R, duplicado sin R y no-alba
   assert.ok(piezas.every(p => p['Origen'] === 'Escaneo'));
   // Abonos: la pieza reembolsada aparece como "Sin abonar"
   const ab = e.ss.getSheetByName('Abonos');
-  assert.equal(ab.valor(31, 5), 'Sin abonar');
-  assert.equal(ab.valor(31, 3), 11.31);
-  assert.equal(ab.cell(31, 4).f, '=ROUND($C31*(1+IVA),2)');  // Precio con IVA: fórmula con el IVA de Config
-  assert.match(ab.cell(31, 12).f, /TODAY\(\)/);  // Días pendiente: fórmula viva, no un valor fijo
+  assert.equal(ab.valor(2, 5), 'Sin abonar');
+  assert.equal(ab.valor(2, 3), 11.31);
+  assert.equal(ab.cell(2, 4).f, '=ROUND($C2*(1+IVA),2)');  // Precio con IVA: fórmula con el IVA de Config
+  assert.match(ab.cell(2, 12).f, /TODAY\(\)/);  // Días pendiente: fórmula viva, no un valor fijo
   // Drive: 3 en Procesados, el no-albarán en Errores
   assert.equal(e.carpetas.PROC.ficheros.length, 3);
   assert.equal(e.carpetas.ENT.ficheros.length, 0);
@@ -322,19 +323,19 @@ test('edición en Piezas: reembolso exige nº de albarán y rellena la fecha; a�
   assert.ok(esFecha(p.valor(2, 12)), 'fecha de reembolso');
   assert.equal(p.valor(2, 14), 'Manual');
   assert.match(p.cell(2, 15).f, /Falta el nº de albarán/, 'la fila escrita a mano recibe sus fórmulas');
-  assert.equal(e.ss.getSheetByName('Abonos').valor(31, 5), 'Sin abonar');
+  assert.equal(e.ss.getSheetByName('Abonos').valor(2, 5), 'Sin abonar');
   // Pieza de un albarán de proveedor "Otros": no se reclama a RM
   const alb = e.ss.getSheetByName('Albaranes');
   alb.put(5, 5, 'Otros'); alb.put(5, 6, '999'); alb.put(5, 8, '1234ABC'); alb.put(5, 9, 20);
   p.put(3, 3, '999'); p.put(3, 5, 'De otro proveedor'); p.put(3, 10, 10); p.put(3, 1, true);
   e.ctx.__p4 = p.getRange(3, 1); e.run('alEditar({ range: __p4 })');
-  assert.equal(e.ss.getSheetByName('Abonos').valor(31, 6), '123456');
-  assert.equal(e.ss.getSheetByName('Abonos').valor(32, 6), '', 'la pieza de "Otros" no entra en Abonos');
+  assert.equal(e.ss.getSheetByName('Abonos').valor(2, 6), '123456');
+  assert.equal(e.ss.getSheetByName('Abonos').valor(3, 6), '', 'la pieza de "Otros" no entra en Abonos');
   // desmarcar limpia la fecha y borra su fila de Abonos
   p.put(2, 1, false);
   e.ctx.__p3 = p.getRange(2, 1); e.run('alEditar({ range: __p3 })');
   assert.equal(p.valor(2, 12), '');
-  assert.equal(e.ss.getSheetByName('Abonos').valor(31, 5), '');
+  assert.equal(e.ss.getSheetByName('Abonos').valor(2, 5), '');
 });
 
 // ---- Factura RM ----
@@ -362,13 +363,13 @@ test('factura RM: guarda líneas, detecta abonos (Abonada / Sin solicitar) y avi
   assert.match(fr[0]['Estado'], /^⚠/, 'la base de prueba (100) no cuadra con los albaranes: debe avisar');
   assert.equal(tabla(e, 'Líneas RM').length, 4);
   const ab = e.ss.getSheetByName('Abonos');
-  const estados = Array.from([31, 32].map(r => ab.valor(r, 5))).sort();
-  assert.equal(ab.valor(33, 5), '');
+  const estados = Array.from([2, 3].map(r => ab.valor(r, 5))).sort();
+  assert.equal(ab.valor(4, 5), '');
   assert.deepEqual(estados, ['Abonada', 'Sin solicitar']);
   // El bloque de abono trae la matrícula vacía: se toma la del albarán original (compra 443645 de la misma factura)
   const lineaAbono = tabla(e, 'Líneas RM').find(x => x['Tipo'] === 'Abono' && x['Referencia'] === 'VARTAA8');
   assert.equal(lineaAbono['Matrícula'], '5678DEF');
-  assert.equal([31, 32].map(r => ab.valor(r, 8)).filter(Boolean).join(), '5678DEF', 'y llega a Abonos; la del 439139 (no está en ninguna parte) queda vacía');
+  assert.equal([2, 3].map(r => ab.valor(r, 8)).filter(Boolean).join(), '5678DEF', 'y llega a Abonos; la del 439139 (no está en ninguna parte) queda vacía');
   assert.equal(e.carpetas.FRAP.ficheros.length, 1);
   // Reprocesar la misma factura no duplica líneas
   subir(e, ['fra.pdf'], 'FRA');
@@ -386,40 +387,45 @@ test('Abonos editable: lo nuevo va arriba y no pisa lo cambiado a mano; borrar u
   };
   marcar(2, '100', 'AAA', 10);
   marcar(3, '200', 'BBB', 20);
-  assert.equal(ab.valor(31, 7), 'BBB', 'la última pieza marcada va la primera');
-  assert.equal(ab.valor(32, 7), 'AAA');
-  assert.equal(ab.valor(31, 13), 'P|200|BBB|1', 'clave en la columna oculta');
-  assert.equal(ab.cell(31, 4).f, '=ROUND($C31*(1+IVA),2)');
+  assert.equal(ab.valor(2, 7), 'BBB', 'la última pieza marcada va la primera');
+  assert.equal(ab.valor(3, 7), 'AAA');
+  assert.equal(ab.valor(2, 13), 'P|200|BBB|1', 'clave en la columna oculta');
+  assert.equal(ab.cell(2, 4).f, '=ROUND($C2*(1+IVA),2)');
   // Cambios a mano: se respetan en la siguiente sincronización
-  ab.put(32, 5, 'Abonada'); ab.put(32, 11, 'Llamé a RM');
-  ab.put(33, 2, 'Fila escrita a mano'); ab.put(33, 5, 'Sin solicitar');
+  ab.put(3, 5, 'Abonada'); ab.put(3, 11, 'Llamé a RM');
+  ab.put(4, 2, 'Fila escrita a mano'); ab.put(4, 5, 'Sin solicitar');
   marcar(4, '300', 'CCC', 30);
-  assert.deepEqual([31, 32, 33, 34].map(r => ab.valor(r, 7)), ['CCC', 'BBB', 'AAA', '']);
-  assert.equal(ab.valor(33, 5), 'Abonada');
-  assert.equal(ab.valor(33, 11), 'Llamé a RM');
-  assert.equal(ab.valor(34, 2), 'Fila escrita a mano');
+  assert.deepEqual([2, 3, 4, 5].map(r => ab.valor(r, 7)), ['CCC', 'BBB', 'AAA', '']);
+  assert.equal(ab.valor(4, 5), 'Abonada');
+  assert.equal(ab.valor(4, 11), 'Llamé a RM');
+  assert.equal(ab.valor(5, 2), 'Fila escrita a mano');
   e.run('actualizarAbonos()');
-  assert.equal(ab.valor(35, 2), '', 'actualizar no duplica nada');
+  assert.equal(ab.valor(6, 2), '', 'actualizar no duplica nada');
 
   // Desmarcar en Piezas borra sólo su fila
   p.put(3, 1, false); e.ctx.__r = p.getRange(3, 1); e.run('alEditar({ range: __r })');
-  assert.deepEqual([31, 32, 33].map(r => ab.valor(r, 7)), ['CCC', 'AAA', '']);
-  assert.equal(ab.valor(32, 5), 'Abonada', 'la fila cambiada a mano sigue igual');
+  assert.deepEqual([2, 3, 4].map(r => ab.valor(r, 7)), ['CCC', 'AAA', '']);
+  assert.equal(ab.valor(3, 5), 'Abonada', 'la fila cambiada a mano sigue igual');
 
   // Vaciar una fila en Abonos (seleccionarla y Suprimir) = borrarla: se quita el hueco y se desmarca la pieza
-  for (let c = 1; c <= 13; c++) ab.put(31, c, '');
-  e.ctx.__a = ab.getRange(31, 1, 1, 13); e.run('alEditar({ range: __a })');
+  for (let c = 1; c <= 13; c++) ab.put(2, c, '');
+  e.ctx.__a = ab.getRange(2, 1, 1, 13); e.run('alEditar({ range: __a })');
   assert.equal(p.valor(4, 1), false, 'CCC desmarcada en Piezas');
   assert.equal(p.valor(4, 12), '', 'y sin fecha de reembolso');
-  assert.equal(ab.valor(31, 7), 'AAA', 'sin hueco');
+  assert.equal(ab.valor(2, 7), 'AAA', 'sin hueco');
 
   // Borrar la fila con "Eliminar fila" (trigger onChange)
-  ab.deleteRow(31);
+  ab.deleteRow(2);
   e.ss.getActiveSheet = () => ab;
   e.ctx.__e = { changeType: 'REMOVE_ROW', source: e.ss }; e.run('alCambiar(__e)');
   assert.equal(p.valor(2, 1), false, 'AAA desmarcada en Piezas');
   assert.equal(p.valor(3, 1), false);
-  assert.equal(ab.valor(31, 2), 'Fila escrita a mano', 'la fila manual no afecta a nada');
+  assert.equal(ab.valor(2, 2), 'Fila escrita a mano', 'la fila manual no afecta a nada');
+  // Borrar una fila entera también movía el resumen de la derecha: se ha vuelto a montar en su sitio
+  assert.equal(ab.valor(3, 15), 'Mes');
+  assert.equal(ab.valor(1, 16), 2026);
+  assert.match(ab.cell(4, 17).f, /SUMIFS\(Albaranes!/);
+  assert.equal(ab.valor(27, 16), 2, 'dic, 2ª quincena, en la fila 27');
 });
 
 test('Abonos editable: el abono de la factura completa la fila de su pieza; una fila de abono borrada no vuelve', () => {
@@ -428,58 +434,74 @@ test('Abonos editable: el abono de la factura completa la fila de su pieza; una 
   const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos');
   p.put(2, 3, '443645'); p.put(2, 4, 'VARTAA8'); p.put(2, 5, 'A8 AGM'); p.put(2, 10, 130.10); p.put(2, 1, true);
   e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
-  ab.put(31, 11, 'pedido por teléfono');
+  ab.put(2, 11, 'pedido por teléfono');
   subir(e, ['fra.pdf'], 'FRA');
   e.run('procesarFacturasRM()');
   // Arriba el "Sin solicitar" nuevo; debajo, la fila de la pieza completada con el abono y su nota intacta
-  assert.equal(ab.valor(31, 5), 'Sin solicitar');
-  assert.equal(ab.valor(32, 5), 'Abonada');
-  assert.equal(ab.valor(32, 10), 'FCR 00001');
-  assert.ok(esFecha(ab.valor(32, 1)), 'fecha del abono');
-  assert.equal(ab.valor(32, 11), 'pedido por teléfono');
-  assert.equal(ab.valor(33, 5), '');
+  assert.equal(ab.valor(2, 5), 'Sin solicitar');
+  assert.equal(ab.valor(3, 5), 'Abonada');
+  assert.equal(ab.valor(3, 10), 'FCR 00001');
+  assert.ok(esFecha(ab.valor(3, 1)), 'fecha del abono');
+  assert.equal(ab.valor(3, 11), 'pedido por teléfono');
+  assert.equal(ab.valor(4, 5), '');
   // Matrícula vacía en una fila ya existente: se rellena al sincronizar (sin pisar una escrita a mano)
-  ab.put(32, 8, ''); ab.put(31, 8, 'A MANO');
+  ab.put(3, 8, ''); ab.put(2, 8, 'A MANO');
   e.run('actualizarAbonos()');
-  assert.equal(ab.valor(32, 8), '5678DEF');
-  assert.equal(ab.valor(31, 8), 'A MANO');
+  assert.equal(ab.valor(3, 8), '5678DEF');
+  assert.equal(ab.valor(2, 8), 'A MANO');
   // Se borra a mano la fila "Sin solicitar" y se reprocesa la factura: no vuelve y Piezas no cambia
-  ab.deleteRow(31);
+  ab.deleteRow(2);
   e.ss.getActiveSheet = () => ab;
   e.ctx.__e = { changeType: 'REMOVE_ROW', source: e.ss }; e.run('alCambiar(__e)');
   assert.equal(p.valor(2, 1), true, 'borrar una fila sin pieza no desmarca nada');
   subir(e, ['fra2.pdf'], 'FRA');
   e.run('procesarFacturasRM()');
-  assert.equal(ab.valor(31, 5), 'Abonada');
-  assert.equal(ab.valor(32, 5), '', 'la fila borrada no reaparece');
+  assert.equal(ab.valor(2, 5), 'Abonada');
+  assert.equal(ab.valor(3, 5), '', 'la fila borrada no reaparece');
 });
 
-test('Abonos: si se borra el título (la tabla sube una fila) se recoloca sin tocar datos; matrícula tal cual la pone RM', () => {
+/** Pestaña Abonos con el diseño anterior: año en B1, resumen por quincena en A3:F27, tabla con cabecera en la fila 30. */
+function abonosAntiguo(e, ab, filas, anio) {
+  ab.clear();
+  ab.put(1, 1, 'Año'); ab.put(1, 2, anio);
+  ab.put(3, 1, 'Mes'); ab.put(3, 2, 'Quincena'); ab.put(4, 1, 'ene'); ab.put(4, 2, 1); ab.put(4, 3, '=SUMIFS(1,1,1)');
+  ab.put(1, 11, 'Pendientes de RM'); ab.put(2, 11, 'Piezas sin abonar'); ab.put(2, 12, '=COUNTIF(1,1)');
+  e.run('ABONOS.cabTabla').slice(0, 12).forEach((h, j) => ab.put(30, j + 1, h));
+  filas.forEach((f, i) => f.forEach((v, j) => ab.put(31 + i, j + 1, v)));
+}
+
+test('Abonos: tabla arriba y resumen a la derecha; filas insertadas encima se quitan; matrícula tal cual la pone RM', () => {
   const e = entorno({});
   const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos'), l = e.ss.getSheetByName('Líneas RM');
   // Compra con un bastidor en el campo MATRICULA y su abono
   l.put(2, 1, 'FCR 9'); l.put(2, 2, '302751'); l.put(2, 4, 'ZFA2300000'); l.put(2, 5, 'Compra'); l.put(2, 7, 'DAYCO5PK1090'); l.put(2, 12, 9.24);
   l.put(3, 1, 'FCR 9'); l.put(3, 2, '314672'); l.put(3, 3, e.run('new Date(2026, 5, 22)')); l.put(3, 5, 'Abono'); l.put(3, 6, '01000302751'); l.put(3, 7, 'DAYCO5PK1090'); l.put(3, 8, 'CORREA'); l.put(3, 12, -9.24);
   e.run('actualizarAbonos()');
-  assert.equal(ab.valor(31, 7), 'DAYCO5PK1090');
-  assert.equal(ab.valor(31, 8), 'ZFA2300000', 'la matrícula tal cual la pone RM');
-  // Alguien borra la fila del título: la cabecera sube a la 29 y los datos a la 30
-  ab.deleteRow(29);
-  assert.equal(ab.valor(29, 1), 'Fecha abono');
+  assert.equal(ab.valor(1, 1), 'Fecha abono');
+  assert.equal(ab.valor(2, 7), 'DAYCO5PK1090');
+  assert.equal(ab.valor(2, 8), 'ZFA2300000', 'la matrícula tal cual la pone RM');
+  assert.equal(ab.valor(3, 15), 'Mes', 'el resumen no se mueve al insertar filas en la tabla');
+  assert.equal(ab.valor(4, 16), 1);
+  // Alguien inserta una fila entera encima de la cabecera: se quita y el resumen vuelve a su sitio
+  ab.insertRowsBefore(1, 1);
+  e.ss.getActiveSheet = () => ab;
+  e.ctx.__e = { changeType: 'INSERT_ROW', source: e.ss }; e.run('alCambiar(__e)');
+  assert.equal(ab.valor(1, 1), 'Fecha abono', 'cabecera de vuelta en la fila 1');
+  assert.equal(ab.valor(2, 7), 'DAYCO5PK1090');
+  assert.equal(ab.valor(1, 15), 'Año'); assert.equal(ab.valor(3, 15), 'Mes');
+  // Una fila entera insertada DENTRO de la tabla: los datos se quedan, el resumen se vuelve a montar en su sitio
+  ab.insertRowsBefore(2, 1);
+  e.ctx.__e = { changeType: 'INSERT_ROW', source: e.ss }; e.run('alCambiar(__e)');
+  assert.equal(ab.valor(3, 7), 'DAYCO5PK1090');
+  assert.equal(ab.valor(3, 15), 'Mes'); assert.equal(ab.valor(27, 16), 2); assert.equal(ab.valor(28, 16), '');
+  // Marcar una pieza: la fila nueva entra arriba desplazando sólo la tabla
   p.put(2, 3, '100'); p.put(2, 4, 'AAA'); p.put(2, 5, 'Pieza'); p.put(2, 10, 10); p.put(2, 1, true);
   e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
-  assert.equal(ab.valor(30, 1), 'Fecha abono', 'cabecera de vuelta en la fila 30');
-  assert.equal(ab.valor(29, 1), '', 'sin texto de explicación encima');
-  assert.deepEqual([31, 32, 33].map(r => ab.valor(r, 7)), ['AAA', 'DAYCO5PK1090', '']);
-  assert.ok(e.log.console.some(x => /recolocarTablaAbonos.*fila 29 en vez de la 30/.test(x)));
-  // Reparar fórmulas con la tabla desplazada tampoco pisa datos
-  ab.deleteRow(29);
-  e.run('repararFormulas()');
-  assert.equal(ab.valor(30, 1), 'Fecha abono');
-  assert.deepEqual([31, 32].map(r => ab.valor(r, 7)), ['AAA', 'DAYCO5PK1090']);
+  assert.deepEqual([2, 3, 4].map(r => ab.valor(r, 7)), ['AAA', '', 'DAYCO5PK1090']);
+  assert.equal(ab.valor(3, 15), 'Mes'); assert.equal(ab.valor(4, 16), 1);
 });
 
-test('Abonos: migración de la tabla regenerada (versión anterior) a editable sin cambiar ningún valor', () => {
+test('Abonos: del diseño anterior (resumen encima) al nuevo, pasando a tabla editable sin cambiar ningún valor', () => {
   const e = entorno({});
   const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos'), l = e.ss.getSheetByName('Líneas RM');
   // Estado de una hoja de la versión anterior: sin claves y sin la marca de tabla editable
@@ -489,20 +511,25 @@ test('Abonos: migración de la tabla regenerada (versión anterior) a editable s
   const linea = (r, fra, ref, imp) => { l.put(r, 1, fra); l.put(r, 2, '9' + r); l.put(r, 3, e.run('new Date(2026, 6, 4)')); l.put(r, 5, 'Abono'); l.put(r, 6, '01000' + '444' + r); l.put(r, 7, ref); l.put(r, 8, 'D' + ref); l.put(r, 12, imp); };
   linea(2, 'FCR 1', 'R1', -10); linea(3, 'FCR 1', 'R2', -20);
   const vieja = [
-    [e.run('new Date(2026, 6, 4)'), 'DR1', 10, '=ROUND($C31*(1+IVA),2)', 'Sin solicitar', '4442', 'R1', '', '', 'FCR 1', '', '=IF(1,1,1)'],
+    [e.run('new Date(2026, 6, 4)'), 'DR1', 10, '=ROUND($C31*(1+IVA),2)', 'Abonada', '4442', 'R1', '', '', 'FCR 1', 'nota', '=IF(1,1,1)'],
     [e.run('new Date(2026, 6, 4)'), 'DR2', 20, '=ROUND($C32*(1+IVA),2)', 'Sin solicitar', '4443', 'R2', '', '', 'FCR 1', '', '=IF(1,1,1)'],
     ['', 'Pedida', 5, '=ROUND($C33*(1+IVA),2)', 'Sin abonar', '555', 'PPP', '', e.run('new Date(2026, 8, 20)'), '', '', '=IF(1,1,1)'],
   ];
-  vieja.forEach((f, i) => f.forEach((v, j) => ab.put(31 + i, j + 1, v)));
+  abonosAntiguo(e, ab, vieja, 2027);
   e.run('repararFormulas()');
-  assert.deepEqual([31, 32, 33].map(r => ab.valor(r, 13)), ['A|FCR 1|4442|R1|1', 'A|FCR 1|4443|R2|1', 'P|555|PPP|1']);
-  vieja.forEach((f, i) => f.forEach((v, j) => { if (j !== 3 && j !== 11) assert.deepEqual(ab.valor(31 + i, j + 1), v, `fila ${31 + i} col ${j + 1}`); }));
+  assert.equal(ab.valor(1, 1), 'Fecha abono', 'la tabla sube a la fila 1');
+  assert.equal(ab.valor(1, 16), 2027, 'se conserva el año elegido');
+  assert.equal(ab.valor(3, 15), 'Mes', 'resumen a la derecha');
+  assert.deepEqual([2, 3, 4].map(r => ab.valor(r, 13)), ['A|FCR 1|4442|R1|1', 'A|FCR 1|4443|R2|1', 'P|555|PPP|1']);
+  vieja.forEach((f, i) => f.forEach((v, j) => { if (j !== 3 && j !== 11) assert.deepEqual(ab.valor(2 + i, j + 1), v, `fila ${2 + i} col ${j + 1}`); }));
+  assert.equal(ab.valor(1, 11), 'Nota', 'no queda nada del panel antiguo en K1');
   assert.equal(e.props.ABONOS_EDITABLE, '1');
   assert.ok(e.log.console.some(x => /Tabla editable: 3 filas con clave, 0 sin reconocer/.test(x)));
   // Después, lo nuevo va arriba y lo antiguo sigue igual
   p.put(3, 3, '666'); p.put(3, 4, 'NEW'); p.put(3, 5, 'Nueva'); p.put(3, 10, 1); p.put(3, 1, true);
   e.ctx.__r = p.getRange(3, 1); e.run('alEditar({ range: __r })');
-  assert.deepEqual([31, 32, 33, 34, 35].map(r => ab.valor(r, 7)), ['NEW', 'R1', 'R2', 'PPP', '']);
+  assert.deepEqual([2, 3, 4, 5, 6].map(r => ab.valor(r, 7)), ['NEW', 'R1', 'R2', 'PPP', '']);
+  assert.equal(ab.valor(3, 5), 'Abonada');
 });
 
 test('diagnóstico lista problemas con enlaces', () => {
@@ -526,7 +553,7 @@ test('con hoja en español (es_ES) TODAS las fórmulas y reglas se escriben con 
   assert.ok(porFila.length >= 15);
   assert.ok(porFila.some(([k, f]) => k === 'Albaranes ▸ Quincena' && f === '=IF(B2="";"";IF(DAY(B2)<=15;1;2))'));
   for (const [k, f] of porFila) assert.ok(!separadorIngles(f), `${k}: ${f}`);
-  for (const [hoja, col, fila] of [['Abonos', 3, 4], ['Abonos', 4, 4], ['Abonos', 6, 4], ['Abonos', 12, 3], ['Resumen', 2, 13], ['Resumen', 3, 13], ['Trabajos', 5, 3]]) {
+  for (const [hoja, col, fila] of [['Abonos', 17, 4], ['Abonos', 18, 4], ['Abonos', 20, 4], ['Abonos', 23, 3], ['Resumen', 2, 13], ['Resumen', 3, 13], ['Trabajos', 5, 3]]) {
     const f = e.ss.getSheetByName(hoja).cell(fila, col).f;
     assert.ok(f && !separadorIngles(f), `${hoja} ${fila},${col}: ${f}`);
   }

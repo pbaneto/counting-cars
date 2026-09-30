@@ -29,7 +29,7 @@ function alEditar(e) {
       if (nombre === HOJA.ALB) editarAlbaranes_(r0, n, c0, nc);
       else if (nombre === HOJA.TRAB) editarTrabajos_(r0, n, c0, nc);
       else if (nombre === HOJA.PIEZAS) editarPiezas_(r0, n, c0, nc);
-      else if (nombre === HOJA.ABONOS) editarAbonos_(r0, n);
+      else if (nombre === HOJA.ABONOS) editarAbonos_(r0, n, c0);
       else editarCoches_(r0, n);
       crono.paso(`editar ${nombre}`);
       crono.fin();
@@ -38,16 +38,17 @@ function alEditar(e) {
 }
 
 /**
- * Trigger INSTALABLE onChange: borrar filas no dispara onEdit. Si se borran filas en Abonos, las piezas cuya fila ya
- * no está se desmarcan en Piezas. Los cambios hechos por el propio script no disparan este trigger.
+ * Trigger INSTALABLE onChange: insertar o borrar filas no dispara onEdit. En Abonos, borrar la fila de una pieza la
+ * desmarca en Piezas, y el resumen de la derecha (que comparte filas con la tabla) se vuelve a montar si se ha movido.
+ * Los cambios hechos por el propio script no disparan este trigger.
  */
 function alCambiar(e) {
-  if (!e || e.changeType !== 'REMOVE_ROW') return;
+  if (!e || ['REMOVE_ROW', 'INSERT_ROW'].indexOf(e.changeType) < 0) return;
   const activa = e.source && e.source.getActiveSheet();
   if (!activa || activa.getName() !== HOJA.ABONOS) return;
   ejecutar_('alCambiar', () => {
     if (e.source) _ss = e.source;
-    conBloqueo_(20, desmarcarPiezasBorradas_);
+    conBloqueo_(20, () => revisarAbonosTrasCambioDeFilas_(e.changeType === 'REMOVE_ROW'));
   }, true);
 }
 

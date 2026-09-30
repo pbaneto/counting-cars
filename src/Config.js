@@ -80,10 +80,14 @@ const CONFIG_DEFECTO = [
   ['CARPETA_ERRORES', '', 'ID de la carpeta de PDFs que no se han podido leer (se crea sola)'],
 ];
 
-/** Posiciones fijas de la pestaña Abonos (resumen arriba, panel de pendientes, tabla grande debajo). */
+/**
+ * Posiciones fijas de la pestaña Abonos. La tabla grande va arriba del todo (cabecera en la fila 1, que queda fija) en
+ * las columnas A-M; el resumen por quincena y el panel de pendientes van a su derecha (columnas O en adelante).
+ */
 const ABONOS = {
-  celdaAnio: 'B1', filaCabResumen: 3, filaIni: 4, filas: 24, filaTitulo: 29, filaCabTabla: 30, filaTabla: 31, maxTabla: 3000,
-  panelCol: 11, // K (etiqueta) / L (valor): panel "Pendientes de RM", no depende de la quincena en que se pidió el reembolso
+  filaCabTabla: 1, filaTabla: 2, maxTabla: 3000,
+  colResumen: 15, celdaAnio: 'P1', filaCabResumen: 3, filaIni: 4, filas: 24,  // O: Mes, P: Quincena … T: Diferencia
+  panelCol: 22, // V (etiqueta) / W (valor): panel "Pendientes de RM", no depende de la quincena en que se pidió el reembolso
   cabResumen: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso abonado', 'Total factura RM', 'Diferencia'],
   cabTabla: ['Fecha abono', 'Descripción pieza', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia', 'Matrícula',
     'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente', 'Clave'],  // Clave: columna oculta (ver clavesPiezas en Logic.js)

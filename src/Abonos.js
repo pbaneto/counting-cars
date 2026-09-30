@@ -28,19 +28,21 @@ function sincronizarAbonos_() {
  * tabP: la tabla de Piezas si quien llama ya la ha leído (y la mantiene al día con lo que escriba después).
  */
 function leerParaAbonos_(tabP, crono) {
-  if (recolocarTablaAbonos_()) crono.paso('recolocar tabla de Abonos');
+  if (recolocarTablaAbonos_()) { montarAbonos_(); crono.paso('recolocar tabla de Abonos'); }
   const leida = tabla => `${tabla.filas.length} de ${tabla.leidas} filas`;
   if (!tabP) { tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${leida(tabP)})`); }
   const tabL = leerTabla_(HOJA.LINEAS); crono.paso(`leer Líneas RM (${leida(tabL)})`);
   const tabA = leerTabla_(HOJA.ALB); crono.paso(`leer Albaranes (${leida(tabA)})`);
-  const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ultFila = sh.getLastRow();
+  const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ultFila = sh.getLastRow(), maxFilas = sh.getMaxRows();
+  // getLastRow cuenta también el resumen de la derecha: se quitan las filas vacías del final de la tabla.
   const tabla = ultFila >= tb ? sh.getRange(tb, 1, ultFila - tb + 1, ncol).getValues() : [];
+  while (tabla.length && tabla[tabla.length - 1].every(x => x === '' || x == null)) tabla.pop();
   const shC = ss_().getSheetByName(HOJA.CLAVES), ultC = shC ? shC.getLastRow() : 0;
   const vistas = new Set(ultC ? shC.getRange(1, 1, ultC, 1).getValues().map(r => String(r[0])).filter(Boolean) : []);
   loc_('');  // la configuración regional también es una lectura: se guarda ya para escribir las fórmulas luego
   crono.paso(`leer Abonos (${tabla.length} filas, ${vistas.size} claves vistas)`);
   const migrar = PropertiesService.getScriptProperties().getProperty(PROP_ABONOS_EDITABLE_) !== '1';
-  return { tabP, tabL, tabA, sh, tabla, vistas, migrar };
+  return { tabP, tabL, tabA, sh, tabla, vistas, migrar, ultFila: tb + tabla.length - 1, maxFilas };
 }
 
 /**
@@ -99,13 +101,14 @@ function escribirAbonos_(d, filasDesmarcadas) {
   res.cambios.forEach(({ i, v }) => Object.keys(v).forEach(k => {
     sh.getRange(tb + i, COL_ABONOS_[k]).setValue(k === 'fechaAbono' ? aFecha_(v[k]) : v[k]);
   }));
-  // 2) Filas de piezas desmarcadas, de abajo arriba.
-  res.borrar.slice().sort((a, b) => b - a).forEach(i => sh.deleteRow(tb + i));
-  // 3) Filas nuevas ARRIBA, justo debajo de la cabecera. Los rangos del resumen, del panel y de los colores empiezan
-  //    en la cabecera, así que crecen solos al insertar aquí.
+  // 2) Filas de piezas desmarcadas, de abajo arriba. Sólo las celdas de la tabla (A-M): una fila entera se llevaría
+  //    también la fila del resumen que hay a la derecha.
+  res.borrar.slice().sort((a, b) => b - a).forEach(i => sh.getRange(tb + i, 1, 1, ncol).deleteCells(SpreadsheetApp.Dimension.ROWS));
+  // 3) Filas nuevas ARRIBA, justo debajo de la cabecera, desplazando hacia abajo sólo las celdas de la tabla.
   const k = res.nuevas.length;
   if (k) {
-    sh.insertRowsBefore(tb, k);
+    if (d.ultFila + k > d.maxFilas) sh.insertRowsAfter(d.maxFilas, d.ultFila + k - d.maxFilas + 100);  // al final: no mueve nada
+    sh.getRange(tb, 1, k, ncol).insertCells(SpreadsheetApp.Dimension.ROWS);
     const modelo = sh.getRange(tb + k, 1, 1, ncol), destino = sh.getRange(tb, 1, k, ncol);
     modelo.copyTo(destino, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
     modelo.copyTo(destino, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
@@ -167,7 +170,7 @@ function migrarAbonos_(d, marcadas, abonos) {
  * Una fila de abono sin pieza (Sin solicitar) no afecta a nada más.
  */
 function desmarcarPiezasBorradas_() {
-  recolocarTablaAbonos_();
+  if (recolocarTablaAbonos_()) montarAbonos_();
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ult = sh.getLastRow();
   if (PropertiesService.getScriptProperties().getProperty(PROP_ABONOS_EDITABLE_) !== '1') return;  // sin migrar: no se sabe qué fila es de qué pieza
   const enTabla = new Set();
@@ -187,9 +190,10 @@ function desmarcarPiezasBorradas_() {
  * Edición a mano en la tabla de Abonos. Vaciar una fila entera (seleccionarla y pulsar Suprimir) cuenta como borrarla:
  * se quita el hueco y, si era de una pieza, se desmarca en Piezas. Cualquier otro cambio se respeta tal cual.
  */
-function editarAbonos_(r0, n) {
+function editarAbonos_(r0, n, c0) {
+  if (c0 > ABONOS.cabTabla.length) return;  // resumen / panel de la derecha: no es la tabla
   // Si la tabla estaba descolocada, la fila editada ya no es la que era: sólo se recoloca y se revisan las piezas.
-  if (recolocarTablaAbonos_()) { desmarcarPiezasBorradas_(); return; }
+  if (recolocarTablaAbonos_()) { montarAbonos_(); desmarcarPiezasBorradas_(); return; }
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
   const desde = Math.max(r0, tb), hasta = r0 + n, ult = sh.getLastRow();
   if (hasta <= desde) return;
@@ -198,19 +202,19 @@ function editarAbonos_(r0, n) {
   vals.forEach((v, i) => { if (COLS_ENTRADA_ABONOS_.every(c => v[c - 1] === '' || v[c - 1] == null)) vacias.push(desde + i); });
   if (!vacias.length) return;
   // Lo que queda por debajo de la última fila con algo ya está en blanco. De abajo arriba para no mover las siguientes.
-  vacias.filter(r => r <= ult).sort((a, b) => b - a).forEach(r => sh.deleteRow(r));
+  vacias.filter(r => r <= ult).sort((a, b) => b - a).forEach(r => sh.getRange(r, 1, 1, ncol).deleteCells(SpreadsheetApp.Dimension.ROWS));
   desmarcarPiezasBorradas_();
 }
 
 /**
- * La tabla de Abonos va en posiciones fijas (cabecera en ABONOS.filaCabTabla). Si alguien
- * borra o inserta filas por encima de la cabecera, todo se desplaza y escribir en las filas fijas pisaría datos.
- * Aquí se busca la cabecera real ("Fecha abono" | "Descripción pieza") y se vuelve a poner en su sitio insertando o
- * quitando filas VACÍAS por encima de ella; nunca se toca una fila con datos. Devuelve true si ha movido algo.
+ * La tabla de Abonos va arriba del todo (cabecera en la fila 1). Si su cabecera no está ahí (diseño anterior con el
+ * resumen encima, o filas insertadas encima), se quitan las filas de encima y devuelve true: quien llama debe volver a
+ * montar la pestaña (montarAbonos_), porque el resumen de la derecha también se ha movido. Nunca borra datos de la
+ * tabla: si encima de la cabecera hay algo que no sea el resumen antiguo, para y avisa.
  */
 function recolocarTablaAbonos_() {
-  const sh = hoja_(HOJA.ABONOS), esperada = ABONOS.filaCabTabla, ct = ABONOS.cabTabla;
-  const n = Math.min(Math.max(sh.getLastRow(), 1), esperada + 60);
+  const sh = hoja_(HOJA.ABONOS), ct = ABONOS.cabTabla;
+  const n = Math.min(Math.max(sh.getLastRow(), 1), 80);
   const vals = sh.getRange(1, 1, n, ct.length).getValues();
   const idx = vals.findIndex(r => r[0] === ct[0] && r[1] === ct[1]);
   if (idx < 0) {
@@ -219,23 +223,29 @@ function recolocarTablaAbonos_() {
       'Si se ha borrado, deshazlo (Ctrl+Z) o recupera la fila desde Archivo ▸ Historial de versiones.');
   }
   const real = idx + 1;
-  if (real === esperada) return false;
-  const titulo = 'Piezas reembolsadas y abonos de RM';  // texto que ponían versiones anteriores encima de la cabecera
-  if (real < esperada) {
-    sh.insertRowsBefore(real, esperada - real);
-  } else {
-    // Filas sobrantes entre el resumen y la cabecera: sólo si están vacías (o son el título antiguo).
-    const libres = [];
-    for (let r = ABONOS.filaIni + ABONOS.filas; r < real; r++) {
-      const v = vals[r - 1], vacia = v.every(x => x === '' || x == null) || String(v[0]).indexOf(titulo) === 0;
-      if (vacia) libres.push(r);
-    }
-    const sobran = real - esperada;
-    if (libres.length < sobran) throw new Error(`La tabla de Abonos está desplazada ${sobran} fila(s) hacia abajo y no hay filas vacías que quitar encima de la cabecera (fila ${real}). Borra a mano las filas que sobren entre el resumen y la cabecera.`);
-    libres.slice(-sobran).sort((a, b) => b - a).forEach(r => sh.deleteRow(r));
+  if (real === ABONOS.filaCabTabla) return false;
+  // Diseño anterior: año en A1:B1 y resumen por quincena (Mes | Quincena…) en A3 hasta la fila 27, tabla debajo.
+  const antiguo = vals[2] && vals[2][0] === 'Mes' && vals[2][1] === 'Quincena';
+  if (!antiguo && vals.slice(0, real - 1).some(r => r.some(x => x !== '' && x != null))) {
+    throw new Error(`En Abonos hay datos en las filas 1-${real - 1}, encima de la cabecera de la tabla. Muévelos o bórralos para que la cabecera quede en la fila 1.`);
   }
-  log_('AVISO', 'recolocarTablaAbonos', `${HOJA.ABONOS}!A${real}`, `La cabecera de la tabla estaba en la fila ${real} en vez de la ${esperada} (se habían borrado o insertado filas encima). Recolocada sin tocar los datos.`);
+  const anio = antiguo ? vals[0][1] : '';
+  sh.deleteRows(1, real - 1);
+  if (anio !== '' && anio != null) sh.getRange(ABONOS.celdaAnio).setValue(anio);
+  log_('AVISO', 'recolocarTablaAbonos', `${HOJA.ABONOS}!A${real}`, antiguo
+    ? 'Tabla subida a la fila 1 y resumen movido a la derecha (diseño nuevo de la pestaña).'
+    : `La cabecera de la tabla estaba en la fila ${real}: quitadas las filas vacías de encima.`);
   return true;
+}
+
+/**
+ * Filas enteras insertadas o borradas a mano en Abonos: la tabla se revisa (y se desmarcan las piezas cuya fila se ha
+ * borrado) y, si el resumen de la derecha se ha descolocado, se vuelve a montar.
+ */
+function revisarAbonosTrasCambioDeFilas_(borradas) {
+  if (recolocarTablaAbonos_()) montarAbonos_();
+  else if (!resumenAbonosEnSuSitio_(hoja_(HOJA.ABONOS))) montarResumenAbonos_();
+  if (borradas) desmarcarPiezasBorradas_();
 }
 
 /** Menú: Actualizar Abonos (añade lo que falte; no cambia ni borra nada de lo que ya hay). */
