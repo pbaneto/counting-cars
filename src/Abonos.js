@@ -217,7 +217,7 @@ function editarAbonos_(r0, n) {
 }
 
 /**
- * La tabla de Abonos va en posiciones fijas (título en ABONOS.filaTitulo, cabecera en ABONOS.filaCabTabla). Si alguien
+ * La tabla de Abonos va en posiciones fijas (cabecera en ABONOS.filaCabTabla). Si alguien
  * borra o inserta filas por encima de la cabecera, todo se desplaza y escribir en las filas fijas pisaría datos.
  * Aquí se busca la cabecera real ("Fecha abono" | "Descripción pieza") y se vuelve a poner en su sitio insertando o
  * quitando filas VACÍAS por encima de ella; nunca se toca una fila con datos. Devuelve true si ha movido algo.
@@ -234,11 +234,11 @@ function recolocarTablaAbonos_() {
   }
   const real = idx + 1;
   if (real === esperada) return false;
-  const titulo = 'Piezas reembolsadas y abonos de RM';
+  const titulo = 'Piezas reembolsadas y abonos de RM';  // texto que ponían versiones anteriores encima de la cabecera
   if (real < esperada) {
     sh.insertRowsBefore(real, esperada - real);
   } else {
-    // Filas sobrantes entre el resumen y la cabecera: sólo si están vacías (o son el título).
+    // Filas sobrantes entre el resumen y la cabecera: sólo si están vacías (o son el título antiguo).
     const libres = [];
     for (let r = ABONOS.filaIni + ABONOS.filas; r < real; r++) {
       const v = vals[r - 1], vacia = v.every(x => x === '' || x == null) || String(v[0]).indexOf(titulo) === 0;
@@ -248,7 +248,6 @@ function recolocarTablaAbonos_() {
     if (libres.length < sobran) throw new Error(`La tabla de Abonos está desplazada ${sobran} fila(s) hacia abajo y no hay filas vacías que quitar encima de la cabecera (fila ${real}). Borra a mano las filas que sobren entre el resumen y la cabecera.`);
     libres.slice(-sobran).sort((a, b) => b - a).forEach(r => sh.deleteRow(r));
   }
-  sh.getRange(ABONOS.filaTitulo, 1).setValue(TITULO_TABLA_ABONOS).setFontWeight('bold').setFontSize(11);
   log_('AVISO', 'recolocarTablaAbonos', `${HOJA.ABONOS}!A${real}`, `La cabecera de la tabla estaba en la fila ${real} en vez de la ${esperada} (se habían borrado o insertado filas encima). Recolocada sin tocar los datos.`);
   return true;
 }

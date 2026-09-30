@@ -473,7 +473,7 @@ test('Abonos: si se borra el título (la tabla sube una fila) se recoloca sin to
   p.put(2, 3, '100'); p.put(2, 4, 'AAA'); p.put(2, 5, 'Pieza'); p.put(2, 10, 10); p.put(2, 1, true);
   e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
   assert.equal(ab.valor(30, 1), 'Fecha abono', 'cabecera de vuelta en la fila 30');
-  assert.match(ab.valor(29, 1), /^Piezas reembolsadas/, 'y el título en la 29');
+  assert.equal(ab.valor(29, 1), '', 'sin texto de explicación encima');
   assert.deepEqual([31, 32, 33].map(r => ab.valor(r, 7)), ['AAA', 'DAYCO5PK1090', '']);
   assert.ok(e.log.console.some(x => /recolocarTablaAbonos.*fila 29 en vez de la 30/.test(x)));
   // Reparar fórmulas con la tabla desplazada tampoco pisa datos

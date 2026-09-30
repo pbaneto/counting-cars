@@ -431,7 +431,6 @@ function montarAbonos_() {
   sh.getRange('A1').setValue('Año').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange(ABONOS.celdaAnio).setValue(anio === '' ? 2026 : anio);
   sh.getRange(ABONOS.celdaAnio).setFontWeight('bold').setBackground(COLORES.amarillo).setNumberFormat('0');
-  sh.getRange('D1').setValue('Diferencia = Total factura − (Recambios − Abonado). Normal que no sea 0: los abonos suelen llegar en la factura siguiente').setFontStyle('italic').setFontColor('#666666');
 
   sh.getRange(ABONOS.filaCabResumen, 1, 1, cab.length).setValues([cab]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   // Rangos de la tabla grande (piezas/abonos), usados tanto por el cuadre por quincena como por el panel de pendientes.
@@ -477,7 +476,7 @@ function montarAbonos_() {
   sh.getRange(2, pv, 5, 1).setHorizontalAlignment('center');
   sh.setColumnWidth(pc, 170); sh.setColumnWidth(pv, 90);
 
-  sh.getRange(ABONOS.filaTitulo, 1).setValue(TITULO_TABLA_ABONOS).setFontWeight('bold').setFontSize(11);
+  sh.getRange(ABONOS.filaTitulo, 1, 1, ABONOS.cabTabla.length).clearContent().clearFormat();  // sin textos de explicación en la hoja
   const ct = ABONOS.cabTabla;
   sh.getRange(ABONOS.filaCabTabla, 1, 1, ct.length).setValues([ct]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   const n = fin - tb + 1;
@@ -488,8 +487,8 @@ function montarAbonos_() {
   sh.getRange(tb, 9, n, 1).setNumberFormat(FMT.fecha);
   sh.getRange(tb, 12, n, 1).setNumberFormat('0');
   [90, 80, 130, 130, 130, 150, 110, 110, 120, 110, 120, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
-  // Aviso al editar o borrar el título y la cabecera: si desaparecen, la tabla se desplaza (ver recolocarTablaAbonos_).
-  proteger_(sh.getRange(ABONOS.filaTitulo, 1, ABONOS.filaCabTabla - ABONOS.filaTitulo + 1, ct.length));
+  // Aviso al editar o borrar la cabecera: si desaparece, la tabla se desplaza (ver recolocarTablaAbonos_).
+  proteger_(sh.getRange(ABONOS.filaCabTabla, 1, 1, ct.length));
   sh.hideColumns(ct.length);  // "Clave": une cada fila con su pieza / línea de abono; no se toca a mano
   // Filtro que incluye la columna oculta: ordenar con él mueve la clave junto con su fila.
   if (!sh.getFilter()) sh.getRange(ABONOS.filaCabTabla, 1, fin - ABONOS.filaCabTabla + 1, ct.length).createFilter();

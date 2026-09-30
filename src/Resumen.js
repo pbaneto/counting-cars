@@ -29,7 +29,7 @@ function montarResumen_() {
   limpiarProtecciones_(sh);
   sh.getCharts().forEach(c => sh.removeChart(c));
   sh.getRange('A1').setValue('Resumen').setFontSize(16).setFontWeight('bold');
-  sh.getRange('C1').setValue('Ingresos, recambios y beneficio por mes. Los trabajos se imputan al mes de su fecha de apertura.').setFontStyle('italic').setFontColor('#666666');
+  sh.getRange('C1').clearContent().clearFormat();  // sin textos de explicación en la hoja (borra el de versiones anteriores)
 
   const estiloCab = (fila, n) => sh.getRange(fila, 1, 1, n).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   const titAnio = (fila, anio) => sh.getRange(fila, 1).setValue(anio).setFontSize(14).setFontWeight('bold').setHorizontalAlignment('left').setNumberFormat('0');
@@ -70,7 +70,7 @@ function montarResumen_() {
   sh.getRange(RES.total, 7).setNumberFormat(FMT.euro);
   sh.getRange(RES.ini, 6, 12, 3).setBackground(COLORES.gris);
   sh.getRange(RES.ini, 2, 12, 1).setBackground('#ffffff');
-  sh.getRange(RES.anioFila, 3).setValue(`Meses hasta ${MESES[d.mesEnVivo - 2] || '—'}: importados del Excel antiguo (valores fijos). Desde ${MESES[d.mesEnVivo - 1]}: se calculan desde Trabajos.`).setFontStyle('italic').setFontColor('#666666');
+  sh.getRange(RES.anioFila, 3).clearContent().clearFormat();
 
   // ---- 2025 ----
   const y25 = RES.y25;
@@ -87,7 +87,7 @@ function montarResumen_() {
   d.y24.forEach((s, i) => sh.getRange(y24.ini + i, 1, 1, 7).setValues([[MESES[i], s[0], s[1], s[2], null, s[3], null]]));
   sh.getRange(y24.total, 5, 1, 2).setValues([['Total año', `=SUM(F${y24.ini}:F${y24.ini + 11})`]]).setFontWeight('bold');
   sh.getRange(y24.ini, 2, 12, 5).setNumberFormat(FMT.euro); sh.getRange(y24.total, 6).setNumberFormat(FMT.euro);
-  sh.getRange(y24.total + 1, 1).setValue('2024: Recambios = suma de las dos columnas del Excel antiguo; Beneficio sin gastos fijos.').setFontStyle('italic').setFontColor('#666666');
+  sh.getRange(y24.total + 1, 1).clearContent().clearFormat();
 
   // ---- Gráficos ----
   const chart = (titulo, fCab, fIni, colBen, fila) => {
