@@ -12,14 +12,17 @@
 const COL_ABONOS_ = { fechaAbono: 1, descripcion: 2, sinIva: 3, estado: 5, albaran: 6, referencia: 7, matricula: 8, fechaSolicitud: 9, factura: 10, nota: 11, clave: 13 };
 // Marca de que la tabla ya es editable (migrarAbonos_ hecho). No se usa la cabecera "Clave": montarAbonos_ la escribe.
 const PROP_ABONOS_EDITABLE_ = 'ABONOS_EDITABLE';
+// Marca de que las claves A ya son por albarán de abono (antes eran por factura): ver migrarClavesAbonos_.
+const PROP_ABONOS_CLAVES_V2_ = 'ABONOS_CLAVES_V2';
 // Columnas que escribe una persona o la sincronización (no las fórmulas D y L): si están todas vacías, la fila se ha borrado.
 const COLS_ENTRADA_ABONOS_ = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11];
 
-function sincronizarAbonos_() {
+/** escaneados: líneas de albaranes de ABONO recién escaneados (ver abonosEscaneados_), que aún no están en ninguna factura. */
+function sincronizarAbonos_(escaneados) {
   const crono = cronometro_('sincronizarAbonos_');
   const d = leerParaAbonos_(null, crono);
   crono.fin();
-  return escribirAbonos_(d);
+  return escribirAbonos_(d, null, escaneados);
 }
 
 /**
@@ -33,6 +36,8 @@ function leerParaAbonos_(tabP, crono) {
   if (!tabP) { tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${leida(tabP)})`); }
   const tabL = leerTabla_(HOJA.LINEAS); crono.paso(`leer Líneas RM (${leida(tabL)})`);
   const tabA = leerTabla_(HOJA.ALB); crono.paso(`leer Albaranes (${leida(tabA)})`);
+  const fechaFactura = {};
+  leerTabla_(HOJA.FACT).filas.forEach(f => { fechaFactura[String(f.v['Nº factura']).trim()] = aISO_(f.v['Fecha factura']); });
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ultFila = sh.getLastRow(), maxFilas = sh.getMaxRows();
   // getLastRow cuenta también el resumen de la derecha: se quitan las filas vacías del final de la tabla.
   const tabla = ultFila >= tb ? sh.getRange(tb, 1, ultFila - tb + 1, ncol).getValues() : [];
@@ -42,7 +47,9 @@ function leerParaAbonos_(tabP, crono) {
   loc_('');  // la configuración regional también es una lectura: se guarda ya para escribir las fórmulas luego
   crono.paso(`leer Abonos (${tabla.length} filas, ${vistas.size} claves vistas)`);
   const migrar = PropertiesService.getScriptProperties().getProperty(PROP_ABONOS_EDITABLE_) !== '1';
-  return { tabP, tabL, tabA, sh, tabla, vistas, migrar, ultFila: tb + tabla.length - 1, maxFilas };
+  const props = PropertiesService.getScriptProperties();
+  return { tabP, tabL, tabA, sh, tabla, vistas, migrar, ultFila: tb + tabla.length - 1, maxFilas, fechaFactura,
+    clavesV2: props.getProperty(PROP_ABONOS_CLAVES_V2_) === '1' };
 }
 
 /**
@@ -76,8 +83,9 @@ function matriculasDeAlbaranes_(tabA, tabL) {
 /**
  * Aplica a la tabla de Abonos lo leído en leerParaAbonos_. No lee nada de la hoja.
  * filasDesmarcadas: filas de Piezas a las que se acaba de quitar el Reembolso (su fila de Abonos se borra).
+ * escaneados: líneas de albaranes de abono recién escaneados (opcional).
  */
-function escribirAbonos_(d, filasDesmarcadas) {
+function escribirAbonos_(d, filasDesmarcadas, escaneados) {
   const crono = cronometro_('escribirAbonos_');
   const { tabP, tabL, tabA, sh } = d;
   const hoy = hoyISO_(), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
@@ -90,8 +98,10 @@ function escribirAbonos_(d, filasDesmarcadas) {
   const quitar = todas.filter(p => (filasDesmarcadas || []).indexOf(p.fila) >= 0).map(p => p.clave);
   crono.paso(`preparar piezas (${marcadas.length} marcadas, ${fechasEscritas} fechas escritas)`);
 
-  const abonos = abonosDeLineas_(tabL, plateDe);
-  if (d.migrar) { migrarAbonos_(d, marcadas, abonos); crono.paso('migrar a tabla editable'); }
+  const deFacturas = abonosDeLineas_(tabL, plateDe, d.fechaFactura);
+  const abonos = deFacturas.concat(clavesAbonos((escaneados || []).map(a => Object.assign({}, a, { matricula: plateDe[normAlbaran(a.albaranOrigen)] || '' }))));
+  if (d.migrar) { migrarAbonos_(d, marcadas, deFacturas); crono.paso('migrar a tabla editable'); }
+  if (!d.clavesV2) { migrarClavesAbonos_(d, tabL); crono.paso('migrar claves de abono'); }
 
   const existentes = d.tabla.map(r => ({ clave: r[12], fechaAbono: r[0], descripcion: r[1], sinIva: r[2], estado: r[4], albaran: r[5], ref: r[6], matricula: r[7], factura: r[9], nota: r[10] }));
   const res = sincronizarAbonos(existentes, marcadas, todas, abonos, d.vistas, quitar, { matriculas: plateDe });
@@ -121,10 +131,14 @@ function escribirAbonos_(d, filasDesmarcadas) {
   return res;
 }
 
-/** Líneas de abono de las facturas RM, con su clave A. */
-function abonosDeLineas_(tabL, plateDe) {
+/**
+ * Líneas de abono de las facturas RM, con su clave A. Fecha de abono = fecha de la factura (si la pieza la marca la
+ * factura; si antes llegó el albarán de abono escaneado, esa fila ya tiene la fecha del albarán y no se cambia).
+ */
+function abonosDeLineas_(tabL, plateDe, fechaFactura) {
   return clavesAbonos(tabL.filas.filter(f => f.v['Tipo'] === 'Abono').map(f => ({
-    factura: f.v['Nº factura'], fecha: aISO_(f.v['Fecha albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']),
+    factura: f.v['Nº factura'], fecha: (fechaFactura || {})[String(f.v['Nº factura']).trim()] || aISO_(f.v['Fecha albarán']),
+    albaranAbono: normAlbaran(f.v['Nº albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']),
     ref: f.v['Referencia'], desc: f.v['Descripción'], importe: parseNumber(f.v['Importe sin IVA']),
     // El bloque de abono de la factura trae la matrícula vacía: la buena es la de su albarán original.
     matricula: plateDe[albaranOrigen(f.v['Albarán origen'])] || normPlate(f.v['Matrícula']),
@@ -143,6 +157,40 @@ function registrarClavesAbonos_(claves) {
   let sh = ss.getSheetByName(HOJA.CLAVES);
   if (!sh) { sh = ss.insertSheet(HOJA.CLAVES); sh.hideSheet(); }
   sh.getRange(sh.getLastRow() + 1, 1, claves.length, 1).setValues(claves.map(c => [c]));
+}
+
+/**
+ * Líneas de un albarán de ABONO escaneado, en el formato de abonosDeLineas_ (sin factura todavía): fecha de abono =
+ * fecha del albarán de abono. Sin la línea de residuos (SIGAUS): esa ya llegará con la factura.
+ */
+function abonosEscaneados_(doc, hoy) {
+  return doc.lineas.filter(l => !esResiduo(l)).map(l => ({
+    factura: '', fecha: doc.fecha || hoy, albaranAbono: normAlbaran(doc.numero_albaran), albaranOrigen: albaranOrigen(l.albaran_origen),
+    ref: l.referencia, desc: l.descripcion, importe: parseNumber(l.importe),
+  }));
+}
+
+/**
+ * Paso único: las claves A de versiones anteriores eran por factura (A|factura|origen|ref|n); ahora son por albarán de
+ * abono, para casar el albarán de abono escaneado con la factura que luego lo trae. Se traducen en la columna Clave y
+ * en la lista de claves vistas usando las líneas de abono de Líneas RM.
+ */
+function migrarClavesAbonos_(d, tabL) {
+  const lineas = tabL.filas.filter(f => f.v['Tipo'] === 'Abono').map(f => ({
+    factura: f.v['Nº factura'], albaranAbono: normAlbaran(f.v['Nº albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']),
+    ref: f.v['Referencia'], desc: f.v['Descripción'] }));
+  const viejas = clavesAbonosAntiguas(lineas), nuevas = clavesAbonos(lineas), mapa = {};
+  viejas.forEach((v, i) => { mapa[v.clave] = nuevas[i].clave; });
+  const traducir = s => partirClaves(s).map(k => mapa[k] || k).join(';');
+  let cambiadas = 0;
+  d.tabla.forEach(r => { const t = traducir(r[12]); if (t !== String(r[12] || '')) { r[12] = t; cambiadas++; } });
+  if (cambiadas) d.sh.getRange(ABONOS.filaTabla, ABONOS.cabTabla.length, d.tabla.length, 1).setValues(d.tabla.map(r => [r[12]]));
+  const vistas = Array.from(d.vistas).map(k => mapa[k] || k);
+  d.vistas = new Set(vistas);
+  const shC = ss_().getSheetByName(HOJA.CLAVES);
+  if (shC && vistas.length) { shC.clearContents(); shC.getRange(1, 1, vistas.length, 1).setValues(vistas.map(k => [k])); }
+  PropertiesService.getScriptProperties().setProperty(PROP_ABONOS_CLAVES_V2_, '1');
+  if (cambiadas) log_('INFO', 'migrarClavesAbonos', HOJA.ABONOS, `${cambiadas} filas con la clave de abono nueva (por albarán de abono)`);
 }
 
 /**

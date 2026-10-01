@@ -192,7 +192,9 @@ function periodoFactura(doc) {
 /**
  * Claves de la tabla de Abonos: cada fila lleva en una columna oculta las claves de lo que la originó, separadas por ";".
  *  P|albarán|referencia|n  pieza de Piezas con Reembolso ✓ (n = nº de orden entre las piezas con el mismo albarán y referencia)
- *  A|factura|albarán origen|referencia|n  línea de abono de una factura RM
+ *  A|albarán de abono|albarán origen|referencia|n  línea de un albarán de ABONO de RM. La misma clave sale del albarán de
+ *    abono escaneado y de la factura quincenal que luego lo incluye (en la factura, el "Nº albarán" del bloque de abono),
+ *    así que llegue primero uno u otro, la pieza se reconoce y no se duplica.
  * Una fila que es a la vez pieza pedida y abono recibido lleva las dos.
  */
 function ponerClaves(items, prefijo, partes) {
@@ -206,7 +208,9 @@ function ponerClaves(items, prefijo, partes) {
 }
 function refODesc_(ref, desc) { return refKey(ref) || 'D' + refKey(desc); }
 function clavesPiezas(piezas) { return ponerClaves(piezas, 'P', p => [normAlbaran(p.albaran), refODesc_(p.ref, p.desc)]); }
-function clavesAbonos(abonos) { return ponerClaves(abonos, 'A', a => [String(a.factura || '').trim(), normAlbaran(a.albaranOrigen), refODesc_(a.ref, a.desc)]); }
+function clavesAbonos(abonos) { return ponerClaves(abonos, 'A', a => [normAlbaran(a.albaranAbono), normAlbaran(a.albaranOrigen), refODesc_(a.ref, a.desc)]); }
+/** Clave A de versiones anteriores (con la factura en vez del albarán de abono): sólo para migrar las claves guardadas. */
+function clavesAbonosAntiguas(abonos) { return ponerClaves(abonos.map(a => Object.assign({}, a)), 'A', a => [String(a.factura || '').trim(), normAlbaran(a.albaranOrigen), refODesc_(a.ref, a.desc)]); }
 function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x => x.trim()).filter(Boolean); }
 
 /**
@@ -218,7 +222,9 @@ function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x =>
  * De las filas existentes sólo se rellenan celdas VACÍAS, y el Estado sólo cambia si seguía en "Sin abonar".
  *  existentes: filas de la tabla, en orden {clave, estado, albaran, ref, sinIva, fechaAbono, factura, nota}
  *  marcadas / todasPiezas: {clave, albaran, ref, desc, sinIva, fechaReembolso, matricula}
- *  abonos: {clave, factura, fecha, albaranOrigen, ref, desc, importe, matricula}
+ *  abonos: {clave, factura, fecha, albaranAbono, albaranOrigen, ref, desc, importe, matricula}: de las facturas RM (con
+ *    factura) y de albaranes de abono escaneados (sin factura). Si una línea está en los dos, cuenta la de la factura.
+ *    Si su fila ya está en la tabla sin "Factura RM", se rellena (el abono escaneado llegó antes que la factura).
  *  vistas: Set de claves A añadidas alguna vez (una fila de abono borrada a mano no vuelve a aparecer)
  *  opts.matriculas: {nº albarán: matrícula} para rellenar la Matrícula de las filas que la tengan vacía
  * Devuelve { nuevas (en el orden en que van arriba: la más reciente primero), cambios: [{i, v}], borrar: [i], registrar: [claves A] }.
@@ -252,8 +258,14 @@ function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, qu
     ? refKey(c.ref) && refKey(c.ref) === refKey(a.ref)
     : Math.abs(Math.abs(parseNumber(a.importe)) - parseNumber(c.sinIva)) < 0.02));
   const registrar = [];
-  const ordenados = abonos.map((a, i) => Object.assign({ _i: i }, a)).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)) || x._i - y._i);
+  const filaDe = {};
+  existentes.forEach((f, i) => { if (borrar.indexOf(i) < 0) partirClaves(f.clave).forEach(k => { if (!(k in filaDe)) filaDe[k] = i; }); });
+  const unicos = {};
+  abonos.forEach((a, i) => { const p = unicos[a.clave]; if (!p || (!String(p.factura || '').trim() && String(a.factura || '').trim())) unicos[a.clave] = Object.assign({ _i: i }, a); });
+  const ordenados = Object.keys(unicos).map(k => unicos[k]).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)) || x._i - y._i);
   ordenados.forEach(a => {
+    const i = filaDe[a.clave];
+    if (i !== undefined && a.factura && !String(existentes[i].factura || '').trim()) cambios[i] = Object.assign(cambios[i] || {}, { factura: a.factura });
     if (enTabla.has(a.clave) || vistas.has(a.clave)) return;
     enTabla.add(a.clave);
     registrar.push(a.clave);
@@ -271,7 +283,7 @@ function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, qu
       const f = c.vacias, v = { clave: partirClaves(f.clave).concat(a.clave).join(';') };
       if (f.estado === 'Sin abonar') v.estado = 'Abonada';
       if (!f.fechaAbono) v.fechaAbono = a.fecha;
-      if (!f.factura) v.factura = a.factura;
+      if (!f.factura && a.factura) v.factura = a.factura;
       if (!f.nota && nota) v.nota = nota;
       cambios[c.existente] = v;
       return;
@@ -401,5 +413,5 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
-    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
+    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, clavesAbonosAntiguas, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
 }

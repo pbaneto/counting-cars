@@ -12,6 +12,7 @@ const SCHEMA_LINEA_ALBARAN = {
     referencia: { type: GT.STR }, descripcion: { type: GT.STR }, marca: { type: GT.STR },
     cantidad: { type: GT.NUM, nullable: true }, precio_unitario: { type: GT.NUM, nullable: true },
     descuento_pct: { type: GT.NUM, nullable: true }, importe: { type: GT.NUM, nullable: true }, reembolso: { type: GT.BOOL },
+    albaran_origen: { type: GT.STR },
   },
   required: ['referencia', 'descripcion', 'importe', 'reembolso'],
 };
@@ -44,6 +45,7 @@ REGLAS
    - cantidad, precio_unitario (columna Pvp), descuento_pct (60,00 → 60), importe (columna Importe, sin IVA, tal cual aparece).
    - Incluye la línea de residuos "SIGAUS". NO incluyas textos sin importe (p. ej. "ATENCION PRECIO POR PAREJA") ni la publicidad.
    - marca: fabricante de la pieza si se deduce del prefijo del código de artículo (DAYCO6PK… → DAYCO, BOSCH…, CORTECO…, KRAFF… → KRAFFT) o de la descripción; si no, "".
+   - albaran_origen: SÓLO en albaranes de ABONO: el número que sigue a "AL ALB. Nº" junto a esa línea (p. ej. 01000459793), tal cual. En los demás, "".
 8. reembolso: true SÓLO si junto a la descripción de ESA línea hay una letra R escrita A MANO (bolígrafo, normalmente rojo o azul, a veces precedida de un guion largo "—R"). Ignora las R impresas y cualquier otra anotación manuscrita fuera de las líneas de pieza (números, "R10", garabatos en la cabecera). En caso de duda, false.
 9. No inventes nada: si un dato no se lee, usa "" (texto) o null (número).`;
 

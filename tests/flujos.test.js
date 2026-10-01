@@ -263,17 +263,56 @@ test('procesarAlbaranes: si los importes no cuadran se relee; si siguen sin cuad
   assert.match(aviso, /No cuadran los importes, siguen en Entrada \(1\):\n• c2\.pdf: base 36,81 \+ IVA = 44,54, pero el total es 50/);
 });
 
-test('procesarAlbaranes: un albarán de ABONO no se añade y pasa a Procesados', () => {
-  const abono = albaranRaw({ numero_albaran: '486962', es_abono: true, total: -72.94, base_imponible: -60.28,
-    lineas: [{ referencia: 'BOSCHF026400517', descripcion: 'ABONO FILTRO', importe: -15.14, reembolso: false }] });
+test('procesarAlbaranes: un albarán de ABONO no va a Albaranes; marca Abonada la pieza pedida (fecha del abono) y lo demás va a Abonos', () => {
+  const abono = albaranRaw({ numero_albaran: '486962', fecha: '2026-09-28', es_abono: true, total: -72.94, base_imponible: -60.28, matricula: '',
+    lineas: [
+      { referencia: 'BOSCHF026400517', descripcion: 'S0517 FILTRO', importe: -15.14, reembolso: false, albaran_origen: '01000478440' },
+      { referencia: 'ELEVA05', descripcion: 'ELEVALUNAS', importe: -45.14, reembolso: false, albaran_origen: '01000476000' },
+    ] });
   const e = entorno({ 'ab.pdf': abono });
   ['ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
+  const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos');
+  p.put(2, 3, '478440'); p.put(2, 4, 'BOSCHF026400517'); p.put(2, 5, 'FILTRO AIRE'); p.put(2, 10, 15.14); p.put(2, 1, true);
+  e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
+  assert.equal(ab.valor(2, 5), 'Sin abonar');
   subir(e, ['ab.pdf'], 'ENT');
   e.run('procesarAlbaranes()');
-  assert.ok(!tabla(e, 'Albaranes').some(a => a['Nº albarán'] === '486962'));
-  assert.equal(tabla(e, 'Piezas').length, 0);
+  assert.ok(!tabla(e, 'Albaranes').some(a => a['Nº albarán'] === '486962'), 'no va a Albaranes');
   assert.equal(e.carpetas.PROC.ficheros.length, 1);
-  assert.match(e.log.alerts[e.log.alerts.length - 1][1], /Albaranes de abono \(llegarán en la factura RM\): 1/);
+  assert.match(e.log.alerts[e.log.alerts.length - 1][1], /Albaranes de abono \(a la pestaña Abonos\): 1/);
+  const filas = [2, 3, 4].map(r => ({ desc: ab.valor(r, 2), estado: ab.valor(r, 5), fecha: e.run(`aISO_(hoja_('Abonos').getRange(${r}, 1).getValue())`), fra: ab.valor(r, 10) }));
+  const pedida = filas.find(f => f.desc === 'FILTRO AIRE');
+  assert.deepEqual([pedida.estado, pedida.fecha, pedida.fra], ['Abonada', '2026-09-28', ''], 'pieza pedida → Abonada con la fecha del albarán de abono');
+  const otra = filas.find(f => f.desc === 'ELEVALUNAS');
+  assert.equal(otra.estado, 'Sin solicitar');
+  assert.equal(filas.filter(f => f.desc).length, 2);
+  // Llega la factura quincenal con ese abono: no se duplica, sólo se rellena "Factura RM"
+  const l = e.ss.getSheetByName('Líneas RM'), fr = e.ss.getSheetByName('Facturas RM');
+  fr.put(2, 1, 'FCR 7'); fr.put(2, 2, e.run('new Date(2026, 8, 30)'));
+  [['BOSCHF026400517', '01000478440', -15.14], ['ELEVA05', '01000476000', -45.14], ['OTRA1', '01000470000', -5]].forEach(([ref, orig, imp], k) => {
+    const r = 2 + k; l.put(r, 1, 'FCR 7'); l.put(r, 2, '486962'); l.put(r, 3, e.run('new Date(2026, 8, 28)')); l.put(r, 5, 'Abono'); l.put(r, 6, orig); l.put(r, 7, ref); l.put(r, 8, 'X'); l.put(r, 12, imp);
+  });
+  e.run('actualizarAbonos()');
+  const todas = [2, 3, 4, 5].map(r => ({ ref: ab.valor(r, 7), estado: ab.valor(r, 5), fecha: e.run(`aISO_(hoja_('Abonos').getRange(${r}, 1).getValue())`), fra: ab.valor(r, 10) }));
+  assert.equal(todas.filter(f => f.ref).length, 3, 'sólo se añade la línea que no venía en el albarán escaneado');
+  assert.deepEqual(todas.find(f => f.ref === 'BOSCHF026400517'), { ref: 'BOSCHF026400517', estado: 'Abonada', fecha: '2026-09-28', fra: 'FCR 7' });
+  assert.deepEqual(todas.find(f => f.ref === 'OTRA1'), { ref: 'OTRA1', estado: 'Sin solicitar', fecha: '2026-09-30', fra: 'FCR 7' }, 'por la factura: fecha de la factura');
+});
+
+test('Abonos: las claves de abono antiguas (por factura) se traducen a las nuevas (por albarán de abono) sin duplicar filas', () => {
+  const e = entorno({});
+  const ab = e.ss.getSheetByName('Abonos'), l = e.ss.getSheetByName('Líneas RM'), cl = e.ss.getSheetByName('Abonos (claves)');
+  l.put(2, 1, 'FCR 7'); l.put(2, 2, '486962'); l.put(2, 3, e.run('new Date(2026, 8, 28)')); l.put(2, 5, 'Abono'); l.put(2, 6, '01000476000'); l.put(2, 7, 'ELEVA05'); l.put(2, 8, 'X'); l.put(2, 12, -45.14);
+  l.put(3, 1, 'FCR 7'); l.put(3, 2, '486963'); l.put(3, 3, e.run('new Date(2026, 8, 28)')); l.put(3, 5, 'Abono'); l.put(3, 6, '01000476001'); l.put(3, 7, 'BORRADA'); l.put(3, 8, 'X'); l.put(3, 12, -1);
+  ab.put(2, 2, 'X'); ab.put(2, 5, 'Abonada'); ab.put(2, 6, '476000'); ab.put(2, 7, 'ELEVA05'); ab.put(2, 10, 'FCR 7'); ab.put(2, 13, 'A|FCR 7|476000|ELEVA05|1');
+  cl.put(1, 1, 'A|FCR 7|476000|ELEVA05|1'); cl.put(2, 1, 'A|FCR 7|476001|BORRADA|1');  // la segunda: fila borrada a mano
+  delete e.props.ABONOS_CLAVES_V2;
+  e.run('actualizarAbonos()');
+  assert.equal(ab.valor(2, 13), 'A|486962|476000|ELEVA05|1');
+  assert.equal(ab.valor(2, 5), 'Abonada');
+  assert.equal(ab.valor(3, 2), '', 'ni se duplica la fila ni vuelve la borrada');
+  assert.deepEqual([cl.valor(1, 1), cl.valor(2, 1)], ['A|486962|476000|ELEVA05|1', 'A|486963|476001|BORRADA|1']);
+  assert.equal(e.props.ABONOS_CLAVES_V2, '1');
 });
 
 test('procesarAlbaranes: si la hoja no se puede guardar no se mueve ningún PDF, y volver a procesar no duplica nada', () => {
@@ -615,7 +654,7 @@ test('Abonos: del diseño anterior (resumen encima) al nuevo, pasando a tabla ed
   assert.equal(ab.valor(1, 1), 'Fecha abono', 'la tabla sube a la fila 1');
   assert.equal(ab.valor(1, 16), 2027, 'se conserva el año elegido');
   assert.equal(ab.valor(3, 15), 'Mes', 'resumen a la derecha');
-  assert.deepEqual([2, 3, 4].map(r => ab.valor(r, 13)), ['A|FCR 1|4442|R1|1', 'A|FCR 1|4443|R2|1', 'P|555|PPP|1']);
+  assert.deepEqual([2, 3, 4].map(r => ab.valor(r, 13)), ['A|92|4442|R1|1', 'A|93|4443|R2|1', 'P|555|PPP|1']);
   vieja.forEach((f, i) => f.forEach((v, j) => { if (j !== 3 && j !== 11) assert.deepEqual(ab.valor(2 + i, j + 1), v, `fila ${2 + i} col ${j + 1}`); }));
   assert.equal(ab.valor(1, 11), 'Nota', 'no queda nada del panel antiguo en K1');
   assert.equal(e.props.ABONOS_EDITABLE, '1');

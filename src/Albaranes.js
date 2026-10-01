@@ -32,7 +32,12 @@ function procesarAlbaranes() {
     });
     // Los PDF se mueven sólo después de guardar la hoja: si Sheets rechaza algo, lo dice aquí y no se mueve ninguno.
     // Volver a procesar es seguro: un albarán ya guardado lleva el enlace a su PDF y se reconoce como ya registrado.
-    if (!fallo) { try { SpreadsheetApp.flush(); } catch (e) { fallo = { nombre: '', e }; } }
+    if (!fallo) {
+      try {
+        if (ctx.tocaAbonos || ctx.abonosEscaneados.length) sincronizarAbonos_(ctx.abonosEscaneados);
+        SpreadsheetApp.flush();
+      } catch (e) { fallo = { nombre: '', e }; }
+    }
     if (fallo) {
       log_('ERROR', 'procesarAlbaranes', fallo.nombre, `${(fallo.e && fallo.e.stack) || fallo.e} | No se ha movido ningún PDF: siguen todos en Entrada.`);
     } else {
@@ -40,11 +45,10 @@ function procesarAlbaranes() {
         try { if (errores) moverAErrores_(f); else moverArchivo_(f, 'CARPETA_PROCESADOS'); }
         catch (e) { log_('AVISO', 'procesarAlbaranes', f.getName(), `No se ha podido mover el PDF: ${e.message}. La próxima vez se reconocerá como ya registrado.`); }
       });
-      if (ctx.tocaAbonos) sincronizarAbonos_();
     }
     const linea = (n, txt) => (n ? `${txt}: ${n}\n` : '');
     let msg = linea(cuenta.creado, 'Albaranes nuevos') + linea(cuenta.reembolso, 'Reembolsos marcados') + linea(cuenta.duplicado, 'Duplicados ignorados') +
-      linea(cuenta.abono, 'Albaranes de abono (llegarán en la factura RM)') + linea(cuenta.error, 'No legibles (carpeta Errores)') +
+      linea(cuenta.abono, 'Albaranes de abono (a la pestaña Abonos)') + linea(cuenta.error, 'No legibles (carpeta Errores)') +
       linea(cuenta.pendiente, 'Sin procesar, siguen en Entrada');
     if (descuadres.length) msg += `\nNo cuadran los importes, siguen en Entrada (${descuadres.length}):\n` + descuadres.map(d => '• ' + d).join('\n') + '\n';
     if (fallo) msg = '⚠ No se ha podido guardar en la hoja: no se ha movido ningún PDF, siguen todos en Entrada. Detalle en Registro.';
@@ -82,7 +86,7 @@ function contextoAlbaranes_() {
   const idsPdf = new Set();
   const ult = alb.sh.getLastRow();
   if (ult > 1) alb.sh.getRange(2, alb.map['Ver PDF'], ult - 1, 1).getFormulas().forEach(r => { const id = idDeEnlace_(r[0]); if (id) idsPdf.add(id); });
-  return { alb, trab, piezas, idsPdf, iva: cfgNum_('IVA'), hoy: hoyISO_(), tocaAbonos: false,
+  return { alb, trab, piezas, idsPdf, iva: cfgNum_('IVA'), hoy: hoyISO_(), tocaAbonos: false, abonosEscaneados: [],
     coches: new Set(coches.filas.map(f => normPlate(f.v['Matrícula']))) };
 }
 
@@ -92,8 +96,13 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
   if (ctx.idsPdf.has(archivo.getId())) { log_('AVISO', 'procesarAlbaranes', ref, 'Este PDF ya estaba registrado: se archiva sin cambios'); return { estado: 'duplicado' }; }
   if (!doc.es_albaran) { log_('ERROR', 'procesarAlbaranes', ref, 'El documento no parece un albarán: se mueve a Errores'); return { estado: 'error' }; }
   if (doc.es_abono) {
-    // Devolución de RM: el abono ya llega en la factura quincenal (pestaña Abonos); no es un gasto del taller.
-    log_('INFO', 'procesarAlbaranes', ref, `Albarán de abono ${num || ''} (${doc.total} €): no se añade, llegará en la factura RM`);
+    // Devolución de RM: no es un gasto del taller, así que no va a Albaranes; va a la pestaña Abonos (al final del lote):
+    // marca como Abonada la pieza que se pidió, o añade una fila "Sin solicitar". La factura quincenal lo traerá después.
+    const lineas = abonosEscaneados_(doc, hoy);
+    if (!num) log_('AVISO', 'procesarAlbaranes', ref, 'Albarán de abono sin número: cuando llegue la factura RM puede salir repetido en Abonos');
+    if (!lineas.length) log_('AVISO', 'procesarAlbaranes', ref, `Albarán de abono ${num}: no se ha leído ninguna línea`);
+    ctx.abonosEscaneados.push(...lineas);
+    log_('INFO', 'procesarAlbaranes', ref, `Albarán de abono ${num} (${doc.total} €): ${lineas.length} pieza(s) a Abonos`);
     return { estado: 'abono' };
   }
   const v = validarAlbaran(doc, ctx.iva);
