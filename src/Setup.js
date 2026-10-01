@@ -251,23 +251,24 @@ function colFmt_(sh, h, n, o, filaCab) {
 /**
  * Quita la validación "sólo fórmulas" (=ISFORMULA(...)) que puso una versión anterior en las columnas automáticas.
  * Hay que hacerlo ANTES de escribir nada: Sheets rechazaba con ella incluso las fórmulas que escribe el script
- * ("Columna automática: se rellena sola."). Se busca en la hoja real, sin suponer en qué columnas está.
+ * ("Columna automática: se rellena sola."). Sólo estaba en columnas automáticas (las de FORMULAS), así que se borra
+ * ahí directamente, sin leer las validaciones celda a celda (eso tardaba minutos). Una sola vez: queda apuntado.
  */
 function quitarValidacionSoloFormulas_() {
-  [HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.LINEAS, HOJA.ABONOS].forEach(nombre => {
+  const props = PropertiesService.getScriptProperties(), PROP = 'SIN_VALIDACION_SOLO_FORMULAS';
+  if (props.getProperty(PROP) === '1') return;
+  Object.keys(FORMULAS).forEach(nombre => {
     const sh = ss_().getSheetByName(nombre);
-    if (!sh) return;
-    const filas = sh.getMaxRows(), cols = Math.max(sh.getLastColumn(), 1);
-    const dvs = sh.getRange(1, 1, filas, cols).getDataValidations();
-    for (let c = 0; c < cols; c++) {
-      let desde = 0, hasta = 0;
-      for (let r = 0; r < filas; r++) {
-        const dv = dvs[r] && dvs[r][c];
-        if (dv && /ISFORMULA/i.test(String((dv.getCriteriaValues() || [])[0] || ''))) { if (!desde) desde = r + 1; hasta = r + 1; }
-      }
-      if (desde) sh.getRange(desde, c + 1, hasta - desde + 1, 1).clearDataValidations();
-    }
+    if (!sh || sh.getLastColumn() < 1) return;
+    const fc = ESQUEMA[nombre].filaCabecera || 1, filas = sh.getMaxRows() - fc;
+    if (filas < 1) return;
+    const cab = sh.getRange(fc, 1, 1, sh.getLastColumn()).getValues()[0];
+    Object.keys(FORMULAS[nombre]).forEach(h => {
+      const c = cab.indexOf(h) + 1;
+      if (c) sh.getRange(fc + 1, c, filas, 1).clearDataValidations();
+    });
   });
+  props.setProperty(PROP, '1');
 }
 
 /** Quita las protecciones con aviso que ponían versiones anteriores en las columnas automáticas. */

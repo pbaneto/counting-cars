@@ -342,6 +342,7 @@ test('repararFormulas quita primero la validación "sólo fórmulas" de una vers
   const regla = { getCriteriaValues: () => ['=ISFORMULA(M5)'] };
   for (let r = 5; r <= 9; r++) trab.validaciones.set(r + ',13', regla);
   trab.validaciones.set('5,5', { getCriteriaValues: () => ['1234ABC'] });  // otra validación: no se toca
+  delete e.props.SIN_VALIDACION_SOLO_FORMULAS;  // hoja de la versión anterior
   e.run('repararFormulas()');
   assert.equal([5, 6, 7, 8, 9].filter(r => trab.validaciones.has(r + ',13')).length, 0);
   assert.ok(trab.validaciones.has('5,5'));
