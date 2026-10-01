@@ -61,12 +61,23 @@ test('validarAlbaran: albarán real 462446 cuadra sin avisos', () => {
   assert.deepEqual(v, { errors: [], warnings: [] });
 });
 
-test('validarAlbaran detecta total ilegible, IVA y suma de líneas', () => {
+test('validarAlbaran: total ilegible; un total negativo sólo vale en un albarán de abono', () => {
   assert.equal(L.validarAlbaran({ lineas: [] }).errors.length, 1);
-  const malo = Object.assign({}, albaranReal, { total: 50, base_imponible: 40 });
-  const w = L.validarAlbaran(malo).warnings.join('|');
-  assert.match(w, /IVA no cuadra/);
-  assert.match(w, /suma de líneas/);
+  assert.equal(L.validarAlbaran(Object.assign({}, albaranReal, { total: -10 })).errors.length, 1);
+  assert.equal(L.validarAlbaran(Object.assign({}, albaranReal, { total: -10, es_abono: true })).errors.length, 0);
+});
+
+test('cuadreAlbaran: base + IVA = total y suma de líneas = base', () => {
+  assert.deepEqual(L.cuadreAlbaran(albaranReal), []);
+  const p = L.cuadreAlbaran(Object.assign({}, albaranReal, { total: 50, base_imponible: 40 }));
+  assert.equal(p.length, 2);
+  assert.match(p[0], /base 40 \+ IVA = 48,4, pero el total es 50/);
+  assert.match(p[1], /las líneas suman 36,81, pero la base es 40/);
+  // Sin base: las líneas se comparan con total / 1,21
+  assert.deepEqual(L.cuadreAlbaran(Object.assign({}, albaranReal, { base_imponible: null })), []);
+  assert.equal(L.cuadreAlbaran(Object.assign({}, albaranReal, { base_imponible: null, total: 60 })).length, 1);
+  // Sin base ni líneas no hay nada que comprobar
+  assert.deepEqual(L.cuadreAlbaran({ total: 12, lineas: [] }), []);
 });
 
 test('lineasParaPiezas descarta residuos SIGAUS', () => {

@@ -21,7 +21,8 @@ const ESQUEMA = {
     filasFormato: 1500,
   },
   'Trabajos': {
-    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Mes', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Recambios facturables', 'Recambios facturables RM',
+    // Quincena: valor (no fórmula) para poder cambiarlo a mano; se rellena con la fecha de apertura (= primer albarán).
+    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Mes', 'Quincena', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Recambios facturables', 'Recambios facturables RM',
       'Recambios facturables Otros', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
     entradas: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Factura', 'Pagado'],
     casillas: ['Pagado'],

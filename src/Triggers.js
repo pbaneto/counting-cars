@@ -54,6 +54,15 @@ function alCambiar(e) {
 
 function tocada_(tab, h, c0, nc) { const c = tab.map[h]; return c >= c0 && c < c0 + nc; }
 
+/**
+ * Columnas automáticas (grises): si alguien escribe encima, asegurarFila_ vuelve a poner la fórmula; aquí sólo se avisa.
+ * (Antes eran protecciones con aviso, pero Sheets lo sacaba también al cambiar anchos, ordenar, etc.)
+ */
+function avisarColumnaAutomatica_(tab, puestas, c0, nc) {
+  const pisadas = puestas.filter(h => tocada_(tab, h, c0, nc));
+  if (pisadas.length) toast_(`"${pisadas.join('", "')}" se rellena sola: se ha vuelto a poner su fórmula.`, 'Columna automática', 6);
+}
+
 function editarAlbaranes_(r0, n, c0, nc) {
   const tab = leerTabla_(HOJA.ALB), hoy = hoyISO_(), ancho = anchoTabla_(tab);
   let trab = null, cochesTab = null;
@@ -85,7 +94,7 @@ function editarAlbaranes_(r0, n, c0, nc) {
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }
     const precio = parseNumber(g('Precio con IVA'));
     const jobVal = String(g('Nº trabajo')).trim().toUpperCase();
-    if (filaConDatos_(vals)) asegurarFila_(tab, r);
+    if (filaConDatos_(vals)) avisarColumnaAutomatica_(tab, asegurarFila_(tab, r), c0, nc);
 
     if (jobVal === 'NUEVO' && !plate) { set('Nº trabajo', ''); toast_('Escribe primero la matrícula para abrir un trabajo nuevo.', '⚠ Falta matrícula'); continue; }
     if (!(plate && precio > 0)) continue;
@@ -118,7 +127,7 @@ function editarTrabajos_(r0, n, c0, nc) {
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
     const plate = normPlate(g('Matrícula'));
     if (String(g('Matrícula')) !== plate) set('Matrícula', plate);
-    if (filaConDatos_(vals)) asegurarFila_(tab, r);
+    if (filaConDatos_(vals)) avisarColumnaAutomatica_(tab, asegurarFila_(tab, r), c0, nc);
     if (!plate) continue;
     if (String(g('Nº trabajo')).trim() === '') {
       const otros = tab.filas.filter(f => f.fila !== r).map(f => f.v['Nº trabajo']);
@@ -126,6 +135,8 @@ function editarTrabajos_(r0, n, c0, nc) {
       if (!g('Fecha apertura')) set('Fecha apertura', aFecha_(hoy));
       log_('INFO', 'alEditar', `${HOJA.TRAB}!${r}`, `Trabajo ${g('Nº trabajo')} creado a mano para ${plate}`);
     }
+    // Quincena: se rellena sola con la fecha de apertura sólo si está vacía (después se puede cambiar a mano).
+    if (g('Quincena') === '' && aISO_(g('Fecha apertura'))) set('Quincena', quincenaDe(aISO_(g('Fecha apertura'))));
     coches = coches || new Set(leerTabla_(HOJA.COCHES).filas.map(f => normPlate(f.v['Matrícula'])));
     if (!coches.has(plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
   }
@@ -159,7 +170,7 @@ function editarPiezas_(r0, n, c0, nc) {
     const fila = tab.filas.find(f => f.fila === r);
     const g = h => vals[tab.map[h] - 1];
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; if (fila) fila.v[h] = v; };
-    if (filaConDatos_(vals)) asegurarFila_(tab, r, formulasFila);
+    if (filaConDatos_(vals)) avisarColumnaAutomatica_(tab, asegurarFila_(tab, r, formulasFila), c0, nc);
     const num = normAlbaran(g('Nº albarán'));
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }
 

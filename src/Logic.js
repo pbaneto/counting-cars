@@ -114,18 +114,12 @@ function validarAlbaran(doc, iva) {
   iva = iva == null ? IVA_DEFECTO : iva;
   const errors = [], warnings = [];
   const total = parseNumber(doc.total), base = parseNumber(doc.base_imponible);
-  if (!Number.isFinite(total) || total <= 0) errors.push('No se ha podido leer el total del albarán');
+  if (!Number.isFinite(total) || total === 0 || (total < 0 && !doc.es_abono)) errors.push('No se ha podido leer el total del albarán');
   if (!doc.numero_albaran) warnings.push('Sin nº de albarán');
   if (!isoValid(doc.fecha)) warnings.push('Fecha ilegible: se usa la fecha de hoy');
   if (!normPlate(doc.matricula)) warnings.push('Sin matrícula');
-  if (Number.isFinite(total) && Number.isFinite(base) && Math.abs(round2(base * (1 + iva)) - total) > 0.02) {
-    warnings.push(`IVA no cuadra: base ${base} → total ${total}`);
-  }
+  // Base × IVA = total y suma de líneas = base: ver cuadreAlbaran (si no cuadran, el albarán no se añade).
   const lineas = doc.lineas || [];
-  const suma = round2(lineas.reduce((a, l) => a + (Number.isFinite(parseNumber(l.importe)) ? parseNumber(l.importe) : 0), 0));
-  if (Number.isFinite(base) && lineas.length && Math.abs(suma - base) > 0.05) {
-    warnings.push(`La suma de líneas (${suma}) no cuadra con la base (${base})`);
-  }
   if (!lineas.length) warnings.push('Sin líneas de pieza');
   lineas.forEach((l, i) => {
     if (esResiduo(l) || !l.referencia) return;
@@ -135,6 +129,27 @@ function validarAlbaran(doc, iva) {
     }
   });
   return { errors, warnings };
+}
+
+/**
+ * ¿Cuadran los importes del albarán leído? Devuelve la lista de problemas ([] = cuadra):
+ *  - base imponible × (1 + IVA) = total (±0,05 €);
+ *  - suma de los importes de las líneas = base imponible (o total / (1 + IVA) si no se lee la base) (±0,05 €).
+ * Si no hay ni base ni líneas no se puede comprobar nada y se da por bueno.
+ */
+function cuadreAlbaran(doc, iva) {
+  iva = iva == null ? IVA_DEFECTO : iva;
+  const problemas = [], total = parseNumber(doc.total), base = parseNumber(doc.base_imponible), lineas = doc.lineas || [];
+  const eur = x => String(round2(x)).replace('.', ',');
+  if (Number.isFinite(total) && Number.isFinite(base) && Math.abs(round2(base * (1 + iva)) - total) > 0.05) {
+    problemas.push(`base ${eur(base)} + IVA = ${eur(base * (1 + iva))}, pero el total es ${eur(total)}`);
+  }
+  if (lineas.length && Number.isFinite(total)) {
+    const suma = round2(lineas.reduce((a, l) => a + (Number.isFinite(parseNumber(l.importe)) ? parseNumber(l.importe) : 0), 0));
+    const ref = Number.isFinite(base) ? base : round2(total / (1 + iva));
+    if (Math.abs(suma - ref) > 0.05) problemas.push(`las líneas suman ${eur(suma)}, pero la base es ${eur(ref)}`);
+  }
+  return problemas;
 }
 
 /** Validación de una factura quincenal de RM leída por Gemini. */
@@ -385,6 +400,6 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
-    pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran,
+    pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
     validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
 }

@@ -6,13 +6,16 @@ function claveGemini_() {
   return k;
 }
 
-function construirPeticion_(archivo, esAlbaran, clave) {
+/** pista: texto que se añade al prompt (p. ej. en la segunda lectura de un albarán cuyos importes no cuadraban). */
+function construirPeticion_(archivo, esAlbaran, clave, pista) {
   const blob = archivo.getBlob();
+  const parts = [
+    { inline_data: { mime_type: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) } },
+    { text: esAlbaran ? PROMPT_ALBARAN : PROMPT_FACTURA },
+  ];
+  if (pista) parts.push({ text: pista });
   const body = {
-    contents: [{ parts: [
-      { inline_data: { mime_type: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) } },
-      { text: esAlbaran ? PROMPT_ALBARAN : PROMPT_FACTURA },
-    ] }],
+    contents: [{ parts }],
     generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: esAlbaran ? SCHEMA_ALBARAN : SCHEMA_FACTURA, maxOutputTokens: 32768 },
   };
   return {
@@ -37,10 +40,10 @@ function interpretarRespuesta_(resp, esAlbaran) {
 }
 
 /**
- * archivos: [DriveApp.File]. Devuelve un resultado por archivo, en el mismo orden.
+ * archivos: [DriveApp.File]. Devuelve un resultado por archivo, en el mismo orden. pistas: texto extra por archivo (opcional).
  * Lotes de PARALELISMO peticiones simultáneas; hasta 3 intentos para los errores transitorios (429/5xx/timeout).
  */
-function leerConGemini_(archivos, esAlbaran) {
+function leerConGemini_(archivos, esAlbaran, pistas) {
   const clave = claveGemini_(), n = Math.max(1, Math.floor(cfgNum_('PARALELISMO')));
   const resultados = new Array(archivos.length);
   for (let ini = 0; ini < archivos.length; ini += n) {
@@ -49,7 +52,7 @@ function leerConGemini_(archivos, esAlbaran) {
     for (let intento = 1; intento <= 3 && pendientes.length; intento++) {
       if (intento > 1) Utilities.sleep(3000 * intento);
       let respuestas;
-      try { respuestas = UrlFetchApp.fetchAll(pendientes.map(i => construirPeticion_(archivos[i], esAlbaran, clave))); }
+      try { respuestas = UrlFetchApp.fetchAll(pendientes.map(i => construirPeticion_(archivos[i], esAlbaran, clave, pistas && pistas[i]))); }
       catch (e) { respuestas = null; pendientes.forEach(i => { resultados[i] = { ok: false, transitorio: true, error: 'Fallo de red: ' + e.message }; }); }
       if (respuestas) pendientes.forEach((i, k) => { resultados[i] = interpretarRespuesta_(respuestas[k], esAlbaran); });
       pendientes = pendientes.filter(i => !resultados[i].ok && resultados[i].transitorio);

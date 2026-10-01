@@ -19,19 +19,20 @@ const SCHEMA_LINEA_ALBARAN = {
 const SCHEMA_ALBARAN = {
   type: GT.OBJ,
   properties: {
-    es_albaran: { type: GT.BOOL },
+    es_albaran: { type: GT.BOOL }, es_abono: { type: GT.BOOL },
     proveedor: { type: GT.STR, enum: ['RM', 'Otros'] },
     numero_albaran: { type: GT.STR }, fecha: { type: GT.STR }, matricula: { type: GT.STR },
     base_imponible: { type: GT.NUM, nullable: true }, iva_importe: { type: GT.NUM, nullable: true }, total: { type: GT.NUM, nullable: true },
     lineas: { type: GT.ARR, items: SCHEMA_LINEA_ALBARAN },
   },
-  required: ['es_albaran', 'proveedor', 'numero_albaran', 'fecha', 'matricula', 'total', 'lineas'],
+  required: ['es_albaran', 'es_abono', 'proveedor', 'numero_albaran', 'fecha', 'matricula', 'total', 'lineas'],
 };
 
 const PROMPT_ALBARAN = `Eres un asistente que lee albaranes de recambios de automoción escaneados. Vienen de un taller mecánico en España; el proveedor habitual es Repuestos Miguel ("RM"). Devuelve SOLO el JSON del esquema.
 
 REGLAS
 1. es_albaran: true si el documento es un albarán de entrega de recambios; false si es otra cosa (factura, hoja en blanco, ticket, foto ilegible...).
+   es_abono: true si es un albarán de ABONO (devolución): pone "ABONO" en las líneas y los importes y el total son negativos. Copia los importes con su signo menos.
 2. proveedor: "RM" si es Repuestos Miguel (logo RM, C/ Munich 7, Las Rozas); en cualquier otro caso "Otros".
 3. numero_albaran: el número junto a la palabra ALBARAN (sólo dígitos, p. ej. 462446). NO lo confundas con el código de cliente, el CIF ni el nº de pedido.
 4. fecha: la que sigue a "Fecha:". Formato dd/mm/aa: conviértela a yyyy-mm-dd (aa de dos cifras = 20aa). Ej.: 15/09/26 → 2026-09-15.
@@ -109,6 +110,7 @@ function normalizarAlbaran(raw) {
   const n = v => { const x = parseNumber(v); return Number.isFinite(x) ? x : null; };
   return {
     es_albaran: raw.es_albaran !== false,
+    es_abono: raw.es_abono === true || (Number.isFinite(parseNumber(raw.total)) && parseNumber(raw.total) < 0),
     proveedor: raw.proveedor === 'Otros' ? 'Otros' : 'RM',
     numero_albaran: normAlbaran(raw.numero_albaran).replace(/\D/g, ''),
     fecha: isoValid(raw.fecha) ? raw.fecha : '',

@@ -83,12 +83,41 @@ function prepararConfig_() {
 }
 
 /**
+ * Migración única: en una hoja de una versión anterior sin `nombreCol`, la columna que le sigue en ESQUEMA está
+ * todavía donde ahora va `nombreCol`. Inserta una columna en blanco ahí para no desalinear los datos de las columnas
+ * existentes. Idempotente: si `nombreCol` ya está en su sitio (o la pestaña está recién creada), no hace nada.
+ */
+function insertarColumnaSiFalta_(nombreHoja, nombreCol) {
+  const sh = hoja_(nombreHoja), esq = ESQUEMA[nombreHoja], fc = esq.filaCabecera || 1, pos = esq.cabeceras.indexOf(nombreCol) + 1;
+  const actual = sh.getLastColumn() >= pos ? sh.getRange(fc, pos).getValue() : '';
+  if (actual === nombreCol || actual === '') return false;
+  sh.insertColumnBefore(pos);
+  log_('INFO', 'setup', `${nombreHoja}!${colLetra_(pos)}${fc}`, `Columna "${nombreCol}" insertada (migración desde una versión sin esa columna)`);
+  return true;
+}
+
+/** Trabajos sin Quincena (p. ej. recién migrados): se rellena con la de su fecha de apertura. No pisa lo escrito. */
+function rellenarQuincenasTrabajos_() {
+  const t = leerTabla_(HOJA.TRAB), c = t.map['Quincena'];
+  if (!t.filas.length) return;
+  const desde = t.filas[0].fila, hasta = t.filas[t.filas.length - 1].fila;
+  const col = t.sh.getRange(desde, c, hasta - desde + 1, 1).getValues();
+  let cambia = false;
+  t.filas.forEach(f => {
+    const iso = aISO_(f.v['Fecha apertura']);
+    if (f.v['Quincena'] === '' && iso) { col[f.fila - desde][0] = quincenaDe(iso); cambia = true; }
+  });
+  if (cambia) t.sh.getRange(desde, c, col.length, 1).setValues(col);
+}
+
+/**
  * Cabeceras, fórmulas, formato, validaciones y colores de las pestañas de tabla.
  * Primero se LEE todo (valores y fórmulas de cada pestaña) y después se escribe sólo lo que cambia: en Sheets, cada
  * lectura hecha tras una escritura espera a que se recalcule la hoja, y con las SUMIFS de Trabajos eso son segundos.
  */
 function prepararTablas_(crono) {
   const paso = etiqueta => crono && crono.paso(etiqueta);
+  insertarColumnaSiFalta_(HOJA.TRAB, 'Quincena');
   const ss = ss_(), TABLAS = ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'];
   const leido = {};
   TABLAS.forEach(nombre => {
@@ -111,6 +140,7 @@ function prepararTablas_(crono) {
   ['Albaranes', 'Trabajos', 'Piezas', 'Líneas RM'].forEach(nombre => { escribirFormulas_(nombre, cabNuevas ? null : leido[nombre]); paso(`fórmulas ${nombre}`); });
   [['Albaranes', formatoAlbaranes_], ['Trabajos', formatoTrabajos_], ['Piezas', formatoPiezas_], ['Coches', formatoCoches_],
     ['Facturas RM', formatoFacturas_], ['Líneas RM', formatoLineas_], ['Registro', formatoRegistro_]].forEach(([nombre, fn]) => { fn(); paso(`formato ${nombre}`); });
+  rellenarQuincenasTrabajos_(); paso('quincenas de Trabajos');
 }
 
 /**
@@ -214,18 +244,6 @@ function colFmt_(sh, h, n, o, filaCab) {
   if (o.ancho) sh.setColumnWidth(c, o.ancho);
   if (o.validacion) r.setDataValidation(o.validacion);
   else if (o.gris) r.clearDataValidations();
-  if (o.gris) soloFormulas_(r);
-}
-
-/**
- * Columnas automáticas: una validación que sólo admite fórmulas, así que escribir un valor a mano se rechaza (las
- * escrituras del script no pasan por la validación). Antes eran protecciones con aviso, pero Sheets sacaba ese aviso
- * también al cambiar el ancho de una columna, ordenar, etc.
- */
-function soloFormulas_(rango) {
-  const celda = colLetra_(rango.getColumn()) + rango.getRow();  // relativa: Sheets la ajusta en cada celda del rango
-  rango.setDataValidation(SpreadsheetApp.newDataValidation().requireFormulaSatisfied(`=ISFORMULA(${celda})`)
-    .setAllowInvalid(false).setHelpText('Columna automática: se rellena sola.').build());
 }
 
 /** Quita las protecciones con aviso que ponían versiones anteriores en las columnas automáticas. */
@@ -278,6 +296,8 @@ function formatoTrabajos_() {
   cf('Nº trabajo', { ancho: 95 });
   cf('Fecha apertura', { fmt: FMT.fecha, ancho: 105 });
   cf('Mes', { gris: true, ancho: 70 });
+  cf('Quincena', { validacion: listaValidacion_(['1', '2']), ancho: 80 });
+  sh.getRange(fc + 1, colDe_(sh, 'Quincena'), n, 1).setHorizontalAlignment('center');
   cf('Matrícula', { validacion: matriculaValidacion_(), ancho: 100 });
   cf('Coche', { gris: true, ancho: 190 });
   cf('Cliente', { gris: true, ancho: 150 });
@@ -326,7 +346,7 @@ function panelResumenTrabajos_(sh, n, l, fc) {
     .setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setHorizontalAlignment('center');
   cols.forEach(([, formula, fmt], i) => sh.getRange(3, 1 + i).setValue(loc_(formula)).setNumberFormat(fmt));
   sh.getRange(3, 1, 1, cols.length).setHorizontalAlignment('center').setBackground(COLORES.gris);
-  soloFormulas_(sh.getRange(3, 1, 1, cols.length));
+  sh.getRange(3, 1, 1, cols.length).clearDataValidations();  // quita la validación 'sólo fórmulas' de una versión anterior
 }
 
 function formatoPiezas_() {
@@ -444,7 +464,6 @@ function montarResumenAbonos_() {
   }
   sh.getRange(ini, c0 + 1, ABONOS.filas, 1).setHorizontalAlignment('center');
   sh.getRange(ini, c0 + 2, ABONOS.filas, 4).setNumberFormat(FMT.euro).setBackground(COLORES.gris);
-  soloFormulas_(sh.getRange(ini, c0 + 2, ABONOS.filas, cab.length - 2));
   [60, 75, 120, 120, 120, 100].forEach((w, i) => sh.setColumnWidth(c0 + i, w));
   sh.setColumnWidth(c0 - 1, 20);  // separación con la tabla
 

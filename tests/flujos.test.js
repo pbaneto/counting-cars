@@ -23,11 +23,14 @@ const albaranRaw = (extra) => Object.assign({ es_albaran: true, proveedor: 'RM',
 function entorno(respuestas) {
   let e;
   e = crearEntorno({ privado: true, privadoRuta: PRIV, gemini: req => {
-    const nombre = e.actual.shift();
-    const r = respuestas[nombre];
+    const parts = JSON.parse(req.payload).contents[0].parts;
+    const nombre = parts[0].inline_data.data !== 'AAAA' ? parts[0].inline_data.data : e.actual.shift();
+    e.peticiones.push({ nombre, pista: parts[2] ? parts[2].text : '' });
+    // Una lista de respuestas = una por lectura (la segunda lectura de un albarán que no cuadra recibe la siguiente)
+    const r = Array.isArray(respuestas[nombre]) ? respuestas[nombre].shift() : respuestas[nombre];
     return { code: 200, body: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(r) }] }, finishReason: 'STOP' }] }) };
   } });
-  e.actual = [];
+  e.actual = []; e.peticiones = [];
   e.run("PropertiesService.getScriptProperties().setProperty('GEMINI_API_KEY','k'.repeat(30))");
   e.run('setup()');
   e.run('cargarDatosIniciales()');
@@ -60,20 +63,23 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   const trab = e.ss.getSheetByName('Trabajos');
   assert.equal(trab.getLastRow(), 6, 'Trabajos: panel (filas 1-3) + cabecera (fila 4) + 2 trabajos del piloto (5-6)');
   assert.equal(e.ss.getSheetByName('Piezas').getLastRow(), 1, 'Piezas vacía: sin casillas "Reembolso" por debajo');
-  assert.equal(trab.valor(6, 13), false, 'la fila nueva lleva su casilla (FALSE = sin pagar), columna M');
+  assert.equal(trab.valor(6, 14), false, 'la fila nueva lleva su casilla (FALSE = sin pagar), columna N');
   // Cabecera real en la fila 4 (el panel ocupa la 1-3), datos desde la 5
   assert.equal(trab.valor(4, 3), 'Mes', 'columna nueva "Mes" junto a "Fecha apertura"');
-  assert.equal(trab.valor(4, 4), 'Matrícula');
+  assert.equal(trab.valor(4, 4), 'Quincena', 'Quincena a la derecha de Mes');
+  assert.equal(trab.valor(5, 4), 1, 'rellenada con la fecha de apertura del piloto (15/09 → 1ª quincena)');
+  assert.equal(trab.cell(5, 4).f, '', 'Quincena es un valor, no una fórmula: se puede cambiar a mano');
+  assert.equal(trab.valor(4, 5), 'Matrícula');
   assert.match(trab.cell(5, 3).f, /CHOOSE\(MONTH\(/);
-  assert.match(trab.cell(5, 9).f, /SUMIFS\(Albaranes!.*"RM"\)/);      // Recambios facturables RM
-  assert.match(trab.cell(5, 10).f, /SUMIFS\(Albaranes!.*"Otros"\)/);  // Recambios facturables Otros
+  assert.match(trab.cell(5, 10).f, /SUMIFS\(Albaranes!.*"RM"\)/);      // Recambios facturables RM
+  assert.match(trab.cell(5, 11).f, /SUMIFS\(Albaranes!.*"Otros"\)/);  // Recambios facturables Otros
   // Panel "Resumen (según filtro)" encima de la cabecera: título (1), etiquetas (2), valores (3)
   assert.equal(trab.valor(1, 1), 'Resumen (según filtro)');
   assert.equal(trab.valor(2, 1), 'Trabajos'); assert.equal(trab.valor(2, 5), 'Morosos');
   assert.match(trab.cell(3, 5).f, /SUMPRODUCT/);
   // Ninguna columna calculada (gris) se queda con una validación residual; las de entrada no se tocan
-  assert.deepEqual(new Set(trab.validacionesLimpiadas), new Set([3, 5, 6, 7, 8, 9, 10, 12, 14]),
-    'Mes, Coche, Cliente, Recambios, Recambios facturables, Recambios facturables RM/Otros, Beneficio, Avisos');
+  assert.deepEqual(new Set(trab.validacionesLimpiadas), new Set([1, 3, 6, 7, 8, 9, 10, 11, 13, 15]),
+    'Mes, Coche, Cliente, Recambios, Recambios facturables, Recambios facturables RM/Otros, Beneficio, Avisos y la fila de valores del panel');
   const cfg = tabla(e, 'Config');
   assert.equal(cfg.find(x => x.Clave === 'CARPETA_ENTRADA').Valor, 'ENT');
   assert.equal(cfg.find(x => x.Clave === 'MODELO_GEMINI').Valor, 'gemini-3.5-flash-lite');
@@ -101,7 +107,7 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   for (let r = 2; r <= 4001; r++) p.put(r, 1, false);   // casillas "Reembolso" rellenadas hasta la 4001 (valen FALSE)
   const trab = e.ss.getSheetByName('Trabajos');
   // El panel ocupa 1-3, la cabecera la 4, los 2 trabajos del piloto la 5-6: el relleno de sobra empieza en la 7
-  for (let r = 7; r <= 801; r++) trab.put(r, 13, false); // "Pagado" (columna M) hasta la 801
+  for (let r = 7; r <= 801; r++) trab.put(r, 14, false); // "Pagado" (columna N) hasta la 801
   alb.put(900, 11, 'escrito a mano');                 // valor (no fórmula) en la columna calculada "Coche"
   e.run('repararFormulas()');
   assert.equal(alb.cell(700, 4), undefined, 'Quincena vacía por debajo de los datos');
@@ -112,7 +118,7 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   assert.ok(e.log.console.some(l => /\[AVISO\] repararFormulas Albaranes!K900/.test(l)));
   assert.equal(p.getLastRow(), 1);
   assert.equal(trab.getLastRow(), 6, 'Trabajos queda con sus 2 filas de datos (panel 1-3, cabecera 4, datos 5-6)');
-  assert.equal(trab.valor(5, 13), true, 'el Pagado de las filas con datos no se toca');
+  assert.equal(trab.valor(5, 14), true, 'el Pagado de las filas con datos no se toca');
 });
 
 test('repararFormulas conserva el año elegido en Abonos', () => {
@@ -135,12 +141,12 @@ test('repararFormulas sólo reescribe las fórmulas que han cambiado', () => {
   const enTablas = () => escritas.filter(x => tablas.some(t => x.startsWith(t)) && !x.startsWith('Trabajos!3,'));  // fila 3 = panel
   e.run('repararFormulas()');
   assert.deepEqual(enTablas(), [], 'sin cambios: ninguna fórmula de las tablas se reescribe');
-  const buena = trab.cell(5, 12).f;
-  trab.put(5, 12, '=1');  // alguien ha pisado la fórmula de Beneficio
+  const buena = trab.cell(5, 13).f;
+  trab.put(5, 13, '=1');  // alguien ha pisado la fórmula de Beneficio
   escritas.length = 0;
   e.run('repararFormulas()');
-  assert.equal(trab.cell(5, 12).f, buena, 'la fórmula pisada se restaura');
-  assert.ok(enTablas().every(x => x.startsWith('Trabajos!') && x.endsWith(',12')), 'sólo se reescribe esa columna');
+  assert.equal(trab.cell(5, 13).f, buena, 'la fórmula pisada se restaura');
+  assert.ok(enTablas().every(x => x.startsWith('Trabajos!') && x.endsWith(',13')), 'sólo se reescribe esa columna');
 });
 
 test('repararFormulas añade a Config las claves nuevas sin pisar los valores existentes', () => {
@@ -234,6 +240,86 @@ test('procesarAlbaranes vincula una fila manual con el mismo importe y matrícul
   assert.equal(a['Precio con IVA'], 100);
   assert.match(a['Nota escaneo'], /Vinculado/);
   assert.equal(tabla(e, 'Piezas').filter(p => p['Nº albarán'] === '999111').length, 1);
+  assert.equal(e.run("aISO_(leerTabla_('Albaranes').filas.find(f => f.v['Nº albarán'] === '999111').v['Fecha escaneo'])"), e.run('hoyISO_()'), 'fecha de escaneo = hoy');
+});
+
+test('procesarAlbaranes: si los importes no cuadran se relee; si siguen sin cuadrar se queda en Entrada con un aviso', () => {
+  const malo = albaranRaw({ numero_albaran: '700001', total: 50 });                      // base 36,81 + IVA ≠ 50
+  const bien = albaranRaw({ numero_albaran: '700002' });
+  const malo3 = albaranRaw({ numero_albaran: '700003', total: 50 });
+  const e = entorno({ 'c1.pdf': [malo, albaranRaw({ numero_albaran: '700001' })], 'c2.pdf': [malo3, malo3], 'c3.pdf': bien });
+  ['ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['c1.pdf', 'c2.pdf', 'c3.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+  const nums = tabla(e, 'Albaranes').map(a => a['Nº albarán']);
+  assert.ok(nums.includes('700001'), 'c1: la segunda lectura cuadra y se usa');
+  assert.ok(nums.includes('700002'));
+  assert.ok(!nums.includes('700003'), 'c2 no se añade');
+  assert.deepEqual(e.peticiones.filter(p => p.pista).map(p => p.nombre).sort(), ['c1.pdf', 'c2.pdf'], 'segunda lectura sólo de los que no cuadran');
+  assert.match(e.peticiones.find(p => p.pista).pista, /no cuadraban/);
+  assert.deepEqual(e.carpetas.ENT.ficheros.map(f => f.nombre), ['c2.pdf'], 'el que sigue sin cuadrar se queda en Entrada');
+  assert.equal(e.carpetas.PROC.ficheros.length, 2);
+  const aviso = e.log.alerts[e.log.alerts.length - 1][1];
+  assert.match(aviso, /No cuadran los importes, siguen en Entrada \(1\):\n• c2\.pdf: base 36,81 \+ IVA = 44,54, pero el total es 50/);
+});
+
+test('procesarAlbaranes: un albarán de ABONO no se añade y pasa a Procesados', () => {
+  const abono = albaranRaw({ numero_albaran: '486962', es_abono: true, total: -72.94, base_imponible: -60.28,
+    lineas: [{ referencia: 'BOSCHF026400517', descripcion: 'ABONO FILTRO', importe: -15.14, reembolso: false }] });
+  const e = entorno({ 'ab.pdf': abono });
+  ['ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['ab.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+  assert.ok(!tabla(e, 'Albaranes').some(a => a['Nº albarán'] === '486962'));
+  assert.equal(tabla(e, 'Piezas').length, 0);
+  assert.equal(e.carpetas.PROC.ficheros.length, 1);
+  assert.match(e.log.alerts[e.log.alerts.length - 1][1], /Albaranes de abono \(llegarán en la factura RM\): 1/);
+});
+
+test('procesarAlbaranes: si la hoja no guarda un albarán se deshace lo suyo, el PDF se queda en Entrada y se para el lote', () => {
+  const e = entorno({ 'd1.pdf': albaranRaw({ numero_albaran: '800001', matricula: '9999ZZZ' }), 'd2.pdf': albaranRaw({ numero_albaran: '800002' }) });
+  ['ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['d1.pdf', 'd2.pdf'], 'ENT');
+  const antes = { alb: tabla(e, 'Albaranes').length, trab: tabla(e, 'Trabajos').length, piezas: tabla(e, 'Piezas').length };
+  // Como pasó con la validación "sólo fórmulas": la hoja rechaza lo escrito al guardar
+  let veces = 0;
+  const flush = e.ctx.SpreadsheetApp.flush;
+  e.ctx.SpreadsheetApp.flush = () => { if (++veces === 1) throw new Error('Columna automática: se rellena sola.'); flush(); };
+  e.run('procesarAlbaranes()');
+  assert.equal(tabla(e, 'Albaranes').length, antes.alb, 'sin filas a medias en Albaranes');
+  assert.equal(tabla(e, 'Trabajos').length, antes.trab, 'ni el trabajo que se había abierto');
+  assert.equal(tabla(e, 'Piezas').length, antes.piezas);
+  assert.deepEqual(e.carpetas.ENT.ficheros.map(f => f.nombre), ['d1.pdf', 'd2.pdf'], 'nada pasa a Procesados');
+  assert.equal(e.carpetas.PROC.ficheros.length, 0);
+  assert.match(e.log.alerts[e.log.alerts.length - 1][1], /Se ha parado en d1\.pdf/);
+  assert.ok(e.log.console.some(l => /deshecho lo que había escrito/.test(l)));
+  // Y la siguiente vez, ya sin fallo, entran los dos
+  e.run('procesarAlbaranes()');
+  assert.equal(e.carpetas.PROC.ficheros.length, 2);
+  assert.ok(['800001', '800002'].every(n => tabla(e, 'Albaranes').some(a => a['Nº albarán'] === n)));
+});
+
+test('escribir a mano en una columna automática vuelve a poner su fórmula y avisa', () => {
+  const e = entorno({});
+  const alb = e.ss.getSheetByName('Albaranes');
+  const buena = alb.cell(2, 11).f;  // Coche
+  alb.put(2, 11, 'Otro coche');
+  e.ctx.__r = alb.getRange(2, 11); e.run('alEditar({ range: __r })');
+  assert.equal(alb.cell(2, 11).f, buena);
+  assert.ok(e.log.toasts.some(t => /"Coche" se rellena sola/.test(t)));
+});
+
+test('Trabajos: Quincena se rellena sola con la fecha de apertura y se puede cambiar a mano', () => {
+  const e = entorno({});
+  const trab = e.ss.getSheetByName('Trabajos');
+  trab.put(7, 2, e.run('new Date(2026, 8, 20)')); trab.put(7, 5, '1234ABC');
+  e.ctx.__r = trab.getRange(7, 5); e.run('alEditar({ range: __r })');
+  assert.equal(trab.valor(7, 4), 2, '20/09 → 2ª quincena');
+  trab.put(7, 4, 1);
+  e.ctx.__r = trab.getRange(7, 4); e.run('alEditar({ range: __r })');
+  assert.equal(trab.valor(7, 4), 1, 'el cambio a mano se respeta');
+  e.run('repararFormulas()');
+  assert.equal(trab.valor(7, 4), 1);
 });
 
 test('edición manual en Albaranes: fecha, proveedor y trabajo automáticos; NUEVO abre otro trabajo', () => {

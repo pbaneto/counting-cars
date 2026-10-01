@@ -113,14 +113,16 @@ function actualizarFila_(tabla, fila, cambios) {
  * actuales: fórmulas de la fila si ya se han leído (así esta función sólo escribe).
  */
 function asegurarFila_(tabla, fila, actuales) {
-  const formulas = FORMULAS[tabla.nombre];
+  const formulas = FORMULAS[tabla.nombre], puestas = [];
   if (formulas) {
     actuales = actuales || tabla.sh.getRange(fila, 1, 1, anchoTabla_(tabla)).getFormulas()[0];
     for (const h in formulas) if (tabla.map[h] && !actuales[tabla.map[h] - 1]) {
       tabla.sh.getRange(fila, tabla.map[h]).setFormula(loc_(formulas[h](fila)));
+      puestas.push(h);
     }
   }
   (tabla.esq.casillas || []).forEach(h => tabla.sh.getRange(fila, tabla.map[h]).setDataValidation(checkbox_()));
+  return puestas;  // columnas cuya fórmula faltaba (o se había pisado escribiendo un valor) y se ha vuelto a poner
 }
 
 // ---- Fechas (Date <-> "yyyy-mm-dd") ----

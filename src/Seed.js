@@ -33,14 +33,14 @@ function cargarPiloto_() {
   const trabajos = p.trabajos.map(t => {
     const plate = normPlate(t.matricula), num = nextJobNumber(jobPrefix(plate), nums);
     nums.push(num); jobDe[plate] = num;
-    return { 'Nº trabajo': num, 'Fecha apertura': fecha, 'Matrícula': plate, 'Factura': t.factura == null ? '' : t.factura, 'Pagado': t.pagado === true };
+    return { 'Nº trabajo': num, 'Fecha apertura': fecha, 'Quincena': quincenaDe(p.fecha), 'Matrícula': plate, 'Factura': t.factura == null ? '' : t.factura, 'Pagado': t.pagado === true };
   });
   p.albaranes.forEach(a => {
     const plate = normPlate(a.matricula);
     if (!jobDe[plate]) {
       const num = nextJobNumber(jobPrefix(plate), nums);
       nums.push(num); jobDe[plate] = num;
-      trabajos.push({ 'Nº trabajo': num, 'Fecha apertura': fecha, 'Matrícula': plate, 'Pagado': false });
+      trabajos.push({ 'Nº trabajo': num, 'Fecha apertura': fecha, 'Quincena': quincenaDe(p.fecha), 'Matrícula': plate, 'Pagado': false });
     }
   });
   agregarFilas_(trab, trabajos);

@@ -10,7 +10,8 @@ function listaTrabajos_(tabTrab) {
 /** Crea un trabajo nuevo para la matrícula (nº = último dígito + letras + contador) y devuelve su número. */
 function crearTrabajo_(tabTrab, matricula, fechaISO) {
   const num = nextJobNumber(jobPrefix(matricula), tabTrab.filas.map(f => f.v['Nº trabajo']));
-  agregarFilas_(tabTrab, [{ 'Nº trabajo': num, 'Fecha apertura': aFecha_(fechaISO || hoyISO_()), 'Matrícula': normPlate(matricula), 'Pagado': false }]);
+  const fecha = fechaISO || hoyISO_();
+  agregarFilas_(tabTrab, [{ 'Nº trabajo': num, 'Fecha apertura': aFecha_(fecha), 'Quincena': quincenaDe(fecha), 'Matrícula': normPlate(matricula), 'Pagado': false }]);
   return num;
 }
 

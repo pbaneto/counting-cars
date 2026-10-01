@@ -166,7 +166,7 @@ function crearEntorno(opts = {}) {
   mkFolder('PADRE', 'padre');
   const mkFile = (id, nombre, mime, carpetaId) => {
     const file = { id, nombre, carpeta: carpetaId, getId: () => id, getName: () => nombre, getMimeType: () => mime,
-      getBlob: () => ({ getContentType: () => mime, getBytes: () => [1, 2, 3] }),
+      getBlob: () => ({ getContentType: () => mime, getBytes: () => Object.assign([1, 2, 3], { nombre }) }),
       moveTo(dest) { carpetas[file.carpeta].ficheros = carpetas[file.carpeta].ficheros.filter(x => x !== file); dest.ficheros.push(file); file.carpeta = dest.id; } };
     archivos[id] = file; carpetas[carpetaId].ficheros.push(file); return file;
   };
@@ -181,7 +181,7 @@ function crearEntorno(opts = {}) {
       getFileById: id => archivos[id], getRootFolder: () => carpetas.PADRE },
     UrlFetchApp: { fetchAll: reqs => reqs.map(r => { log.fetch.push(r); const x = opts.gemini(r); return { getResponseCode: () => x.code || 200, getContentText: () => x.body }; }) },
     Utilities: { formatDate: (d, tz, f) => { const s = new Intl.DateTimeFormat('sv-SE', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); return f === 'yyyy-MM-dd' ? s : s; },
-      base64Encode: () => 'AAAA', sleep() {} },
+      base64Encode: b => (b && b.nombre) || 'AAAA', sleep() {} },  // el "contenido" de un PDF simulado es su nombre
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = String(v); } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => 'test@example.com' }) },
