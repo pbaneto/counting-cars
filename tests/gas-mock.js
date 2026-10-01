@@ -42,7 +42,8 @@ class Rango {
   setFormula(f) { this.sh.put(this.r, this.c, f); return this._w(); }
   clearContent() { this._each((r, c) => this.sh.grid.delete(r + ',' + c)); return this._w(); }
   clearFormat() { return this._w(); }
-  clearDataValidations() { this.sh.validacionesLimpiadas.push(this.c); return this._w(); }
+  getDataValidations() { this._r('getDataValidations'); const o = []; for (let i = 0; i < this.nr; i++) { o.push([]); for (let j = 0; j < this.nc; j++) { const x = this.sh.validaciones.get((this.r + i) + ',' + (this.c + j)); o[i].push(x || null); } } return o; }
+  clearDataValidations() { this.sh.validacionesLimpiadas.push(this.c); this._each((r, c) => this.sh.validaciones.delete(r + ',' + c)); return this._w(); }
   /** Como Sheets: una casilla de verificación nunca está vacía, vale FALSE aunque nadie la haya tocado. */
   setDataValidation(regla) { if (regla && regla.casilla) this._each((r, c) => { if (!this.sh.cell(r, c)) this.sh.put(r, c, false); }); return this._w(); }
   setNumberFormat() { return this._w(); }
@@ -55,7 +56,7 @@ class Rango {
 
 class Hoja {
   constructor(ss, name, id) {
-    this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000; this.validacionesLimpiadas = [];
+    this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000; this.validacionesLimpiadas = []; this.validaciones = new Map();
     return new Proxy(this, { get: (t, k, rcv) => (k in t || typeof k === 'symbol' ? Reflect.get(t, k, t) : chain()) });
   }
   cell(r, c) { return this.grid.get(r + ',' + c); }

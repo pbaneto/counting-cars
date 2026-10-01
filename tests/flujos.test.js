@@ -297,6 +297,17 @@ test('procesarAlbaranes: si la hoja no se puede guardar no se mueve ningún PDF,
   assert.equal(tabla(e, 'Piezas').filter(p => p['Nº albarán'] === '800001').length, 2);
 });
 
+test('repararFormulas quita primero la validación "sólo fórmulas" de una versión anterior (que rechazaba las fórmulas del script)', () => {
+  const e = entorno({});
+  const trab = e.ss.getSheetByName('Trabajos');
+  const regla = { getCriteriaValues: () => ['=ISFORMULA(M5)'] };
+  for (let r = 5; r <= 9; r++) trab.validaciones.set(r + ',13', regla);
+  trab.validaciones.set('5,5', { getCriteriaValues: () => ['1234ABC'] });  // otra validación: no se toca
+  e.run('repararFormulas()');
+  assert.equal([5, 6, 7, 8, 9].filter(r => trab.validaciones.has(r + ',13')).length, 0);
+  assert.ok(trab.validaciones.has('5,5'));
+});
+
 test('escribir a mano en una columna automática vuelve a poner su fórmula y avisa', () => {
   const e = entorno({});
   const alb = e.ss.getSheetByName('Albaranes');

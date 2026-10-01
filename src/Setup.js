@@ -13,6 +13,7 @@ function setup() {
     reiniciarCaches_();
     ss_().setSpreadsheetTimeZone(TZ);
     crearHojas_();
+    quitarValidacionSoloFormulas_();
     prepararConfig_();
     prepararTablas_();
     montarAbonos_();
@@ -29,6 +30,7 @@ function repararFormulas() {
   ejecutar_('repararFormulas', () => conBloqueo_(30, () => {
     const crono = cronometro_('repararFormulas');
     reiniciarCaches_();
+    quitarValidacionSoloFormulas_(); crono.paso('quitar validación antigua');
     prepararConfig_(); crono.paso('Config');
     prepararTablas_(crono);
     montarAbonos_(); crono.paso('Abonos');
@@ -244,6 +246,28 @@ function colFmt_(sh, h, n, o, filaCab) {
   if (o.ancho) sh.setColumnWidth(c, o.ancho);
   if (o.validacion) r.setDataValidation(o.validacion);
   else if (o.gris) r.clearDataValidations();
+}
+
+/**
+ * Quita la validación "sólo fórmulas" (=ISFORMULA(...)) que puso una versión anterior en las columnas automáticas.
+ * Hay que hacerlo ANTES de escribir nada: Sheets rechazaba con ella incluso las fórmulas que escribe el script
+ * ("Columna automática: se rellena sola."). Se busca en la hoja real, sin suponer en qué columnas está.
+ */
+function quitarValidacionSoloFormulas_() {
+  [HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.LINEAS, HOJA.ABONOS].forEach(nombre => {
+    const sh = ss_().getSheetByName(nombre);
+    if (!sh) return;
+    const filas = sh.getMaxRows(), cols = Math.max(sh.getLastColumn(), 1);
+    const dvs = sh.getRange(1, 1, filas, cols).getDataValidations();
+    for (let c = 0; c < cols; c++) {
+      let desde = 0, hasta = 0;
+      for (let r = 0; r < filas; r++) {
+        const dv = dvs[r] && dvs[r][c];
+        if (dv && /ISFORMULA/i.test(String((dv.getCriteriaValues() || [])[0] || ''))) { if (!desde) desde = r + 1; hasta = r + 1; }
+      }
+      if (desde) sh.getRange(desde, c + 1, hasta - desde + 1, 1).clearDataValidations();
+    }
+  });
 }
 
 /** Quita las protecciones con aviso que ponían versiones anteriores en las columnas automáticas. */
