@@ -11,7 +11,15 @@ function alAbrir() {
     .addSeparator()
     .addItem('Configurar API key de Gemini', 'configurarApiKey')
     .addItem('Preparar hoja (primera vez)', 'setup')
+    .addSeparator()
+    .addItem(`Versión ${VERSION}`, 'verVersion')
     .addToUi();
+  // Si se ha subido una versión nueva del código, la hoja se pone al día al abrirla (si nadie más está trabajando).
+  ejecutar_('alAbrir', () => {
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(1000)) return;
+    try { if (actualizarHoja_(false)) toast_(`Hoja actualizada a la versión ${VERSION}.`); } finally { lock.releaseLock(); }
+  }, true);
 }
 
 function alEditar(e) {

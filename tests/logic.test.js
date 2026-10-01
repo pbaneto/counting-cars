@@ -168,7 +168,6 @@ test('claves: estables y distintas para piezas repetidas del mismo albarán', ()
   const p = L.clavesPiezas([{ albaran: '1', ref: 'ab-1' }, { albaran: '1', ref: 'AB1' }, { albaran: '1', ref: '', desc: 'Filtro' }]);
   assert.deepEqual(p.map(x => x.clave), ['P|1|AB1|1', 'P|1|AB1|2', 'P|1|DFILTRO|1']);
   assert.equal(L.clavesAbonos([{ factura: 'F 1', albaranAbono: '77', albaranOrigen: '9', ref: 'X' }])[0].clave, 'A|77|9|X|1');
-  assert.equal(L.clavesAbonosAntiguas([{ factura: 'F 1', albaranAbono: '77', albaranOrigen: '9', ref: 'X' }])[0].clave, 'A|F 1|9|X|1');
   assert.deepEqual(L.partirClaves(' P|1|A|1 ; A|F|1|A|1 '), ['P|1|A|1', 'A|F|1|A|1']);
 });
 
@@ -244,16 +243,13 @@ test('sincronizarAbonos empareja por importe si la referencia no coincide', () =
   assert.equal(r.nuevas[0].estado, 'Abonada');
 });
 
-test('clavesDeFilasAntiguas: reconoce las filas de la tabla generada por la versión anterior', () => {
-  const piezas = piezasEj(), abonos = abonosEj();
-  const filas = [
-    { factura: 'FCR 00001', albaran: '443645', ref: 'VARTAA8', fechaSolicitud: '2026-09-04', estado: 'Abonada' },
-    { factura: 'FCR 00001', albaran: '439139', ref: 'WALKE80477', estado: 'Sin solicitar' },
-    { albaran: '462446', ref: 'DAYCO6PK1090EE', fechaSolicitud: '2026-09-16', estado: 'Sin abonar' },
-    { descripcion: 'fila escrita a mano' },
-  ];
-  assert.deepEqual(L.clavesDeFilasAntiguas(filas, piezas, abonos), [
-    'A|446334|443645|VARTAA8|1;P|443645|VARTAA8|1', 'A|446877|439139|WALKE80477|1', 'P|462446|DAYCO6PK1090EE|1', '']);
+test('versiones: comparar y saber si cambia el diseño', () => {
+  assert.ok(L.compararVersiones('1.0.2', '1.0.10') < 0, 'por número, no por texto');
+  assert.ok(L.compararVersiones('2.0.0', '1.9.9') > 0);
+  assert.equal(L.compararVersiones('1.2.3', '1.2.3'), 0);
+  assert.equal(L.cambiaDiseno('1.0.1', '1.0.2'), false, 'un parche no toca la hoja');
+  assert.equal(L.cambiaDiseno('1.0.2', '1.1.0'), true);
+  assert.equal(L.cambiaDiseno('1.4.0', '2.0.0'), true);
 });
 
 test('localizarFormula: ";" y decimal con coma fuera de las comillas (Sheets en español)', () => {

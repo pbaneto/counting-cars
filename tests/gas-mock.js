@@ -8,7 +8,7 @@ const path = require('path');
 const vm = require('vm');
 
 const SRC = path.join(__dirname, '..', 'src');
-const ORDEN = ['Config', 'Logic', 'Prompts', 'Sheets', 'Log', 'Formulas', 'Drive', 'Gemini', 'Trabajos', 'Piezas', 'Albaranes', 'Facturas', 'Abonos',
+const ORDEN = ['Config', 'Version', 'Logic', 'Prompts', 'Sheets', 'Log', 'Formulas', 'Drive', 'Gemini', 'Trabajos', 'Piezas', 'Albaranes', 'Facturas', 'Abonos',
   'Triggers', 'Setup', 'Resumen', 'Diagnostico', 'Seed'];
 
 function chain() {
@@ -62,7 +62,7 @@ class Rango {
 
 class Hoja {
   constructor(ss, name, id) {
-    this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000; this.validacionesLimpiadas = []; this.validaciones = new Map(); this.combinadas = [];
+    this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000; this.validacionesLimpiadas = []; this.validaciones = new Map(); this.combinadas = []; this.reglas = [];
     return new Proxy(this, { get: (t, k, rcv) => (k in t || typeof k === 'symbol' ? Reflect.get(t, k, t) : chain()) });
   }
   cell(r, c) { return this.grid.get(r + ',' + c); }
@@ -134,7 +134,9 @@ class Hoja {
   getRange(a, b, c, d) { if (typeof a === 'string') { const [r, cc, nr, nc] = parseA1(a); return new Rango(this, r, cc, nr, nc); } return new Rango(this, a, b, c || 1, d || 1); }
   getProtections() { return []; } getCharts() { return []; } newChart() { return chain(); } insertChart() {} removeChart() {}
   /** Como Sheets: una regla de formato condicional no puede leer otra pestaña, ni directamente ni con un rango con nombre. */
+  getConditionalFormatRules() { return this.reglas; }
   setConditionalFormatRules(reglas) {
+    this.reglas = reglas;
     reglas.forEach(({ formula }) => {
       const f = String(formula).replace(/"[^"]*"/g, '""');
       const ajeno = Object.keys(this.ss.namedRanges).filter(n => this.ss.namedRanges[n] !== this.name && new RegExp(`\\b${n}\\b`).test(f));
@@ -157,7 +159,7 @@ function crearEntorno(opts = {}) {
     return p;
   };
   const reglaCF = () => {
-    const b = { formula: '', whenFormulaSatisfied(f) { b.formula = f; return b; }, setBackground() { return b; }, setRanges() { return b; }, build() { return { formula: b.formula }; } };
+    const b = { formula: '', whenFormulaSatisfied(f) { b.formula = f; return b; }, setBackground() { return b; }, setRanges() { return b; }, build() { const f = b.formula; return { formula: f, getBooleanCondition: () => ({ getCriteriaValues: () => [f] }) }; } };
     return b;
   };
   ss.getSheets = () => ss.sheets;

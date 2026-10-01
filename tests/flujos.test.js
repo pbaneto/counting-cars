@@ -299,22 +299,6 @@ test('procesarAlbaranes: un albarán de ABONO no va a Albaranes; marca Abonada l
   assert.deepEqual(todas.find(f => f.ref === 'OTRA1'), { ref: 'OTRA1', estado: 'Sin solicitar', fecha: '2026-09-30', fra: 'FCR 7' }, 'por la factura: fecha de la factura');
 });
 
-test('Abonos: las claves de abono antiguas (por factura) se traducen a las nuevas (por albarán de abono) sin duplicar filas', () => {
-  const e = entorno({});
-  const ab = e.ss.getSheetByName('Abonos'), l = e.ss.getSheetByName('Líneas RM'), cl = e.ss.getSheetByName('Abonos (claves)');
-  l.put(2, 1, 'FCR 7'); l.put(2, 2, '486962'); l.put(2, 3, e.run('new Date(2026, 8, 28)')); l.put(2, 5, 'Abono'); l.put(2, 6, '01000476000'); l.put(2, 7, 'ELEVA05'); l.put(2, 8, 'X'); l.put(2, 12, -45.14);
-  l.put(3, 1, 'FCR 7'); l.put(3, 2, '486963'); l.put(3, 3, e.run('new Date(2026, 8, 28)')); l.put(3, 5, 'Abono'); l.put(3, 6, '01000476001'); l.put(3, 7, 'BORRADA'); l.put(3, 8, 'X'); l.put(3, 12, -1);
-  ab.put(2, 2, 'X'); ab.put(2, 5, 'Abonada'); ab.put(2, 6, '476000'); ab.put(2, 7, 'ELEVA05'); ab.put(2, 10, 'FCR 7'); ab.put(2, 13, 'A|FCR 7|476000|ELEVA05|1');
-  cl.put(1, 1, 'A|FCR 7|476000|ELEVA05|1'); cl.put(2, 1, 'A|FCR 7|476001|BORRADA|1');  // la segunda: fila borrada a mano
-  delete e.props.ABONOS_CLAVES_V2;
-  e.run('actualizarAbonos()');
-  assert.equal(ab.valor(2, 13), 'A|486962|476000|ELEVA05|1');
-  assert.equal(ab.valor(2, 5), 'Abonada');
-  assert.equal(ab.valor(3, 2), '', 'ni se duplica la fila ni vuelve la borrada');
-  assert.deepEqual([cl.valor(1, 1), cl.valor(2, 1)], ['A|486962|476000|ELEVA05|1', 'A|486963|476001|BORRADA|1']);
-  assert.equal(e.props.ABONOS_CLAVES_V2, '1');
-});
-
 test('procesarAlbaranes: si la hoja no se puede guardar no se mueve ningún PDF, y volver a procesar no duplica nada', () => {
   const e = entorno({ 'd1.pdf': albaranRaw({ numero_albaran: '800001', matricula: '9999ZZZ' }), 'd2.pdf': albaranRaw({ numero_albaran: '800002' }) });
   ['ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
@@ -336,36 +320,54 @@ test('procesarAlbaranes: si la hoja no se puede guardar no se mueve ningún PDF,
   assert.equal(tabla(e, 'Piezas').filter(p => p['Nº albarán'] === '800001').length, 2);
 });
 
-test('repararFormulas quita primero la validación "sólo fórmulas" de una versión anterior (que rechazaba las fórmulas del script)', () => {
+test('repararFormulas rehace el panel de Trabajos aunque su título combinado haya crecido (columna insertada)', () => {
   const e = entorno({});
   const trab = e.ss.getSheetByName('Trabajos');
-  const regla = { getCriteriaValues: () => ['=ISFORMULA(M5)'] };
-  for (let r = 5; r <= 9; r++) trab.validaciones.set(r + ',13', regla);
-  trab.validaciones.set('5,5', { getCriteriaValues: () => ['1234ABC'] });  // otra validación: no se toca
-  delete e.props.SIN_VALIDACION_SOLO_FORMULAS;  // hoja de la versión anterior
-  e.run('repararFormulas()');
-  assert.equal([5, 6, 7, 8, 9].filter(r => trab.validaciones.has(r + ',13')).length, 0);
-  assert.ok(trab.validaciones.has('5,5'));
-});
-
-test('repararFormulas en una hoja de la versión anterior: inserta Quincena aunque el título del panel esté combinado', () => {
-  const e = entorno({});
-  const trab = e.ss.getSheetByName('Trabajos');
-  // Hoja de antes de Quincena: se quita la columna D (y el título del panel vuelve a ocupar A1:F1)
-  const vieja = new Map();
-  trab.grid.forEach((v, k) => { const [r, c] = k.split(',').map(Number); if (c !== 4) vieja.set(r + ',' + (c > 4 ? c - 1 : c), v); });
-  trab.grid = vieja;
-  trab.combinadas = [{ r: 1, c: 1, nr: 1, nc: 6 }];
-  assert.equal(trab.valor(4, 4), 'Matrícula');
+  trab.combinadas = [{ r: 1, c: 1, nr: 1, nc: 7 }];  // como tras insertar una columna dentro del panel
   const fallos = () => e.log.alerts.filter(a => /Ha fallado/.test(String(a[0]) + String(a[1])));
   e.run('repararFormulas()');
   assert.deepEqual(fallos(), []);
-  assert.equal(trab.valor(4, 4), 'Quincena');
-  assert.equal(trab.valor(4, 5), 'Matrícula');
-  assert.equal(trab.valor(5, 5), '4321GHJ', 'datos sin desalinear');
   assert.deepEqual(trab.combinadas, [{ r: 1, c: 1, nr: 1, nc: 6 }], 'título del panel rehecho');
-  e.run('repararFormulas()');  // y repetir no falla
+  e.run('repararFormulas()');
   assert.deepEqual(fallos(), []);
+});
+
+test('el diseño respeta lo cambiado a mano: anchos de columna, filtros, filas fijas y reglas de color propias', () => {
+  const e = entorno({});
+  const alb = e.ss.getSheetByName('Albaranes');
+  const anchos = [], fijas = [];
+  alb.setColumnWidth = (c, w) => anchos.push([c, w]);
+  alb.getFrozenRows = () => 3; alb.setFrozenRows = n => fijas.push(n);
+  const mia = { formula: '=$A2="x"', getBooleanCondition: () => ({ getCriteriaValues: () => ['=$A2="x"'] }) };
+  alb.reglas = (alb.reglas || []).concat([mia]);
+  e.run('repararFormulas()');
+  assert.deepEqual(anchos, [], 'no cambia anchos de columna');
+  assert.deepEqual(fijas, [], 'no quita filas fijas de más');
+  assert.ok(alb.reglas.includes(mia), 'conserva la regla de color propia');
+  const formulas = alb.reglas.map(r => r.formula);
+  assert.equal(formulas.length, new Set(formulas).size, 'sin reglas nuestras duplicadas');
+});
+
+test('versiones: al subir la versión se ejecutan las migraciones pendientes una vez y se reaplica el diseño', () => {
+  const e = entorno({});
+  assert.equal(e.props.VERSION_HOJA, e.run('VERSION'), 'setup apunta la versión');
+  const hechas = [];
+  e.ctx.__hechas = hechas;
+  e.run(`MIGRACIONES['0.9.5'] = () => __hechas.push('0.9.5'); MIGRACIONES['1.0.0'] = () => __hechas.push('1.0.0'); MIGRACIONES['9.0.0'] = () => __hechas.push('9.0.0');`);
+  e.props.VERSION_HOJA = e.run('VERSION');
+  e.log.console.length = 0;
+  e.run('actualizarAbonos()');
+  assert.ok(!e.log.console.some(l => /aplicarDiseno/.test(l)), 'misma versión: no se toca el diseño');
+  assert.deepEqual(hechas, []);
+  e.props.VERSION_HOJA = '0.9.0';
+  e.run('actualizarAbonos()');
+  assert.deepEqual(hechas, ['0.9.5', '1.0.0'], 'en orden, sólo las que hay entre la versión de la hoja y la del código');
+  assert.equal(e.props.VERSION_HOJA, e.run('VERSION'));
+  assert.ok(e.log.console.some(l => /aplicarDiseno/.test(l)), 'cambio de versión menor/mayor: se reaplica el diseño');
+  assert.ok(e.log.console.some(l => /Hoja actualizada de la versión 0\.9\.0/.test(l)));
+  hechas.length = 0;
+  e.run('actualizarAbonos()');
+  assert.deepEqual(hechas, [], 'una sola vez');
 });
 
 test('escribir a mano en una columna automática vuelve a poner su fórmula y avisa', () => {
@@ -615,16 +617,6 @@ test('Abonos editable: el abono de la factura completa la fila de su pieza; una 
   assert.equal(ab.valor(3, 5), '', 'la fila borrada no reaparece');
 });
 
-/** Pestaña Abonos con el diseño anterior: año en B1, resumen por quincena en A3:F27, tabla con cabecera en la fila 30. */
-function abonosAntiguo(e, ab, filas, anio) {
-  ab.clear();
-  ab.put(1, 1, 'Año'); ab.put(1, 2, anio);
-  ab.put(3, 1, 'Mes'); ab.put(3, 2, 'Quincena'); ab.put(4, 1, 'ene'); ab.put(4, 2, 1); ab.put(4, 3, '=SUMIFS(1,1,1)');
-  ab.put(1, 11, 'Pendientes de RM'); ab.put(2, 11, 'Piezas sin abonar'); ab.put(2, 12, '=COUNTIF(1,1)');
-  e.run('ABONOS.cabTabla').slice(0, 12).forEach((h, j) => ab.put(30, j + 1, h));
-  filas.forEach((f, i) => f.forEach((v, j) => ab.put(31 + i, j + 1, v)));
-}
-
 test('Abonos: tabla arriba y resumen a la derecha; filas insertadas encima se quitan; matrícula tal cual la pone RM', () => {
   const e = entorno({});
   const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos'), l = e.ss.getSheetByName('Líneas RM');
@@ -654,37 +646,6 @@ test('Abonos: tabla arriba y resumen a la derecha; filas insertadas encima se qu
   e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
   assert.deepEqual([2, 3, 4].map(r => ab.valor(r, 7)), ['AAA', '', 'DAYCO5PK1090']);
   assert.equal(ab.valor(3, 15), 'Mes'); assert.equal(ab.valor(4, 16), 1);
-});
-
-test('Abonos: del diseño anterior (resumen encima) al nuevo, pasando a tabla editable sin cambiar ningún valor', () => {
-  const e = entorno({});
-  const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos'), l = e.ss.getSheetByName('Líneas RM');
-  // Estado de una hoja de la versión anterior: sin claves y sin la marca de tabla editable
-  delete e.props.ABONOS_EDITABLE;
-  e.ss.getSheetByName('Abonos (claves)').clear();
-  p.put(2, 1, true); p.put(2, 3, '555'); p.put(2, 4, 'PPP'); p.put(2, 5, 'Pedida'); p.put(2, 10, 5); p.put(2, 12, e.run('new Date(2026, 8, 20)'));
-  const linea = (r, fra, ref, imp) => { l.put(r, 1, fra); l.put(r, 2, '9' + r); l.put(r, 3, e.run('new Date(2026, 6, 4)')); l.put(r, 5, 'Abono'); l.put(r, 6, '01000' + '444' + r); l.put(r, 7, ref); l.put(r, 8, 'D' + ref); l.put(r, 12, imp); };
-  linea(2, 'FCR 1', 'R1', -10); linea(3, 'FCR 1', 'R2', -20);
-  const vieja = [
-    [e.run('new Date(2026, 6, 4)'), 'DR1', 10, '=ROUND($C31*(1+IVA),2)', 'Abonada', '4442', 'R1', '', '', 'FCR 1', 'nota', '=IF(1,1,1)'],
-    [e.run('new Date(2026, 6, 4)'), 'DR2', 20, '=ROUND($C32*(1+IVA),2)', 'Sin solicitar', '4443', 'R2', '', '', 'FCR 1', '', '=IF(1,1,1)'],
-    ['', 'Pedida', 5, '=ROUND($C33*(1+IVA),2)', 'Sin abonar', '555', 'PPP', '', e.run('new Date(2026, 8, 20)'), '', '', '=IF(1,1,1)'],
-  ];
-  abonosAntiguo(e, ab, vieja, 2027);
-  e.run('repararFormulas()');
-  assert.equal(ab.valor(1, 1), 'Fecha abono', 'la tabla sube a la fila 1');
-  assert.equal(ab.valor(1, 16), 2027, 'se conserva el año elegido');
-  assert.equal(ab.valor(3, 15), 'Mes', 'resumen a la derecha');
-  assert.deepEqual([2, 3, 4].map(r => ab.valor(r, 13)), ['A|92|4442|R1|1', 'A|93|4443|R2|1', 'P|555|PPP|1']);
-  vieja.forEach((f, i) => f.forEach((v, j) => { if (j !== 3 && j !== 11) assert.deepEqual(ab.valor(2 + i, j + 1), v, `fila ${2 + i} col ${j + 1}`); }));
-  assert.equal(ab.valor(1, 11), 'Nota', 'no queda nada del panel antiguo en K1');
-  assert.equal(e.props.ABONOS_EDITABLE, '1');
-  assert.ok(e.log.console.some(x => /Tabla editable: 3 filas con clave, 0 sin reconocer/.test(x)));
-  // Después, lo nuevo va arriba y lo antiguo sigue igual
-  p.put(3, 3, '666'); p.put(3, 4, 'NEW'); p.put(3, 5, 'Nueva'); p.put(3, 10, 1); p.put(3, 1, true);
-  e.ctx.__r = p.getRange(3, 1); e.run('alEditar({ range: __r })');
-  assert.deepEqual([2, 3, 4, 5, 6].map(r => ab.valor(r, 7)), ['NEW', 'R1', 'R2', 'PPP', '']);
-  assert.equal(ab.valor(3, 5), 'Abonada');
 });
 
 test('diagnóstico lista problemas con enlaces', () => {

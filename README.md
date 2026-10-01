@@ -60,3 +60,14 @@ tools/          probar-gemini.js (probar el prompt con un PDF real), generar-pri
 npm test                                        # lógica + flujos simulados
 GEMINI_API_KEY=... node tools/probar-gemini.js albaran ruta/albaran.pdf
 ```
+
+## Versiones
+
+`VERSION` (en `src/Config.js`) sigue el formato MAYOR.MENOR.PARCHE y la hoja guarda la suya. Al abrir la hoja o al lanzar una acción del menú, si no coinciden, la hoja se pone al día sola (`src/Version.js`):
+
+- **MAYOR**: cambia dónde están los datos. Se añade su migración en `MIGRACIONES`; cuando ya ha corrido en la hoja real, se borra del código.
+- **MENOR**: sólo diseño (formato, colores, fórmulas). Se reaplica el diseño.
+- **PARCHE**: arreglo que no toca la hoja.
+
+El diseño respeta lo cambiado a mano: anchos de columna (sólo se ponen al crear la hoja), filtros, filas fijas de más y reglas de color propias. Cada versión se etiqueta en git (`v1.0.0`).
+

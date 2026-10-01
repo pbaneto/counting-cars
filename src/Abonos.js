@@ -10,10 +10,6 @@
  */
 
 const COL_ABONOS_ = { fechaAbono: 1, descripcion: 2, sinIva: 3, estado: 5, albaran: 6, referencia: 7, matricula: 8, fechaSolicitud: 9, factura: 10, nota: 11, clave: 13 };
-// Marca de que la tabla ya es editable (migrarAbonos_ hecho). No se usa la cabecera "Clave": montarAbonos_ la escribe.
-const PROP_ABONOS_EDITABLE_ = 'ABONOS_EDITABLE';
-// Marca de que las claves A ya son por albarán de abono (antes eran por factura): ver migrarClavesAbonos_.
-const PROP_ABONOS_CLAVES_V2_ = 'ABONOS_CLAVES_V2';
 // Columnas que escribe una persona o la sincronización (no las fórmulas D y L): si están todas vacías, la fila se ha borrado.
 const COLS_ENTRADA_ABONOS_ = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11];
 
@@ -46,10 +42,7 @@ function leerParaAbonos_(tabP, crono) {
   const vistas = new Set(ultC ? shC.getRange(1, 1, ultC, 1).getValues().map(r => String(r[0])).filter(Boolean) : []);
   loc_('');  // la configuración regional también es una lectura: se guarda ya para escribir las fórmulas luego
   crono.paso(`leer Abonos (${tabla.length} filas, ${vistas.size} claves vistas)`);
-  const migrar = PropertiesService.getScriptProperties().getProperty(PROP_ABONOS_EDITABLE_) !== '1';
-  const props = PropertiesService.getScriptProperties();
-  return { tabP, tabL, tabA, sh, tabla, vistas, migrar, ultFila: tb + tabla.length - 1, maxFilas, fechaFactura,
-    clavesV2: props.getProperty(PROP_ABONOS_CLAVES_V2_) === '1' };
+  return { tabP, tabL, tabA, sh, tabla, vistas, ultFila: tb + tabla.length - 1, maxFilas, fechaFactura };
 }
 
 /**
@@ -100,8 +93,6 @@ function escribirAbonos_(d, filasDesmarcadas, escaneados) {
 
   const deFacturas = abonosDeLineas_(tabL, plateDe, d.fechaFactura);
   const abonos = deFacturas.concat(clavesAbonos((escaneados || []).map(a => Object.assign({}, a, { matricula: plateDe[normAlbaran(a.albaranOrigen)] || '' }))));
-  if (d.migrar) { migrarAbonos_(d, marcadas, deFacturas); crono.paso('migrar a tabla editable'); }
-  if (!d.clavesV2) { migrarClavesAbonos_(d, tabL); crono.paso('migrar claves de abono'); }
 
   const existentes = d.tabla.map(r => ({ clave: r[12], fechaAbono: r[0], descripcion: r[1], sinIva: r[2], estado: r[4], albaran: r[5], ref: r[6], matricula: r[7], factura: r[9], nota: r[10] }));
   const res = sincronizarAbonos(existentes, marcadas, todas, abonos, d.vistas, quitar, { matriculas: plateDe });
@@ -171,56 +162,12 @@ function abonosEscaneados_(doc, hoy) {
 }
 
 /**
- * Paso único: las claves A de versiones anteriores eran por factura (A|factura|origen|ref|n); ahora son por albarán de
- * abono, para casar el albarán de abono escaneado con la factura que luego lo trae. Se traducen en la columna Clave y
- * en la lista de claves vistas usando las líneas de abono de Líneas RM.
- */
-function migrarClavesAbonos_(d, tabL) {
-  const lineas = tabL.filas.filter(f => f.v['Tipo'] === 'Abono').map(f => ({
-    factura: f.v['Nº factura'], albaranAbono: normAlbaran(f.v['Nº albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']),
-    ref: f.v['Referencia'], desc: f.v['Descripción'] }));
-  const viejas = clavesAbonosAntiguas(lineas), nuevas = clavesAbonos(lineas), mapa = {};
-  viejas.forEach((v, i) => { mapa[v.clave] = nuevas[i].clave; });
-  const traducir = s => partirClaves(s).map(k => mapa[k] || k).join(';');
-  let cambiadas = 0;
-  d.tabla.forEach(r => { const t = traducir(r[12]); if (t !== String(r[12] || '')) { r[12] = t; cambiadas++; } });
-  if (cambiadas) d.sh.getRange(ABONOS.filaTabla, ABONOS.cabTabla.length, d.tabla.length, 1).setValues(d.tabla.map(r => [r[12]]));
-  const vistas = Array.from(d.vistas).map(k => mapa[k] || k);
-  d.vistas = new Set(vistas);
-  const shC = ss_().getSheetByName(HOJA.CLAVES);
-  if (shC && vistas.length) { shC.clearContents(); shC.getRange(1, 1, vistas.length, 1).setValues(vistas.map(k => [k])); }
-  PropertiesService.getScriptProperties().setProperty(PROP_ABONOS_CLAVES_V2_, '1');
-  if (cambiadas) log_('INFO', 'migrarClavesAbonos', HOJA.ABONOS, `${cambiadas} filas con la clave de abono nueva (por albarán de abono)`);
-}
-
-/**
- * Paso único de la tabla regenerada (versión anterior) a la tabla editable: monta la columna "Clave" y los rangos
- * que crecen al insertar arriba, pone la clave a cada fila existente y da por vistas las líneas de abono
- * que ya estaban en la tabla. No cambia ningún valor de las filas.
- */
-function migrarAbonos_(d, marcadas, abonos) {
-  montarAbonos_();
-  const filas = d.tabla.map(r => ({ fechaSolicitud: r[8], estado: r[4], descripcion: r[1], sinIva: r[2], albaran: r[5], ref: r[6], factura: r[9] }));
-  const claves = clavesDeFilasAntiguas(filas, marcadas, abonos);
-  if (claves.length) d.sh.getRange(ABONOS.filaTabla, ABONOS.cabTabla.length, claves.length, 1).setValues(claves.map(c => [c]));
-  claves.forEach((c, i) => { d.tabla[i][12] = c; });
-  // Sólo las líneas de abono reconocidas en la tabla: si alguna no estaba (p. ej. una factura procesada justo ahora), se añade.
-  const nuevas = [].concat(...claves.map(partirClaves)).filter(k => k.indexOf('A|') === 0 && !d.vistas.has(k));
-  nuevas.forEach(k => d.vistas.add(k));
-  if (nuevas.length) registrarClavesAbonos_(nuevas);
-  const sinClave = filas.filter((f, i) => !claves[i] && (f.factura || f.albaran || f.descripcion)).length;
-  PropertiesService.getScriptProperties().setProperty(PROP_ABONOS_EDITABLE_, '1');
-  log_('INFO', 'migrarAbonos', HOJA.ABONOS, `Tabla editable: ${claves.filter(Boolean).length} filas con clave, ${sinClave} sin reconocer (se quedan como filas manuales)`);
-}
-
-/**
  * Filas borradas a mano en Abonos: las piezas marcadas cuya fila ya no está se desmarcan en Piezas.
  * Una fila de abono sin pieza (Sin solicitar) no afecta a nada más.
  */
 function desmarcarPiezasBorradas_() {
   if (recolocarTablaAbonos_()) montarAbonos_();
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ult = sh.getLastRow();
-  if (PropertiesService.getScriptProperties().getProperty(PROP_ABONOS_EDITABLE_) !== '1') return;  // sin migrar: no se sabe qué fila es de qué pieza
   const enTabla = new Set();
   if (ult >= tb) sh.getRange(tb, ncol, ult - tb + 1, 1).getValues().forEach(r => partirClaves(r[0]).forEach(k => enTabla.add(k)));
   const tabP = leerTabla_(HOJA.PIEZAS);
@@ -255,34 +202,28 @@ function editarAbonos_(r0, n, c0) {
 }
 
 /**
- * La tabla de Abonos va arriba del todo (cabecera en la fila 1). Si su cabecera no está ahí (diseño anterior con el
- * resumen encima, o filas insertadas encima), se quitan las filas de encima y devuelve true: quien llama debe volver a
- * montar la pestaña (montarAbonos_), porque el resumen de la derecha también se ha movido. Nunca borra datos de la
- * tabla: si encima de la cabecera hay algo que no sea el resumen antiguo, para y avisa.
+ * La tabla de Abonos va arriba del todo (cabecera en la fila 1). Si alguien inserta filas enteras encima, se quitan
+ * (sólo si están vacías en la tabla) y devuelve true: quien llama debe volver a montar la pestaña (montarAbonos_),
+ * porque el resumen de la derecha también se ha movido. Nunca borra datos de la tabla.
  */
 function recolocarTablaAbonos_() {
   const sh = hoja_(HOJA.ABONOS), ct = ABONOS.cabTabla;
   const n = Math.min(Math.max(sh.getLastRow(), 1), 80);
   const vals = sh.getRange(1, 1, n, ct.length).getValues();
+  const vacia = r => r.every(x => x === '' || x == null);
   const idx = vals.findIndex(r => r[0] === ct[0] && r[1] === ct[1]);
   if (idx < 0) {
-    if (PropertiesService.getScriptProperties().getProperty(PROP_ABONOS_EDITABLE_) !== '1') return false;  // hoja nueva: aún no hay tabla
+    if (vals.every(vacia)) return false;  // hoja nueva: aún no hay tabla
     throw new Error('No encuentro la cabecera de la tabla de Abonos ("Fecha abono", "Descripción pieza"). ' +
       'Si se ha borrado, deshazlo (Ctrl+Z) o recupera la fila desde Archivo ▸ Historial de versiones.');
   }
   const real = idx + 1;
   if (real === ABONOS.filaCabTabla) return false;
-  // Diseño anterior: año en A1:B1 y resumen por quincena (Mes | Quincena…) en A3 hasta la fila 27, tabla debajo.
-  const antiguo = vals[2] && vals[2][0] === 'Mes' && vals[2][1] === 'Quincena';
-  if (!antiguo && vals.slice(0, real - 1).some(r => r.some(x => x !== '' && x != null))) {
+  if (!vals.slice(0, real - 1).every(vacia)) {
     throw new Error(`En Abonos hay datos en las filas 1-${real - 1}, encima de la cabecera de la tabla. Muévelos o bórralos para que la cabecera quede en la fila 1.`);
   }
-  const anio = antiguo ? vals[0][1] : '';
   sh.deleteRows(1, real - 1);
-  if (anio !== '' && anio != null) sh.getRange(ABONOS.celdaAnio).setValue(anio);
-  log_('AVISO', 'recolocarTablaAbonos', `${HOJA.ABONOS}!A${real}`, antiguo
-    ? 'Tabla subida a la fila 1 y resumen movido a la derecha (diseño nuevo de la pestaña).'
-    : `La cabecera de la tabla estaba en la fila ${real}: quitadas las filas vacías de encima.`);
+  log_('AVISO', 'recolocarTablaAbonos', `${HOJA.ABONOS}!A${real}`, `La cabecera de la tabla estaba en la fila ${real}: quitadas las filas vacías de encima.`);
   return true;
 }
 
@@ -299,6 +240,7 @@ function revisarAbonosTrasCambioDeFilas_(borradas) {
 /** Menú: Actualizar Abonos (añade lo que falte; no cambia ni borra nada de lo que ya hay). */
 function actualizarAbonos() {
   ejecutar_('actualizarAbonos', () => conBloqueo_(10, () => {
+    actualizarHoja_(false);
     const r = sincronizarAbonos_();
     toast_(r.nuevas.length ? `Abonos: ${r.nuevas.length} fila(s) nueva(s) arriba.` : 'Abonos ya estaba al día.');
   }));

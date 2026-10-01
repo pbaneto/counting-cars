@@ -209,8 +209,6 @@ function ponerClaves(items, prefijo, partes) {
 function refODesc_(ref, desc) { return refKey(ref) || 'D' + refKey(desc); }
 function clavesPiezas(piezas) { return ponerClaves(piezas, 'P', p => [normAlbaran(p.albaran), refODesc_(p.ref, p.desc)]); }
 function clavesAbonos(abonos) { return ponerClaves(abonos, 'A', a => [normAlbaran(a.albaranAbono), normAlbaran(a.albaranOrigen), refODesc_(a.ref, a.desc)]); }
-/** Clave A de versiones anteriores (con la factura en vez del albarán de abono): sólo para migrar las claves guardadas. */
-function clavesAbonosAntiguas(abonos) { return ponerClaves(abonos.map(a => Object.assign({}, a)), 'A', a => [String(a.factura || '').trim(), normAlbaran(a.albaranOrigen), refODesc_(a.ref, a.desc)]); }
 function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x => x.trim()).filter(Boolean); }
 
 /**
@@ -305,28 +303,6 @@ function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, qu
 }
 
 /**
- * Migración a la tabla editable: calcula las claves de las filas que ya había (generadas por la versión anterior),
- * emparejando cada fila con su línea de abono (factura + albarán + referencia, o descripción e importe) y su pieza marcada.
- * Devuelve un array paralelo a `filas` con la clave de cada una ('' si no se reconoce: se queda como fila manual).
- */
-function clavesDeFilasAntiguas(filas, marcadas, abonos) {
-  const usadasA = new Set(), usadasP = new Set();
-  return filas.map(f => {
-    const ks = [];
-    if (String(f.factura || '').trim()) {
-      const a = abonos.find(x => !usadasA.has(x.clave) && String(x.factura).trim() === String(f.factura).trim() && normAlbaran(x.albaranOrigen) === normAlbaran(f.albaran)
-        && (refKey(x.ref) ? refKey(x.ref) === refKey(f.ref) : refKey(x.desc) === refKey(f.descripcion) && Math.abs(Math.abs(parseNumber(x.importe)) - parseNumber(f.sinIva)) < 0.02));
-      if (a) { usadasA.add(a.clave); ks.push(a.clave); }
-    }
-    if (f.fechaSolicitud || f.estado === 'Sin abonar') {
-      const p = marcadas.find(x => !usadasP.has(x.clave) && normAlbaran(x.albaran) === normAlbaran(f.albaran) && refODesc_(x.ref, x.desc) === refODesc_(f.ref, f.descripcion));
-      if (p) { usadasP.add(p.clave); ks.push(p.clave); }
-    }
-    return ks.join(';');
-  });
-}
-
-/**
  * Segundo escaneo de un albarán que ya existe: decide qué piezas marcar como reembolso.
  * existentes: [{ref, desc, reembolso}]  lineas: líneas de Gemini (con .reembolso)
  * Devuelve { marcar: [índices en existentes], añadir: [líneas nuevas], yaMarcadas: n }
@@ -407,11 +383,24 @@ function usaPuntoYComa(locale) {
   return !(excepciones[lang] && excepciones[lang].indexOf(pais) >= 0);
 }
 
+/** Compara dos versiones "1.2.3": negativo si a < b, 0 si iguales, positivo si a > b. */
+function compararVersiones(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d; }
+  return 0;
+}
+
+/** ¿Hay que volver a aplicar el diseño? Sí si cambia la versión mayor o la menor (no por un parche). */
+function cambiaDiseno(a, b) {
+  const pa = String(a).split('.'), pb = String(b).split('.');
+  return pa[0] !== pb[0] || pa[1] !== pb[1];
+}
+
 /** Ordena/actualiza: fila en el Resumen para un mes (1-12). */
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
-    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, clavesAbonosAntiguas, partirClaves, sincronizarAbonos, clavesDeFilasAntiguas, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa };
+    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
 }

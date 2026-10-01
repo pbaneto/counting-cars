@@ -2,6 +2,7 @@
 
 function procesarAlbaranes() {
   ejecutar_('procesarAlbaranes', () => conBloqueo_(10, () => {
+    actualizarHoja_(false);
     const archivos = listarArchivos_('CARPETA_ENTRADA', cfgNum_('MAX_ARCHIVOS'));
     if (!archivos.length) { avisar_('No hay albaranes nuevos en la carpeta Entrada.'); return; }
     // Antes de gastar llamadas a Gemini: si la hoja no está al día (columnas nuevas), leerTabla_ lo dice ya.

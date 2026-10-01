@@ -7,6 +7,14 @@
  */
 const TZ = 'Europe/Madrid';
 
+/**
+ * Versión del código (MAYOR.MENOR.PARCHE). Al cambiar algo, súbela:
+ *  - MAYOR: cambia dónde están los datos (columna nueva con datos, claves…): añade su migración en Version.js.
+ *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
+ *  - PARCHE: arreglo de código que no toca la hoja.
+ */
+const VERSION = '1.0.0';
+
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', COCHES: 'Coches', RESUMEN: 'Resumen',
   FACT: 'Facturas RM', LINEAS: 'Líneas RM', CONFIG: 'Config', REG: 'Registro', DIAG: 'Diagnóstico',

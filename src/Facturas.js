@@ -2,6 +2,7 @@
 
 function procesarFacturasRM() {
   ejecutar_('procesarFacturasRM', () => conBloqueo_(10, () => {
+    actualizarHoja_(false);
     const archivos = listarArchivos_('CARPETA_FACTURAS_RM', 5);
     if (!archivos.length) { avisar_('No hay facturas nuevas en la carpeta de facturas RM.'); return; }
     toast_(`Leyendo ${archivos.length} factura(s) con Gemini…`, 'Facturas RM', 60);

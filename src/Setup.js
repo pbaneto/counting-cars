@@ -1,10 +1,14 @@
 /**
- * setup(): crea/repara pestañas, cabeceras, fórmulas, formato, validaciones, colores y triggers.
- * Es IDEMPOTENTE: se puede ejecutar las veces que haga falta; nunca borra datos de entrada.
+ * Diseño de la hoja: pestañas, cabeceras, fórmulas, formato, validaciones, colores y triggers. Nunca borra datos.
+ * Respeta lo que se haya cambiado a mano: anchos de columna (sólo se ponen al crear la hoja), filtros, filas fijas de
+ * más y reglas de color propias.
+ * Se aplica solo cuando cambia la versión del código (ver Version.js); el menú "Reparar fórmulas y formato" lo fuerza.
  */
 
 const ORDEN_HOJAS = [HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.ABONOS, HOJA.COCHES, HOJA.RESUMEN, HOJA.FACT, HOJA.LINEAS, HOJA.CONFIG, HOJA.REG, HOJA.CLAVES];
-const PROTECCION = 'counting-cars:auto';
+
+/** true sólo al preparar una hoja nueva (setup): es cuando se ponen los anchos de columna. */
+let _hojaNueva = false;
 
 function setup() {
   ejecutar_('setup', () => conBloqueo_(30, () => {
@@ -13,33 +17,50 @@ function setup() {
     reiniciarCaches_();
     ss_().setSpreadsheetTimeZone(TZ);
     crearHojas_();
-    quitarValidacionSoloFormulas_();
-    prepararConfig_();
-    prepararTablas_();
-    montarAbonos_();
-    montarResumen_();
-    instalarTriggers_();
-    sincronizarAbonos_();  // en una hoja nueva deja Abonos ya como tabla editable
-    log_('INFO', 'setup', '', 'Hoja preparada');
+    _hojaNueva = true;
+    try { aplicarDiseno_(); } finally { _hojaNueva = false; }
+    props.setProperty(PROP_VERSION_, VERSION);
+    log_('INFO', 'setup', '', `Hoja preparada (versión ${VERSION})`);
     avisar_('Hoja preparada.\n\nSiguientes pasos:\n1) Menú Counting Cars ▸ Configurar API key de Gemini\n2) Si hace falta cargar coches y datos del piloto, ejecuta cargarDatosIniciales() desde el editor de Apps Script (no está en el menú)\n3) Menú Counting Cars ▸ Procesar albaranes', 'Counting Cars');
   }));
 }
 
-/** Menú: reescribe fórmulas, formato y colores sin tocar los datos. Añade a Config las claves nuevas (sin pisar valores). */
+/** Menú: vuelve a aplicar el diseño (p. ej. si se ha borrado una fórmula a mano). No toca los datos. */
 function repararFormulas() {
   ejecutar_('repararFormulas', () => conBloqueo_(30, () => {
-    const crono = cronometro_('repararFormulas');
-    reiniciarCaches_();
-    quitarValidacionSoloFormulas_(); crono.paso('quitar validación antigua');
-    prepararConfig_(); crono.paso('Config');
-    prepararTablas_(crono);
-    montarAbonos_(); crono.paso('Abonos');
-    montarResumen_(); crono.paso('Resumen');  // antes no se reconstruía aquí: si Trabajos cambiaba, el Resumen se quedaba con fórmulas viejas
-    instalarTriggers_(); crono.paso('triggers');  // así un trigger nuevo (alCambiar) llega sin volver a ejecutar setup
-    sincronizarAbonos_(); crono.paso('sincronizar Abonos');  // la primera vez pasa Abonos a tabla editable (migrarAbonos_)
-    log_('INFO', 'repararFormulas', '', crono.fin());  // tiempos por paso en Registro, para ver qué parte tarda
+    actualizarHoja_(true);
     toast_('Fórmulas y formato reparados.');
   }));
+}
+
+/** Todo el diseño, con los tiempos de cada paso en Registro. */
+function aplicarDiseno_() {
+  const crono = cronometro_('aplicarDiseno');
+  reiniciarCaches_();
+  prepararConfig_(); crono.paso('Config');
+  prepararTablas_(crono);
+  montarAbonos_(); crono.paso('Abonos');
+  montarResumen_(); crono.paso('Resumen');
+  instalarTriggers_(); crono.paso('triggers');
+  log_('INFO', 'aplicarDiseno', '', crono.fin());
+}
+
+/** Ancho de columna: sólo en una hoja nueva. Después manda el ancho que haya puesto cada uno. */
+function ancho_(sh, c, w) { if (_hojaNueva) sh.setColumnWidth(c, w); }
+
+/** Filas fijas: como mínimo las que necesita la cabecera; si alguien ha fijado más, se respetan. */
+function fijarFilas_(sh, n) { if (sh.getFrozenRows() < n) sh.setFrozenRows(n); }
+
+/**
+ * Reglas de color: se cambian las nuestras (las que tienen la misma fórmula, sin contar números de fila) y se
+ * conservan las que haya añadido alguien a mano.
+ */
+function ponerReglas_(sh, reglas) {
+  const norm = f => String(f || '').replace(/(\$?[A-Z]{1,3})\$?\d+/g, '$1').replace(/\s+/g, '').toUpperCase();
+  const nuestras = new Set(reglas.map(r => norm(r.formula)));
+  const formulaDe = r => { try { const c = r.getBooleanCondition(); return c ? c.getCriteriaValues()[0] : ''; } catch (e) { return ''; } };
+  const ajenas = (sh.getConditionalFormatRules() || []).filter(r => !nuestras.has(norm(formulaDe(r))));
+  sh.setConditionalFormatRules(ajenas.concat(reglas.map(r => r.regla)));
 }
 
 function reiniciarCaches_() { _ss = null; _cfg = null; _letras = {}; _pyc = null; }
@@ -57,7 +78,7 @@ function crearHojas_() {
 function estiloCabecera_(sh, n, filaCab) {
   filaCab = filaCab || 1;
   sh.getRange(filaCab, 1, 1, n).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setVerticalAlignment('middle').setWrap(true);
-  sh.setFrozenRows(filaCab);  // deja fijo también lo que haya encima (el panel de resumen, si lo hay)
+  fijarFilas_(sh, filaCab);  // deja fijo también lo que haya encima (el panel de resumen, si lo hay)
 }
 
 function prepararConfig_() {
@@ -80,37 +101,11 @@ function prepararConfig_() {
     ss.setNamedRange(nombre, sh.getRange(f.fila, t2.map['Valor']));
   });
   estiloCabecera_(sh, 3);
-  sh.setColumnWidth(1, 240); sh.setColumnWidth(2, 340); sh.setColumnWidth(3, 620);
+  ancho_(sh, 1, 240); ancho_(sh, 2, 340); ancho_(sh, 3, 620);
   _cfg = null;
 }
 
-/**
- * Migración única: en una hoja de una versión anterior sin `nombreCol`, la columna que le sigue en ESQUEMA está
- * todavía donde ahora va `nombreCol`. Inserta una columna en blanco ahí para no desalinear los datos de las columnas
- * existentes. Idempotente: si `nombreCol` ya está en su sitio (o la pestaña está recién creada), no hace nada.
- */
-function insertarColumnaSiFalta_(nombreHoja, nombreCol) {
-  const sh = hoja_(nombreHoja), esq = ESQUEMA[nombreHoja], fc = esq.filaCabecera || 1, pos = esq.cabeceras.indexOf(nombreCol) + 1;
-  const actual = sh.getLastColumn() >= pos ? sh.getRange(fc, pos).getValue() : '';
-  if (actual === nombreCol || actual === '') return false;
-  sh.insertColumnBefore(pos);
-  log_('INFO', 'setup', `${nombreHoja}!${colLetra_(pos)}${fc}`, `Columna "${nombreCol}" insertada (migración desde una versión sin esa columna)`);
-  return true;
-}
 
-/** Trabajos sin Quincena (p. ej. recién migrados): se rellena con la de su fecha de apertura. No pisa lo escrito. */
-function rellenarQuincenasTrabajos_() {
-  const t = leerTabla_(HOJA.TRAB), c = t.map['Quincena'];
-  if (!t.filas.length) return;
-  const desde = t.filas[0].fila, hasta = t.filas[t.filas.length - 1].fila;
-  const col = t.sh.getRange(desde, c, hasta - desde + 1, 1).getValues();
-  let cambia = false;
-  t.filas.forEach(f => {
-    const iso = aISO_(f.v['Fecha apertura']);
-    if (f.v['Quincena'] === '' && iso) { col[f.fila - desde][0] = quincenaDe(iso); cambia = true; }
-  });
-  if (cambia) t.sh.getRange(desde, c, col.length, 1).setValues(col);
-}
 
 /**
  * Cabeceras, fórmulas, formato, validaciones y colores de las pestañas de tabla.
@@ -119,7 +114,6 @@ function rellenarQuincenasTrabajos_() {
  */
 function prepararTablas_(crono) {
   const paso = etiqueta => crono && crono.paso(etiqueta);
-  insertarColumnaSiFalta_(HOJA.TRAB, 'Quincena');
   const ss = ss_(), TABLAS = ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'];
   const leido = {};
   TABLAS.forEach(nombre => {
@@ -142,7 +136,6 @@ function prepararTablas_(crono) {
   ['Albaranes', 'Trabajos', 'Piezas', 'Líneas RM'].forEach(nombre => { escribirFormulas_(nombre, cabNuevas ? null : leido[nombre]); paso(`fórmulas ${nombre}`); });
   [['Albaranes', formatoAlbaranes_], ['Trabajos', formatoTrabajos_], ['Piezas', formatoPiezas_], ['Coches', formatoCoches_],
     ['Facturas RM', formatoFacturas_], ['Líneas RM', formatoLineas_], ['Registro', formatoRegistro_]].forEach(([nombre, fn]) => { fn(); paso(`formato ${nombre}`); });
-  rellenarQuincenasTrabajos_(); paso('quincenas de Trabajos');
 }
 
 /**
@@ -243,41 +236,16 @@ function colFmt_(sh, h, n, o, filaCab) {
   const r = sh.getRange(filaCab + 1, c, n, 1);
   if (o.fmt) r.setNumberFormat(o.fmt);
   if (o.gris) r.setBackground(COLORES.gris);
-  if (o.ancho) sh.setColumnWidth(c, o.ancho);
+  if (o.ancho) ancho_(sh, c, o.ancho);
   if (o.validacion) r.setDataValidation(o.validacion);
   else if (o.gris) r.clearDataValidations();
 }
 
-/**
- * Quita la validación "sólo fórmulas" (=ISFORMULA(...)) que puso una versión anterior en las columnas automáticas.
- * Hay que hacerlo ANTES de escribir nada: Sheets rechazaba con ella incluso las fórmulas que escribe el script
- * ("Columna automática: se rellena sola."). Sólo estaba en columnas automáticas (las de FORMULAS), así que se borra
- * ahí directamente, sin leer las validaciones celda a celda (eso tardaba minutos). Una sola vez: queda apuntado.
- */
-function quitarValidacionSoloFormulas_() {
-  const props = PropertiesService.getScriptProperties(), PROP = 'SIN_VALIDACION_SOLO_FORMULAS';
-  if (props.getProperty(PROP) === '1') return;
-  Object.keys(FORMULAS).forEach(nombre => {
-    const sh = ss_().getSheetByName(nombre);
-    if (!sh || sh.getLastColumn() < 1) return;
-    const fc = ESQUEMA[nombre].filaCabecera || 1, filas = sh.getMaxRows() - fc;
-    if (filas < 1) return;
-    const cab = sh.getRange(fc, 1, 1, sh.getLastColumn()).getValues()[0];
-    Object.keys(FORMULAS[nombre]).forEach(h => {
-      const c = cab.indexOf(h) + 1;
-      if (c) sh.getRange(fc + 1, c, filas, 1).clearDataValidations();
-    });
-  });
-  props.setProperty(PROP, '1');
-}
 
-/** Quita las protecciones con aviso que ponían versiones anteriores en las columnas automáticas. */
-function quitarProtecciones_(sh) {
-  sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(p => { if (p.getDescription() === PROTECCION) p.remove(); });
-}
 
 function regla_(sh, a1, formula, color) {
-  return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(loc_(formula)).setBackground(color).setRanges([sh.getRange(a1)]).build();
+  const f = loc_(formula);
+  return { formula: f, regla: SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(f).setBackground(color).setRanges([sh.getRange(a1)]).build() };
 }
 
 const FMT = { fecha: 'dd/mm/yyyy', fechaHora: 'dd/mm/yyyy hh:mm', euro: '#,##0.00 "€"', texto: '@', pct: '0.##%' };
@@ -290,7 +258,6 @@ function matriculaValidacion_() {
 
 function formatoAlbaranes_() {
   const sh = hoja_(HOJA.ALB), n = ESQUEMA['Albaranes'].filasFormato, l = letras_(HOJA.ALB);
-  quitarProtecciones_(sh);
   colFmt_(sh, 'Fecha escaneo', n, { fmt: FMT.fecha, ancho: 105 });
   colFmt_(sh, 'Fecha albarán', n, { fmt: FMT.fecha, ancho: 105 });
   colFmt_(sh, 'Mes', n, { gris: true, ancho: 70 });
@@ -307,7 +274,7 @@ function formatoAlbaranes_() {
   colFmt_(sh, 'Avisos', n, { gris: true, ancho: 380 });
   colFmt_(sh, 'Nota escaneo', n, { ancho: 320 });
   const R = h => `${l[h]}2:${l[h]}${n + 1}`;
-  sh.setConditionalFormatRules([
+  ponerReglas_(sh, [
     regla_(sh, R('Avisos'), `=$${l['Avisos']}2<>""`, COLORES.naranja),
     regla_(sh, R('Nota escaneo'), `=$${l['Nota escaneo']}2<>""`, COLORES.naranja),
     regla_(sh, R('Coche'), `=LEFT($${l['Coche']}2,1)="⚠"`, COLORES.naranja),
@@ -316,7 +283,6 @@ function formatoAlbaranes_() {
 
 function formatoTrabajos_() {
   const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB), fc = ESQUEMA['Trabajos'].filaCabecera;
-  quitarProtecciones_(sh);
   const cf = (h, o) => colFmt_(sh, h, n, o, fc);
   cf('Nº trabajo', { ancho: 95 });
   cf('Fecha apertura', { fmt: FMT.fecha, ancho: 105 });
@@ -335,7 +301,7 @@ function formatoTrabajos_() {
   cf('Pagado', { ancho: 80 });
   cf('Avisos', { gris: true, ancho: 340 });
   const R = h => `${l[h]}${fc + 1}:${l[h]}${fc + n}`;
-  sh.setConditionalFormatRules([
+  ponerReglas_(sh, [
     regla_(sh, R('Pagado'), `=AND($${l['Nº trabajo']}${fc + 1}<>"",$${l['Pagado']}${fc + 1}<>TRUE)`, COLORES.rojo),
     regla_(sh, R('Pagado'), `=$${l['Pagado']}${fc + 1}=TRUE`, COLORES.verde),
     regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}${fc + 1},1)="⚠"`, COLORES.naranja),
@@ -378,7 +344,6 @@ function panelResumenTrabajos_(sh, n, l, fc) {
 
 function formatoPiezas_() {
   const sh = hoja_(HOJA.PIEZAS), n = ESQUEMA['Piezas'].filasFormato, l = letras_(HOJA.PIEZAS);
-  quitarProtecciones_(sh);
   colFmt_(sh, 'Reembolso', n, { ancho: 85 });
   colFmt_(sh, 'Matrícula', n, { gris: true, ancho: 100 });
   colFmt_(sh, 'Nº albarán', n, { fmt: FMT.texto, ancho: 95 });
@@ -395,7 +360,7 @@ function formatoPiezas_() {
   colFmt_(sh, 'Origen', n, { ancho: 80 });
   colFmt_(sh, 'Avisos', n, { gris: true, ancho: 340 });
   const ult = colLetra_(ESQUEMA['Piezas'].cabeceras.length);
-  sh.setConditionalFormatRules([
+  ponerReglas_(sh, [
     regla_(sh, `A2:${ult}${n + 1}`, `=$${l['Reembolso']}2=TRUE`, COLORES.amarillo),
     regla_(sh, `${l['Avisos']}2:${l['Avisos']}${n + 1}`, `=$${l['Avisos']}2<>""`, COLORES.naranja),
   ]);
@@ -403,7 +368,7 @@ function formatoPiezas_() {
 
 function formatoCoches_() {
   const sh = hoja_(HOJA.COCHES);
-  sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 240);
+  ancho_(sh, 1, 110); ancho_(sh, 2, 220); ancho_(sh, 3, 240);
   sh.getRange(2, 1, 5000, 1).setNumberFormat(FMT.texto);
 }
 
@@ -415,12 +380,11 @@ function formatoFacturas_() {
   colFmt_(sh, 'Total', n, { fmt: FMT.euro, ancho: 110 });
   colFmt_(sh, 'Estado', n, { ancho: 480 });
   colFmt_(sh, 'Procesada el', n, { fmt: FMT.fechaHora, ancho: 130 });
-  sh.setConditionalFormatRules([regla_(sh, `${l['Estado']}2:${l['Estado']}${n + 1}`, `=LEFT($${l['Estado']}2,1)="⚠"`, COLORES.naranja)]);
+  ponerReglas_(sh, [regla_(sh, `${l['Estado']}2:${l['Estado']}${n + 1}`, `=LEFT($${l['Estado']}2,1)="⚠"`, COLORES.naranja)]);
 }
 
 function formatoLineas_() {
   const sh = hoja_(HOJA.LINEAS), n = ESQUEMA['Líneas RM'].filasFormato, l = letras_(HOJA.LINEAS);
-  quitarProtecciones_(sh);
   colFmt_(sh, 'Nº albarán', n, { fmt: FMT.texto, ancho: 95 });
   colFmt_(sh, 'Fecha albarán', n, { fmt: FMT.fecha, ancho: 105 });
   colFmt_(sh, 'Albarán origen', n, { fmt: FMT.texto, ancho: 105 });
@@ -429,7 +393,7 @@ function formatoLineas_() {
   colFmt_(sh, 'Importe sin IVA', n, { fmt: FMT.euro, ancho: 120 });
   colFmt_(sh, 'Conciliación', n, { gris: true, ancho: 190 });
   const ultCol = colLetra_(ESQUEMA['Líneas RM'].cabeceras.length);
-  sh.setConditionalFormatRules([
+  ponerReglas_(sh, [
     regla_(sh, `${l['Conciliación']}2:${l['Conciliación']}${n + 1}`, `=LEFT($${l['Conciliación']}2,1)="⚠"`, COLORES.naranja),
     regla_(sh, `A2:${ultCol}${n + 1}`, `=$${l['Tipo']}2="Abono"`, COLORES.amarillo),  // fila entera de las líneas de abono
   ]);
@@ -437,9 +401,9 @@ function formatoLineas_() {
 
 function formatoRegistro_() {
   const sh = hoja_(HOJA.REG), l = letras_(HOJA.REG);
-  sh.setColumnWidth(1, 140); sh.setColumnWidth(2, 70); sh.setColumnWidth(3, 170); sh.setColumnWidth(4, 200); sh.setColumnWidth(5, 800);
+  ancho_(sh, 1, 140); ancho_(sh, 2, 70); ancho_(sh, 3, 170); ancho_(sh, 4, 200); ancho_(sh, 5, 800);
   sh.getRange(2, 1, 3000, 1).setNumberFormat('dd/mm/yyyy hh:mm:ss');
-  sh.setConditionalFormatRules([
+  ponerReglas_(sh, [
     regla_(sh, 'A2:E3000', `=$${l['Nivel']}2="ERROR"`, COLORES.rojo),
     regla_(sh, 'A2:E3000', `=$${l['Nivel']}2="AVISO"`, COLORES.naranja),
   ]);
@@ -448,7 +412,6 @@ function formatoRegistro_() {
 /** Pestaña Abonos: tabla grande arriba a la izquierda; resumen por quincena y panel "Pendientes de RM" a la derecha. */
 function montarAbonos_() {
   recolocarTablaAbonos_();  // antes de escribir en posiciones fijas: si la tabla se ha desplazado, se pisarían datos
-  quitarProtecciones_(hoja_(HOJA.ABONOS));
   montarResumenAbonos_();
   montarTablaAbonos_();
 }
@@ -491,8 +454,8 @@ function montarResumenAbonos_() {
   }
   sh.getRange(ini, c0 + 1, ABONOS.filas, 1).setHorizontalAlignment('center');
   sh.getRange(ini, c0 + 2, ABONOS.filas, 4).setNumberFormat(FMT.euro).setBackground(COLORES.gris);
-  [60, 75, 120, 120, 120, 100].forEach((w, i) => sh.setColumnWidth(c0 + i, w));
-  sh.setColumnWidth(c0 - 1, 20);  // separación con la tabla
+  [60, 75, 120, 120, 120, 100].forEach((w, i) => ancho_(sh, c0 + i, w));
+  ancho_(sh, c0 - 1, 20);  // separación con la tabla
 
   // ---- Panel "Pendientes de RM": piezas 'Sin abonar' de toda la tabla, no atadas a la quincena en que se pidieron ----
   // El umbral se copia a una celda de ESTA pestaña: una regla de formato condicional no puede leer Config.
@@ -508,7 +471,7 @@ function montarResumenAbonos_() {
   sh.getRange(3, pv).setNumberFormat(FMT.euro);
   sh.getRange(2, pc, 5, 1).setFontWeight('bold');
   sh.getRange(2, pv, 5, 1).setHorizontalAlignment('center');
-  sh.setColumnWidth(pc - 1, 20); sh.setColumnWidth(pc, 170); sh.setColumnWidth(pv, 90);
+  ancho_(sh, pc - 1, 20); ancho_(sh, pc, 170); ancho_(sh, pv, 90);
   reglasAbonos_(sh);
 }
 
@@ -541,19 +504,19 @@ function montarTablaAbonos_() {
   sh.getRange(tb, 6, n, 1).setNumberFormat(FMT.texto);
   sh.getRange(tb, 9, n, 1).setNumberFormat(FMT.fecha);
   sh.getRange(tb, 12, n, 1).setNumberFormat('0');
-  [90, 260, 130, 130, 130, 150, 110, 110, 120, 110, 260, 100].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  [90, 260, 130, 130, 130, 150, 110, 110, 120, 110, 260, 100].forEach((w, i) => ancho_(sh, i + 1, w));
   sh.hideColumns(ct.length);  // "Clave": une cada fila con su pieza / línea de abono; no se toca a mano
   // Filtro que incluye la columna oculta: ordenar con él mueve la clave junto con su fila.
   if (!sh.getFilter()) sh.getRange(ABONOS.filaCabTabla, 1, fin - ABONOS.filaCabTabla + 1, ct.length).createFilter();
   const shC = ss_().getSheetByName(HOJA.CLAVES);
   if (shC) shC.hideSheet();
-  sh.setFrozenRows(ABONOS.filaCabTabla);
+  fijarFilas_(sh, ABONOS.filaCabTabla);
   reglasAbonos_(sh);
 }
 
 function reglasAbonos_(sh) {
   const tb = ABONOS.filaTabla, fin = finTablaAbonos_(sh), pc = ABONOS.panelCol, pv = pc + 1, UMBRAL_ = `$${colLetra_(pv)}$4`;
-  sh.setConditionalFormatRules([
+  ponerReglas_(sh, [
     regla_(sh, `${colLetra_(pc)}5:${colLetra_(pv)}5`, `=${colLetra_(pv)}5>0`, COLORES.naranja),
     regla_(sh, `A${tb}:L${fin}`, `=AND($E${tb}="Sin abonar",$L${tb}>${UMBRAL_})`, COLORES.naranja),
     regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Abonada"`, COLORES.verde),

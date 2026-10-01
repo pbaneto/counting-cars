@@ -26,10 +26,8 @@ function datosResumen_() {
 
 function montarResumen_() {
   const sh = hoja_(HOJA.RESUMEN), d = datosResumen_(), t = letras_(HOJA.TRAB);
-  quitarProtecciones_(sh);
   sh.getCharts().forEach(c => sh.removeChart(c));
   sh.getRange('A1').setValue('Resumen').setFontSize(16).setFontWeight('bold');
-  sh.getRange('C1').clearContent().clearFormat();  // sin textos de explicación en la hoja (borra el de versiones anteriores)
 
   const estiloCab = (fila, n) => sh.getRange(fila, 1, 1, n).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   const titAnio = (fila, anio) => sh.getRange(fila, 1).setValue(anio).setFontSize(14).setFontWeight('bold').setHorizontalAlignment('left').setNumberFormat('0');
@@ -70,7 +68,6 @@ function montarResumen_() {
   sh.getRange(RES.total, 7).setNumberFormat(FMT.euro);
   sh.getRange(RES.ini, 6, 12, 3).setBackground(COLORES.gris);
   sh.getRange(RES.ini, 2, 12, 1).setBackground('#ffffff');
-  sh.getRange(RES.anioFila, 3).clearContent().clearFormat();
 
   // ---- 2025 ----
   const y25 = RES.y25;
@@ -87,7 +84,6 @@ function montarResumen_() {
   d.y24.forEach((s, i) => sh.getRange(y24.ini + i, 1, 1, 7).setValues([[MESES[i], s[0], s[1], s[2], null, s[3], null]]));
   sh.getRange(y24.total, 5, 1, 2).setValues([['Total año', `=SUM(F${y24.ini}:F${y24.ini + 11})`]]).setFontWeight('bold');
   sh.getRange(y24.ini, 2, 12, 5).setNumberFormat(FMT.euro); sh.getRange(y24.total, 6).setNumberFormat(FMT.euro);
-  sh.getRange(y24.total + 1, 1).clearContent().clearFormat();
 
   // ---- Gráficos ----
   const chart = (titulo, fCab, fIni, colBen, fila) => {
@@ -101,6 +97,6 @@ function montarResumen_() {
   chart('Beneficio mensual 2025 (contando gastos fijos)', y25.cab, y25.ini, 7, 29);
   chart('Beneficio mensual 2024 (sin gastos fijos)', y24.cab, y24.ini, 6, 45);
 
-  [70, 120, 110, 120, 110, 120, 170, 140, 30, 140, 110, 140, 110].forEach((w, i) => sh.setColumnWidth(i + 1, w));
-  sh.setFrozenRows(0);
+  [70, 120, 110, 120, 110, 120, 170, 140, 30, 140, 110, 140, 110].forEach((w, i) => ancho_(sh, i + 1, w));
+  if (_hojaNueva) sh.setFrozenRows(0);
 }
