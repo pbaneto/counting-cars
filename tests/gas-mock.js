@@ -47,16 +47,22 @@ class Rango {
   /** Como Sheets: una casilla de verificación nunca está vacía, vale FALSE aunque nadie la haya tocado. */
   setDataValidation(regla) { if (regla && regla.casilla) this._each((r, c) => { if (!this.sh.cell(r, c)) this.sh.put(r, c, false); }); return this._w(); }
   setNumberFormat() { return this._w(); }
-  // merge/breakApart no cambian valores: sólo hace falta que sigan encadenando (como en Sheets, Range.merge() devuelve el Range).
-  merge() { return this; }
+  // Celdas combinadas como en Sheets: combinar o separar un rango que corta una combinada a medias da error.
+  _cortadas() {
+    const dentro = m => m.r >= this.r && m.c >= this.c && m.r + m.nr <= this.r + this.nr && m.c + m.nc <= this.c + this.nc;
+    const toca = m => m.r < this.r + this.nr && this.r < m.r + m.nr && m.c < this.c + this.nc && this.c < m.c + m.nc;
+    if (this.sh.combinadas.some(m => toca(m) && !dentro(m))) throw new Error('Debes seleccionar todas las celdas de un intervalo combinado para combinarlas o separarlas.');
+    this.sh.combinadas = this.sh.combinadas.filter(m => !dentro(m));
+  }
+  merge() { this._cortadas(); this.sh.combinadas.push({ r: this.r, c: this.c, nr: this.nr, nc: this.nc }); return this; }
   insertCells(dim) { if (dim !== 'ROWS') throw new Error('sólo ROWS'); this.sh.desplazarCeldas(this.r, this.c, this.nc, this.nr); return this; }
   deleteCells(dim) { if (dim !== 'ROWS') throw new Error('sólo ROWS'); this.sh.desplazarCeldas(this.r, this.c, this.nc, -this.nr); return this; }
-  breakApart() { return this; }
+  breakApart() { this._cortadas(); return this; }
 }
 
 class Hoja {
   constructor(ss, name, id) {
-    this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000; this.validacionesLimpiadas = []; this.validaciones = new Map();
+    this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000; this.validacionesLimpiadas = []; this.validaciones = new Map(); this.combinadas = [];
     return new Proxy(this, { get: (t, k, rcv) => (k in t || typeof k === 'symbol' ? Reflect.get(t, k, t) : chain()) });
   }
   cell(r, c) { return this.grid.get(r + ',' + c); }
@@ -73,6 +79,7 @@ class Hoja {
   insertRowsAfter(n, k) { this.maxRows += k; this.ss.io.escrito = true; }
   /** Desplaza hacia abajo, como Sheets, todo lo que esté en la fila r o a partir de ella. */
   insertRowsBefore(r, k) {
+    this.combinadas.forEach(m => { if (m.r >= r) m.r += k; else if (m.r + m.nr > r) m.nr += k; });
     const nuevo = new Map();
     this.grid.forEach((v, key) => {
       const [row, col] = key.split(',').map(Number);
@@ -98,6 +105,8 @@ class Hoja {
   }
   /** Borra la fila r y sube todo lo de debajo, como Sheets. */
   deleteRow(r) {
+    this.combinadas = this.combinadas.filter(m => !(m.r === r && m.nr === 1));
+    this.combinadas.forEach(m => { if (m.r > r) m.r--; else if (m.r + m.nr > r) m.nr--; });
     const nuevo = new Map();
     this.grid.forEach((v, key) => {
       const [row, col] = key.split(',').map(Number);
@@ -109,6 +118,7 @@ class Hoja {
   }
   /** Desplaza a la derecha, como Sheets, todo lo que esté en la columna c o a partir de ella. */
   insertColumnBefore(c) {
+    this.combinadas.forEach(m => { if (m.c >= c) m.c++; else if (m.c + m.nc > c) m.nc++; });  // una combinada que la contiene crece
     const nuevo = new Map();
     this.grid.forEach((v, k) => {
       const [r, col] = k.split(',').map(Number);
@@ -118,6 +128,7 @@ class Hoja {
     this.ss.io.escrito = true;
   }
   getLastRow() { this.ss.io.leer(`${this.name}.getLastRow`); let m = 0; this.grid.forEach((x, k) => { const r = Number(k.split(',')[0]); if (r > m) m = r; }); return m; }
+  getMaxColumns() { return Math.max(26, this.getLastColumn()); }
   getLastColumn() { let m = 0; this.grid.forEach((x, k) => { const c = Number(k.split(',')[1]); if (c > m) m = c; }); return m; }
   getDataRange() { return new Rango(this, 1, 1, Math.max(this.getLastRow(), 1), Math.max(this.getLastColumn(), 1)); }
   getRange(a, b, c, d) { if (typeof a === 'string') { const [r, cc, nr, nc] = parseA1(a); return new Rango(this, r, cc, nr, nc); } return new Rango(this, a, b, c || 1, d || 1); }

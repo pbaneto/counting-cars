@@ -365,13 +365,15 @@ function panelResumenTrabajos_(sh, n, l, fc) {
     ['Morosos', `=SUMPRODUCT((${rango('Pagado')}=FALSE)*${visibles}*${rango('Factura')})`, FMT.euro],
     ['Beneficio', `=SUBTOTAL(109,${rango('Beneficio')})`, FMT.euro],
   ];
+  // Las filas del panel (encima de la cabecera) son sólo del panel: se limpian ENTERAS antes de rehacerlo. Si se ha
+  // insertado una columna (p. ej. Quincena), el título combinado ha crecido y combinar sólo una parte daría error.
+  sh.getRange(1, 1, fc - 1, sh.getMaxColumns()).breakApart().clearContent().clearFormat().clearDataValidations();
   sh.getRange(1, 1, 1, cols.length).merge().setValue('Resumen (según filtro)')
     .setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
   sh.getRange(2, 1, 1, cols.length).setValues([cols.map(c => c[0])])
     .setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setHorizontalAlignment('center');
   cols.forEach(([, formula, fmt], i) => sh.getRange(3, 1 + i).setValue(loc_(formula)).setNumberFormat(fmt));
   sh.getRange(3, 1, 1, cols.length).setHorizontalAlignment('center').setBackground(COLORES.gris);
-  sh.getRange(3, 1, 1, cols.length).clearDataValidations();  // quita la validación 'sólo fórmulas' de una versión anterior
 }
 
 function formatoPiezas_() {
@@ -464,9 +466,9 @@ function montarResumenAbonos_() {
   const cab = ABONOS.cabResumen, ini = ABONOS.filaIni, c0 = ABONOS.colResumen, pc = ABONOS.panelCol, pv = pc + 1;
   const L = i => colLetra_(c0 + i);  // 0 = Mes, 1 = Quincena, 2 = Recambios, 3 = Abonado, 4 = Total factura, 5 = Diferencia
   const anio = anioAbonos_(sh);
-  // Todo el bloque de la derecha se limpia y se reescribe (también restos desplazados más abajo por filas insertadas).
-  const bloque = sh.getRange(1, c0, ini + ABONOS.filas + 40, pv - c0 + 1);
-  bloque.breakApart().clearContent().clearFormat().clearDataValidations();
+  // Las columnas de la derecha (O-W) son sólo del resumen y el panel: se limpian ENTERAS antes de reescribirlas, así
+  // ninguna celda combinada queda a medias aunque se hayan insertado o borrado filas.
+  sh.getRange(1, c0, sh.getMaxRows(), pv - c0 + 1).breakApart().clearContent().clearFormat().clearDataValidations();
   sh.getRange(1, c0).setValue('Año').setFontWeight('bold').setHorizontalAlignment('right');
   sh.getRange(ABONOS.celdaAnio).setValue(anio).setFontWeight('bold').setBackground(COLORES.amarillo).setNumberFormat('0');
   const A = `$${colLetra_(c0 + 1)}$1`;  // celda del año (ABONOS.celdaAnio, P1) en absoluto

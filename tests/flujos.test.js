@@ -348,6 +348,26 @@ test('repararFormulas quita primero la validación "sólo fórmulas" de una vers
   assert.ok(trab.validaciones.has('5,5'));
 });
 
+test('repararFormulas en una hoja de la versión anterior: inserta Quincena aunque el título del panel esté combinado', () => {
+  const e = entorno({});
+  const trab = e.ss.getSheetByName('Trabajos');
+  // Hoja de antes de Quincena: se quita la columna D (y el título del panel vuelve a ocupar A1:F1)
+  const vieja = new Map();
+  trab.grid.forEach((v, k) => { const [r, c] = k.split(',').map(Number); if (c !== 4) vieja.set(r + ',' + (c > 4 ? c - 1 : c), v); });
+  trab.grid = vieja;
+  trab.combinadas = [{ r: 1, c: 1, nr: 1, nc: 6 }];
+  assert.equal(trab.valor(4, 4), 'Matrícula');
+  const fallos = () => e.log.alerts.filter(a => /Ha fallado/.test(String(a[0]) + String(a[1])));
+  e.run('repararFormulas()');
+  assert.deepEqual(fallos(), []);
+  assert.equal(trab.valor(4, 4), 'Quincena');
+  assert.equal(trab.valor(4, 5), 'Matrícula');
+  assert.equal(trab.valor(5, 5), '4321GHJ', 'datos sin desalinear');
+  assert.deepEqual(trab.combinadas, [{ r: 1, c: 1, nr: 1, nc: 6 }], 'título del panel rehecho');
+  e.run('repararFormulas()');  // y repetir no falla
+  assert.deepEqual(fallos(), []);
+});
+
 test('escribir a mano en una columna automática vuelve a poner su fórmula y avisa', () => {
   const e = entorno({});
   const alb = e.ss.getSheetByName('Albaranes');
