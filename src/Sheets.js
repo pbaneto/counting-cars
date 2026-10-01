@@ -59,7 +59,7 @@ function leerTabla_(nombre, todo) {
   const map = {};
   (todo[fc - 1] || []).forEach((h, i) => { if (h !== '') map[String(h).trim()] = i + 1; });
   esq.cabeceras.forEach(h => {
-    if (!map[h]) throw new Error(`Falta la columna "${h}" en la pestaña "${nombre}". Ejecuta Counting Cars ▸ Reparar fórmulas y formato.`);
+    if (!map[h]) throw new Error(`Falta la columna "${h}" en la pestaña "${nombre}". El programa busca las columnas por su nombre: si la has renombrado, vuelve a ponerle "${h}" o pide que se cambie en el código.`);
   });
   const filas = [];
   let libre = fc + 1;

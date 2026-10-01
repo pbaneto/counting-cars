@@ -9,7 +9,7 @@ const FORMULAS = {
     // CHOOSE con la lista fija en vez de TEXT(fecha,"mmm"): TEXT depende del idioma de la hoja y en español da "sept." para septiembre.
     'Mes': r => { const a = letras_(HOJA.ALB); return `=IF(${a['Fecha albarán']}${r}="","",CHOOSE(MONTH(${a['Fecha albarán']}${r}),"ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"))`; },
     'Quincena': r => { const a = letras_(HOJA.ALB); return `=IF(${a['Fecha albarán']}${r}="","",IF(DAY(${a['Fecha albarán']}${r})<=15,1,2))`; },
-    'Precio facturable': r => {
+    'Precio - abonos': r => {
       const a = letras_(HOJA.ALB), p = letras_(HOJA.PIEZAS);
       const suma = `SUMIFS(Piezas!$${p['Precio descontado con IVA']}:$${p['Precio descontado con IVA']},Piezas!$${p['Nº albarán']}:$${p['Nº albarán']},${a['Nº albarán']}${r},Piezas!$${p['Reembolso']}:$${p['Reembolso']},TRUE)`;
       return `=IF(${a['Precio con IVA']}${r}="","",${a['Precio con IVA']}${r}-IF(${a['Nº albarán']}${r}="",0,${suma}))`;
@@ -49,23 +49,23 @@ const FORMULAS = {
       const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB);
       return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio con IVA']}:$${a['Precio con IVA']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r}))`;
     },
-    'Recambios facturables': r => {
+    'Precio - abono': r => {
       const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB);
-      return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio facturable']}:$${a['Precio facturable']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r}))`;
+      return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio - abonos']}:$${a['Precio - abonos']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r}))`;
     },
     // Mismo cálculo que "Recambios facturables" pero separado por proveedor, para el panel de resumen filtrable.
     'Recambios facturables RM': r => {
       const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB);
-      return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio facturable']}:$${a['Precio facturable']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"RM"))`;
+      return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio - abonos']}:$${a['Precio - abonos']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"RM"))`;
     },
     'Recambios facturables Otros': r => {
       const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB);
-      return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio facturable']}:$${a['Precio facturable']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"Otros"))`;
+      return `=IF(${t['Nº trabajo']}${r}="","",SUMIFS(Albaranes!$${a['Precio - abonos']}:$${a['Precio - abonos']},Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${t['Nº trabajo']}${r},Albaranes!$${a['Proveedor']}:$${a['Proveedor']},"Otros"))`;
     },
-    'Beneficio': r => { const t = letras_(HOJA.TRAB); return `=IF(OR(${t['Nº trabajo']}${r}="",${t['Factura']}${r}=""),"",${t['Factura']}${r}-${t['Recambios facturables']}${r})`; },
+    'Beneficio': r => { const t = letras_(HOJA.TRAB); return `=IF(OR(${t['Nº trabajo']}${r}="",${t['Factura']}${r}=""),"",${t['Factura']}${r}-${t['Precio - abono']}${r})`; },
     'Avisos': r => {
       const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB), c = letras_(HOJA.COCHES);
-      const N = `${t['Nº trabajo']}${r}`, B = `${t['Fecha apertura']}${r}`, C = `${t['Matrícula']}${r}`, G = `${t['Recambios facturables']}${r}`, H = `${t['Factura']}${r}`, J = `${t['Pagado']}${r}`;
+      const N = `${t['Nº trabajo']}${r}`, B = `${t['Fecha apertura']}${r}`, C = `${t['Matrícula']}${r}`, G = `${t['Precio - abono']}${r}`, H = `${t['Factura']}${r}`, J = `${t['Pagado']}${r}`;
       return `=IF(${N}="","",` +
         `IF(${C}="","⚠ Falta la matrícula",` +
         `IF(COUNTIF(Coches!$${c['Matrícula']}:$${c['Matrícula']},${C})=0,"⚠ La matrícula no está en Coches",` +

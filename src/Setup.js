@@ -267,7 +267,7 @@ function formatoAlbaranes_() {
   colFmt_(sh, 'Nº trabajo', n, { ancho: 95 });
   colFmt_(sh, 'Matrícula', n, { validacion: matriculaValidacion_(), ancho: 100 });
   colFmt_(sh, 'Precio con IVA', n, { fmt: FMT.euro, ancho: 110 });
-  colFmt_(sh, 'Precio facturable', n, { fmt: FMT.euro, gris: true, ancho: 120 });
+  colFmt_(sh, 'Precio - abonos', n, { fmt: FMT.euro, gris: true, ancho: 120 });
   colFmt_(sh, 'Coche', n, { gris: true, ancho: 190 });
   colFmt_(sh, 'Cliente', n, { gris: true, ancho: 150 });
   colFmt_(sh, 'Ver PDF', n, { ancho: 80 });
@@ -293,7 +293,7 @@ function formatoTrabajos_() {
   cf('Coche', { gris: true, ancho: 190 });
   cf('Cliente', { gris: true, ancho: 150 });
   cf('Recambios', { fmt: FMT.euro, gris: true, ancho: 110 });
-  cf('Recambios facturables', { fmt: FMT.euro, gris: true, ancho: 150 });
+  cf('Precio - abono', { fmt: FMT.euro, gris: true, ancho: 150 });
   cf('Recambios facturables RM', { fmt: FMT.euro, gris: true, ancho: 130 });
   cf('Recambios facturables Otros', { fmt: FMT.euro, gris: true, ancho: 130 });
   cf('Factura', { fmt: FMT.euro, ancho: 110 });

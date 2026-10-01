@@ -55,7 +55,7 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.equal(alb.valor(1, 3), 'Mes', 'columna nueva "Mes" junto a "Fecha albarán"');
   assert.match(alb.cell(2, 3).f, /CHOOSE\(MONTH\(/);
   assert.match(alb.cell(2, 4).f, /^=IF\(B2=""/);          // Quincena
-  assert.match(alb.cell(2, 10).f, /SUMIFS\(Piezas!/);       // Precio facturable
+  assert.match(alb.cell(2, 10).f, /SUMIFS\(Piezas!/);       // Precio - abonos
   assert.match(alb.cell(2, 14).f, /DIAS_AVISO/);           // Avisos en las filas con datos (piloto: filas 2-4)
   assert.equal(alb.cell(5, 14), undefined, 'sin fórmulas en filas vacías: leerlas y recalcularlas era lo lento');
   assert.equal(alb.getLastRow(), 4);

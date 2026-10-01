@@ -56,7 +56,7 @@ function montarResumen_() {
     const enVivo = m >= d.mesEnVivo;
     const rango = `${fApert},">="&DATE($A$${RES.anioFila},${m},1),${fApert},"<="&EOMONTH(DATE($A$${RES.anioFila},${m},1),0)`;
     const suma = h => `SUMIFS(Trabajos!$${t[h]}:$${t[h]},${rango})`;
-    const rec = enVivo ? `=${suma('Recambios facturables')}` : (s[0] || 0);
+    const rec = enVivo ? `=${suma('Precio - abono')}` : (s[0] || 0);
     const ing = enVivo ? `=${suma('Factura')}` : (s[2] || 0);
     // Suma directa de lo pendiente (Pagado=FALSO), no "Ingreso menos lo cobrado": así un fallo en el cruce con
     // Pagado se nota como un Moroso mal calculado en vez de cancelarse contra el Ingreso y pasar desapercibido.

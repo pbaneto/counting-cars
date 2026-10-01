@@ -13,7 +13,7 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', COCHES: 'Coches', RESUMEN: 'Resumen',
@@ -24,13 +24,13 @@ const HOJA = {
 const ESQUEMA = {
   'Albaranes': {
     cabeceras: ['Fecha escaneo', 'Fecha albarán', 'Mes', 'Quincena', 'Proveedor', 'Nº albarán', 'Nº trabajo', 'Matrícula', 'Precio con IVA',
-      'Precio facturable', 'Coche', 'Cliente', 'Ver PDF', 'Avisos', 'Nota escaneo'],
+      'Precio - abonos', 'Coche', 'Cliente', 'Ver PDF', 'Avisos', 'Nota escaneo'],
     entradas: ['Fecha escaneo', 'Fecha albarán', 'Proveedor', 'Nº albarán', 'Nº trabajo', 'Matrícula', 'Precio con IVA', 'Ver PDF', 'Nota escaneo'],
     filasFormato: 1500,
   },
   'Trabajos': {
     // Quincena: valor (no fórmula) para poder cambiarlo a mano; se rellena con la fecha de apertura (= primer albarán).
-    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Mes', 'Quincena', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Recambios facturables', 'Recambios facturables RM',
+    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Mes', 'Quincena', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Precio - abono', 'Recambios facturables RM',
       'Recambios facturables Otros', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
     entradas: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Factura', 'Pagado'],
     casillas: ['Pagado'],

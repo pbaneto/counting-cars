@@ -19,7 +19,7 @@ el resto son fórmulas de la hoja. Diseñado para que sea sencillo de entender y
 
 Reglas clave:
 
-- **Precio facturable = precio con IVA − piezas con Reembolso ✓ de ese albarán.** No se guarda: es una fórmula. Un segundo escaneo con **R** manuscrita sólo marca la pieza.
+- **Precio - abonos (Albaranes) = precio con IVA − piezas con Reembolso ✓ de ese albarán.** No se guarda: es una fórmula. En Trabajos, su suma es «Precio - abono». Un segundo escaneo con **R** manuscrita sólo marca la pieza.
 - Albarán que ya existe **con R** → marca las piezas. **Sin R** → escaneo duplicado: se ignora.
 - Si una fila escrita a mano (sin nº de albarán) coincide en matrícula e importe con un albarán escaneado, se **vincula** en vez de duplicarse.
 - Un trabajo se imputa al mes de su **fecha de apertura**.
