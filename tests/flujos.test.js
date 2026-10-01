@@ -276,27 +276,25 @@ test('procesarAlbaranes: un albarán de ABONO no se añade y pasa a Procesados',
   assert.match(e.log.alerts[e.log.alerts.length - 1][1], /Albaranes de abono \(llegarán en la factura RM\): 1/);
 });
 
-test('procesarAlbaranes: si la hoja no guarda un albarán se deshace lo suyo, el PDF se queda en Entrada y se para el lote', () => {
+test('procesarAlbaranes: si la hoja no se puede guardar no se mueve ningún PDF, y volver a procesar no duplica nada', () => {
   const e = entorno({ 'd1.pdf': albaranRaw({ numero_albaran: '800001', matricula: '9999ZZZ' }), 'd2.pdf': albaranRaw({ numero_albaran: '800002' }) });
   ['ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
   subir(e, ['d1.pdf', 'd2.pdf'], 'ENT');
-  const antes = { alb: tabla(e, 'Albaranes').length, trab: tabla(e, 'Trabajos').length, piezas: tabla(e, 'Piezas').length };
-  // Como pasó con la validación "sólo fórmulas": la hoja rechaza lo escrito al guardar
+  // Como pasó con la validación "sólo fórmulas": Sheets rechaza lo escrito al guardar
   let veces = 0;
   const flush = e.ctx.SpreadsheetApp.flush;
   e.ctx.SpreadsheetApp.flush = () => { if (++veces === 1) throw new Error('Columna automática: se rellena sola.'); flush(); };
   e.run('procesarAlbaranes()');
-  assert.equal(tabla(e, 'Albaranes').length, antes.alb, 'sin filas a medias en Albaranes');
-  assert.equal(tabla(e, 'Trabajos').length, antes.trab, 'ni el trabajo que se había abierto');
-  assert.equal(tabla(e, 'Piezas').length, antes.piezas);
   assert.deepEqual(e.carpetas.ENT.ficheros.map(f => f.nombre), ['d1.pdf', 'd2.pdf'], 'nada pasa a Procesados');
   assert.equal(e.carpetas.PROC.ficheros.length, 0);
-  assert.match(e.log.alerts[e.log.alerts.length - 1][1], /Se ha parado en d1\.pdf/);
-  assert.ok(e.log.console.some(l => /deshecho lo que había escrito/.test(l)));
-  // Y la siguiente vez, ya sin fallo, entran los dos
+  assert.match(e.log.alerts[e.log.alerts.length - 1][1], /No se ha podido guardar en la hoja: no se ha movido ningún PDF/);
+  // Volver a procesar: lo que sí se había guardado se reconoce por el enlace a su PDF y no se duplica
+  subir(e, [], 'ENT');
   e.run('procesarAlbaranes()');
   assert.equal(e.carpetas.PROC.ficheros.length, 2);
-  assert.ok(['800001', '800002'].every(n => tabla(e, 'Albaranes').some(a => a['Nº albarán'] === n)));
+  assert.equal(e.carpetas.ENT.ficheros.length, 0);
+  ['800001', '800002'].forEach(n => assert.equal(tabla(e, 'Albaranes').filter(a => a['Nº albarán'] === n).length, 1, n));
+  assert.equal(tabla(e, 'Piezas').filter(p => p['Nº albarán'] === '800001').length, 2);
 });
 
 test('escribir a mano en una columna automática vuelve a poner su fórmula y avisa', () => {
