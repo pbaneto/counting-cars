@@ -63,7 +63,7 @@ function ponerReglas_(sh, reglas) {
   sh.setConditionalFormatRules(ajenas.concat(reglas.map(r => r.regla)));
 }
 
-function reiniciarCaches_() { _ss = null; _cfg = null; _letras = {}; _pyc = null; }
+function reiniciarCaches_() { _ss = null; _cfg = null; _letras = {}; _pyc = null; _filaCab = {}; }
 
 function crearHojas_() {
   const ss = ss_();
@@ -83,6 +83,7 @@ function estiloCabecera_(sh, n, filaCab) {
 
 function prepararConfig_() {
   const sh = hoja_(HOJA.CONFIG);
+  filaCabecera_(HOJA.CONFIG, sh.getDataRange().getValues());
   escribirCabeceras_(sh, ESQUEMA['Config'].cabeceras);
   const t = leerTabla_(HOJA.CONFIG);
   let añadidas = false;
@@ -116,17 +117,21 @@ function prepararTablas_(crono) {
   const paso = etiqueta => crono && crono.paso(etiqueta);
   const ss = ss_(), TABLAS = ['Albaranes', 'Trabajos', 'Piezas', 'Coches', 'Facturas RM', 'Líneas RM', 'Registro'];
   const leido = {};
+  const leer = (sh, conFormulas) => { const rango = sh.getDataRange(); return { valores: rango.getValues(), formulas: conFormulas ? rango.getFormulas() : null }; };
   TABLAS.forEach(nombre => {
-    const sh = ss.getSheetByName(nombre), rango = sh.getDataRange(), conFormulas = !!FORMULAS[nombre];
-    leido[nombre] = { sh, valores: rango.getValues(), formulas: conFormulas ? rango.getFormulas() : null, maxRows: conFormulas ? sh.getMaxRows() : 0 };
+    const sh = ss.getSheetByName(nombre), conFormulas = !!FORMULAS[nombre];
+    let l = leer(sh, conFormulas);
+    const pos = filaCabecera_(nombre, l.valores);
+    if (pos.movida) l = leer(sh, conFormulas);
+    leido[nombre] = { sh, valores: l.valores, formulas: l.formulas, maxRows: conFormulas ? sh.getMaxRows() : 0, fc: pos.fila };
   });
   loc_('');  // el idioma de la hoja también es una lectura: se guarda ya para escribir las fórmulas luego
   paso('leer');
   let cabNuevas = false;
   TABLAS.forEach(nombre => {
     const esq = ESQUEMA[nombre], l = leido[nombre];
-    if (escribirCabeceras_(l.sh, esq.cabeceras, esq.filaCabecera, l.valores)) cabNuevas = true;
-    estiloCabecera_(l.sh, esq.cabeceras.length, esq.filaCabecera);
+    if (escribirCabeceras_(l.sh, esq.cabeceras, l.fc, l.valores)) cabNuevas = true;
+    estiloCabecera_(l.sh, esq.cabeceras.length, l.fc);
   });
   // escribirCabeceras_ garantiza que cada cabecera está en su posición de ESQUEMA: las letras salen de ahí, sin leer la hoja.
   _letras = {};
@@ -149,6 +154,10 @@ function escribirCabeceras_(sh, cabeceras, filaCab, valores) {
   let actual;
   if (valores) actual = valores[filaCab - 1] || [];
   else { const ancho = Math.max(sh.getLastColumn(), cabeceras.length); actual = ancho > 0 ? sh.getRange(filaCab, 1, 1, ancho).getValues()[0] : []; }
+  // Fila de cabecera vacía con datos debajo: la cabecera se ha movido. Escribirla aquí desalinearía todo.
+  if (cabeceras.every((h, i) => !actual[i]) && sh.getLastRow() > filaCab) {
+    throw new Error(`"${sh.getName()}": la fila ${filaCab} debería tener las cabeceras y está vacía, pero hay datos debajo. No se escribe nada.`);
+  }
   let escritas = false;
   cabeceras.forEach((h, i) => {
     if (actual[i] === h) return;
@@ -168,11 +177,11 @@ function escribirCabeceras_(sh, cabeceras, filaCab, valores) {
  * reescribe si alguna de sus fórmulas ha cambiado: reescribirla obliga a recalcular todo lo que depende de ella.
  */
 function escribirFormulas_(nombre, leido) {
-  const esq = ESQUEMA[nombre], n = esq.filasFormato, fc = esq.filaCabecera || 1;
+  const esq = ESQUEMA[nombre], n = esq.filasFormato;
   const sh = leido ? leido.sh : hoja_(nombre);
+  const t = leerTabla_(nombre, leido && leido.valores), fc = t.fc, ultDatos = t.libre - 1, ultHoja = t.valores.length;
   const maxRows = leido ? leido.maxRows : sh.getMaxRows();
   if (maxRows < n + fc) sh.insertRowsAfter(maxRows, n + fc - maxRows);
-  const t = leerTabla_(nombre, leido && leido.valores), ultDatos = t.libre - 1, ultHoja = t.valores.length;
   const formulas = leido ? leido.formulas : (ultHoja ? sh.getRange(1, 1, ultHoja, Math.max(1, sh.getLastColumn())).getFormulas() : []);
   const actual = (r, c) => (formulas[r - 1] || [])[c - 1] || '';
   Object.keys(FORMULAS[nombre]).forEach(h => {
@@ -282,7 +291,7 @@ function formatoAlbaranes_() {
 }
 
 function formatoTrabajos_() {
-  const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB), fc = ESQUEMA['Trabajos'].filaCabecera;
+  const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB), fc = filaCab_(HOJA.TRAB);
   const cf = (h, o) => colFmt_(sh, h, n, o, fc);
   cf('Nº trabajo', { ancho: 95 });
   cf('Mes', { validacion: listaValidacion_(MESES), ancho: 70 });

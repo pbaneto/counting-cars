@@ -1,6 +1,6 @@
 /** Acceso a hojas: todo por nombre de cabecera. Errores con mensajes que dicen qué hacer. */
 
-let _ss = null, _cfg = null, _letras = {}, _pyc = null;
+let _ss = null, _cfg = null, _letras = {}, _pyc = null, _filaCab = {};
 
 function ss_() {
   if (_ss) return _ss;
@@ -54,8 +54,10 @@ function tieneDatos_(esq, v) {
  */
 /** todo: valores de la pestaña ya leídos (getDataRange().getValues()), para no volver a leerla. */
 function leerTabla_(nombre, todo) {
-  const sh = hoja_(nombre), esq = ESQUEMA[nombre], fc = esq.filaCabecera || 1;
+  const sh = hoja_(nombre), esq = ESQUEMA[nombre];
   todo = todo || sh.getDataRange().getValues();
+  const pos = filaCabecera_(nombre, todo), fc = pos.fila;
+  if (pos.movida) todo = sh.getDataRange().getValues();
   const map = {};
   (todo[fc - 1] || []).forEach((h, i) => { if (h !== '') map[String(h).trim()] = i + 1; });
   esq.cabeceras.forEach(h => {
@@ -68,8 +70,47 @@ function leerTabla_(nombre, todo) {
     for (const h in map) v[h] = todo[i][map[h] - 1];
     if (tieneDatos_(esq, v)) { filas.push({ fila: i + 1, v }); libre = i + 2; }
   }
-  return { nombre, sh, map, filas, libre, esq, leidas: todo.length - fc, valores: todo };
+  return { nombre, sh, map, filas, libre, esq, fc, leidas: todo.length - fc, valores: todo };
 }
+
+/**
+ * Fila de la cabecera de una tabla. Se busca (la primera cabecera en la columna A) en vez de darla por fija, porque
+ * alguien puede insertar o borrar filas encima:
+ *  - Trabajos (cabeceraMovil): vale cualquier fila desde filaCabecera, p. ej. con una fila en blanco entre el panel y
+ *    la cabecera. Si está más arriba (se ha borrado una fila del panel), se insertan filas y se rehace el panel.
+ *  - Las demás: se quitan las filas vacías de encima para devolverla a su sitio (sus formatos usan filas fijas).
+ * Si no la encuentra y hay datos, o encima hay datos, para con un error: escribir con la cabecera fuera de su sitio
+ * pisaría datos (oct 2026: una fila en blanco encima de la cabecera de Trabajos hizo escribir las cabeceras en esa
+ * fila y fórmulas encima de Matrícula, Factura y Pagado).
+ * todo: valores de la pestaña ya leídos. Devuelve {fila, movida}; movida = se han insertado o borrado filas.
+ */
+function filaCabecera_(nombre, todo) {
+  const esq = ESQUEMA[nombre], fc = esq.filaCabecera || 1, primera = esq.cabeceras[0];
+  const vacia = r => (r || []).every(x => x === '' || x == null);
+  let h = 0;
+  for (let r = 1; r <= Math.min(todo.length, fc + 30); r++) if (String(todo[r - 1][0]).trim() === primera) { h = r; break; }
+  if (h === fc || (h > fc && esq.cabeceraMovil)) return { fila: (_filaCab[nombre] = h), movida: false };
+  if (!h) {
+    if (todo.slice(fc).every(vacia)) return { fila: (_filaCab[nombre] = fc), movida: false };  // hoja nueva: aún no hay tabla
+    throw new Error(`No encuentro la cabecera de "${nombre}" ("${primera}" en la columna A). ` +
+      'Si se ha borrado, deshazlo (Ctrl+Z) o recupérala desde Archivo ▸ Historial de versiones.');
+  }
+  const sh = hoja_(nombre);
+  if (h < fc) {
+    sh.insertRowsBefore(h, fc - h);
+    if (nombre === HOJA.TRAB) panelResumenTrabajos_(sh, esq.filasFormato, letras_(nombre), fc);
+  } else {
+    const vacias = [];
+    for (let r = h - 1; r >= 1 && vacias.length < h - fc; r--) if (vacia(todo[r - 1])) vacias.push(r);
+    if (vacias.length < h - fc) throw new Error(`En "${nombre}" hay filas con datos encima de la cabecera (fila ${h}). Muévelas o bórralas para que la cabecera vuelva a la fila ${fc}.`);
+    vacias.forEach(r => sh.deleteRow(r));  // de abajo arriba: borrar una no mueve las que quedan por borrar
+  }
+  log_('AVISO', 'filaCabecera', nombre, `La cabecera estaba en la fila ${h}: devuelta a la fila ${fc}.`);
+  return { fila: (_filaCab[nombre] = fc), movida: true };
+}
+
+/** Fila de la cabecera ya localizada en esta ejecución (si no, se lee la tabla). */
+function filaCab_(nombre) { return _filaCab[nombre] || leerTabla_(nombre).fc; }
 
 function anchoTabla_(tabla) { return Math.max.apply(null, Object.keys(tabla.map).map(h => tabla.map[h])); }
 

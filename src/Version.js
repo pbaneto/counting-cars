@@ -16,16 +16,12 @@ const PROP_VERSION_ = 'VERSION_HOJA';
  */
 const MIGRACIONES = {
   // Trabajos sin "Fecha apertura": Mes pasa de fórmula a valor (el mes de esa fecha) y se borra la columna.
-  '2.0.0': () => {
-    const sh = hoja_(HOJA.TRAB), fc = ESQUEMA['Trabajos'].filaCabecera;
-    const cab = sh.getRange(fc, 1, 1, sh.getLastColumn()).getValues()[0];
-    const cF = cab.indexOf('Fecha apertura') + 1, cM = cab.indexOf('Mes') + 1, n = sh.getLastRow() - fc;
+  // Antes era la 2.0.0; se repite como 2.1.0 para la hoja restaurada desde el historial tras la fila en blanco.
+  '2.1.0': () => {
+    const t = leerTabla_(HOJA.TRAB), cF = t.map['Fecha apertura'], cM = t.map['Mes'], n = t.valores.length - t.fc;
     if (cF) {
-      if (cM && n > 0) {
-        const fechas = sh.getRange(fc + 1, cF, n, 1).getValues();
-        sh.getRange(fc + 1, cM, n, 1).setValues(fechas.map(([f]) => { const iso = aISO_(f); return [iso ? mesDe(iso) : '']; }));
-      }
-      sh.deleteColumn(cF);
+      if (n > 0) t.sh.getRange(t.fc + 1, cM, n, 1).setValues(t.valores.slice(t.fc).map(r => { const iso = aISO_(r[cF - 1]); return [iso ? mesDe(iso) : '']; }));
+      t.sh.deleteColumn(cF);
     }
     const ss = ss_(), cfg = leerTabla_(HOJA.CONFIG), f = cfg.filas.find(x => String(x.v['Clave']).trim() === 'DIAS_AVISO_TRABAJO');
     if (ss.getRangeByName('DIAS_AVISO')) ss.removeNamedRange('DIAS_AVISO');

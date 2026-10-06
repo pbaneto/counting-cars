@@ -13,7 +13,7 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', COCHES: 'Coches', RESUMEN: 'Resumen',
@@ -36,6 +36,7 @@ const ESQUEMA = {
     casillas: ['Pagado'],
     filasFormato: 800,
     filaCabecera: 4,  // filas 1-3: panel "Resumen (según filtro)" encima de la cabecera real
+    cabeceraMovil: true,  // puede bajar si se insertan filas entre el panel y la cabecera (ver filaCabecera_)
   },
   'Piezas': {
     cabeceras: ['Reembolso', 'Matrícula', 'Nº albarán', 'Referencia pieza', 'Descripción', 'Marca', 'Cantidad', 'Precio base', 'Descuento aplicado',

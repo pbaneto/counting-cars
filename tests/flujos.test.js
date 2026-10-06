@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { crearEntorno } = require('./gas-mock');
 
 const PRIV = require('path').join(__dirname, 'fixtures-private.js');
-const VERSION_ESPERADA = '2.0.0';
+const VERSION_ESPERADA = '2.1.0';
 require('fs').writeFileSync(PRIV, `const PRIVATE = { SPREADSHEET_ID: 'SS',
   CARPETAS: { CARPETA_ENTRADA: 'ENT', CARPETA_PROCESADOS: 'PROC', CARPETA_FACTURAS_RM: 'FRA', CARPETA_FACTURAS_RM_PROCESADAS: 'FRAP' },
   COCHES: [['1234ABC','Cli A','Peugeot 208'],['4321GHJ','Cli B','Mini'],['5678DEF','Cli C','Peugeot']],
@@ -396,21 +396,58 @@ test('Trabajos: Mes y Quincena se rellenan solos con la fecha de hoy y se pueden
   assert.equal(trab.valor(7, 2), 'ene'); assert.equal(trab.valor(7, 3), 1);
 });
 
-test('migración 2.0.0: Trabajos pierde "Fecha apertura" y Mes pasa a valor', () => {
+test('migración 2.1.0: Trabajos pierde "Fecha apertura" aunque haya una fila en blanco encima de la cabecera', () => {
   const e = entorno({});
-  const trab = e.ss.getSheetByName('Trabajos'), fc = 4;
-  trab.insertColumnBefore(2);  // como la hoja real en 1.1.0
-  trab.put(fc, 2, 'Fecha apertura');
+  const trab = e.ss.getSheetByName('Trabajos');
+  trab.insertColumnBefore(2);  // como la hoja real en 1.1.0, restaurada desde el historial
+  trab.put(4, 2, 'Fecha apertura');
   trab.put(5, 2, e.run('new Date(2026, 8, 15)')); trab.put(6, 2, e.run('new Date(2026, 9, 20)'));
   trab.put(5, 3, '=IF(B5="","",1)'); trab.put(6, 3, '=IF(B6="","",1)');
-  e.run("PropertiesService.getScriptProperties().setProperty('VERSION_HOJA', '1.1.0')");
+  trab.insertRowsBefore(4, 1);  // fila en blanco entre el panel y la cabecera: la cabecera pasa a la fila 5
+  const matriculas = [trab.valor(6, 5), trab.valor(7, 5)], pagados = [trab.valor(6, 14), trab.valor(7, 14)];
+  e.run("PropertiesService.getScriptProperties().setProperty('VERSION_HOJA', '2.0.0')");
   e.run('actualizarHoja_(false)');
-  assert.equal(trab.valor(fc, 2), 'Mes');
-  assert.equal(trab.valor(5, 2), 'sep'); assert.equal(trab.valor(6, 2), 'oct');
-  assert.equal(trab.cell(5, 2).f, '', 'Mes es un valor');
-  assert.equal(trab.valor(fc, 4), 'Matrícula');
+  assert.deepEqual(e.log.console.filter(m => /^\[ERROR\]/.test(m)), []);
+  assert.equal(trab.valor(4, 1), '', 'la fila en blanco se queda');
+  assert.equal(trab.valor(5, 1), 'Nº trabajo'); assert.equal(trab.valor(5, 2), 'Mes'); assert.equal(trab.valor(5, 4), 'Matrícula');
+  assert.equal(trab.valor(6, 2), 'sep'); assert.equal(trab.valor(7, 2), 'oct');
+  assert.equal(trab.cell(6, 2).f, '', 'Mes es un valor');
+  assert.deepEqual([trab.valor(6, 4), trab.valor(7, 4)], matriculas, 'Matrícula intacta');
+  assert.deepEqual([trab.valor(6, 13), trab.valor(7, 13)], pagados, 'Pagado intacto');
+  assert.match(trab.cell(6, 5).f, /VLOOKUP\(D6,/, 'Coche: fórmula en su columna y su fila');
+  assert.match(trab.cell(3, 1).f, /\$A\$6:\$A\$805/, 'el panel cuenta desde la primera fila de datos');
   assert.ok(!tabla(e, 'Config').some(x => x.Clave === 'DIAS_AVISO_TRABAJO'));
   assert.equal(e.run("PropertiesService.getScriptProperties().getProperty('VERSION_HOJA')"), VERSION_ESPERADA);
+});
+
+test('Trabajos: con una fila en blanco entre el panel y la cabecera, reparar y editar siguen funcionando', () => {
+  const e = entorno({});
+  const trab = e.ss.getSheetByName('Trabajos');
+  trab.insertRowsBefore(4, 1);
+  const antes = [6, 7].map(r => [1, 2, 3, 4, 11, 13].map(c => trab.valor(r, c)));
+  e.run('repararFormulas()');
+  assert.deepEqual(e.log.console.filter(m => /^\[ERROR\]/.test(m)), []);
+  assert.equal(trab.valor(4, 1), '', 'la fila en blanco se respeta');
+  assert.equal(trab.valor(5, 1), 'Nº trabajo');
+  assert.deepEqual([6, 7].map(r => [1, 2, 3, 4, 11, 13].map(c => trab.valor(r, c))), antes, 'los datos no se tocan');
+  assert.match(trab.cell(6, 12).f, /K6/, 'Beneficio en su fila');
+  trab.put(8, 4, '1234ABC');
+  e.ctx.__r = trab.getRange(8, 4); e.run('alEditar({ range: __r })');
+  assert.ok(trab.valor(8, 1), 'trabajo creado a mano en la fila nueva');
+  assert.equal(tabla(e, 'Trabajos').length, 3);
+});
+
+test('Albaranes: una fila en blanco encima de la cabecera se quita sola; con datos encima, error sin escribir nada', () => {
+  const e = entorno({});
+  const alb = e.ss.getSheetByName('Albaranes');
+  alb.insertRowsBefore(1, 1);
+  e.run('repararFormulas()');
+  assert.equal(alb.valor(1, 1), 'Fecha escaneo', 'la cabecera vuelve a la fila 1');
+  assert.equal(tabla(e, 'Albaranes').length, 3);
+  alb.insertRowsBefore(1, 1); alb.put(1, 3, 'nota');
+  const celdas = alb.grid.size;
+  assert.throws(() => e.run("leerTabla_('Albaranes')"), /filas con datos encima de la cabecera/);
+  assert.equal(alb.grid.size, celdas, 'no escribe nada');
 });
 
 test('edición manual en Albaranes: fecha, proveedor y trabajo automáticos; NUEVO abre otro trabajo', () => {

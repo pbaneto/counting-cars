@@ -52,12 +52,19 @@ function alEditar(e) {
  */
 function alCambiar(e) {
   if (!e || ['REMOVE_ROW', 'INSERT_ROW'].indexOf(e.changeType) < 0) return;
-  const activa = e.source && e.source.getActiveSheet();
-  if (!activa || activa.getName() !== HOJA.ABONOS) return;
-  ejecutar_('alCambiar', () => {
-    if (e.source) _ss = e.source;
-    conBloqueo_(20, () => revisarAbonosTrasCambioDeFilas_(e.changeType === 'REMOVE_ROW'));
-  }, true);
+  const activa = e.source && e.source.getActiveSheet(), nombre = activa && activa.getName();
+  if (nombre === HOJA.ABONOS) {
+    ejecutar_('alCambiar', () => {
+      if (e.source) _ss = e.source;
+      conBloqueo_(20, () => revisarAbonosTrasCambioDeFilas_(e.changeType === 'REMOVE_ROW'));
+    }, true);
+  } else if (ESQUEMA[nombre]) {
+    // Filas insertadas o borradas encima de la cabecera: leer la tabla la devuelve a su sitio (ver filaCabecera_).
+    ejecutar_('alCambiar', () => {
+      if (e.source) _ss = e.source;
+      conBloqueo_(20, () => leerTabla_(nombre));
+    }, true);
+  }
 }
 
 function tocada_(tab, h, c0, nc) { const c = tab.map[h]; return c >= c0 && c < c0 + nc; }
@@ -129,7 +136,7 @@ function editarTrabajos_(r0, n, c0, nc) {
   const tab = leerTabla_(HOJA.TRAB), hoy = hoyISO_(), ancho = anchoTabla_(tab);
   let coches = null;
   // El panel "Resumen (según filtro)" vive por encima de la cabecera real: una edición ahí no es una fila de datos.
-  for (let r = Math.max(r0, tab.esq.filaCabecera + 1); r < r0 + n; r++) {
+  for (let r = Math.max(r0, tab.fc + 1); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
     const g = h => vals[tab.map[h] - 1];
     const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
