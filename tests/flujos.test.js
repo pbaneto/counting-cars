@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { crearEntorno } = require('./gas-mock');
 
 const PRIV = require('path').join(__dirname, 'fixtures-private.js');
-const VERSION_ESPERADA = '3.0.0';
+const ESTADOS = ['Abonada', 'Sin abonar', 'Sin solicitar'];
 require('fs').writeFileSync(PRIV, `const PRIVATE = { SPREADSHEET_ID: 'SS',
   CARPETAS: { CARPETA_ENTRADA: 'ENT', CARPETA_PROCESADOS: 'PROC', CARPETA_FACTURAS_RM: 'FRA', CARPETA_FACTURAS_RM_PROCESADAS: 'FRAP' },
   COCHES: [['1234ABC','Cli A','Peugeot 208'],['4321GHJ','Cli B','Mini'],['5678DEF','Cli C','Peugeot']],
@@ -396,23 +396,15 @@ test('Trabajos: Mes y Quincena se rellenan solos con la fecha de hoy y se pueden
   assert.equal(trab.valor(7, 2), 'ene'); assert.equal(trab.valor(7, 3), 1);
 });
 
-test('migración 3.0.0: Abonos vuelve al orden de columnas movido a mano y las filas escritas en el orden por defecto se recolocan', () => {
+test('si el diseño se corta a medias, se repite la próxima vez aunque la versión ya esté apuntada', () => {
   const e = entorno({});
-  const ab = e.ss.getSheetByName('Abonos');
-  // Como la hoja real: cabecera por defecto escrita encima de datos con "Matrícula" movida a la C
-  ab.put(2, 2, 'PIEZA NUEVA'); ab.put(2, 3, 56.7); ab.put(2, 5, 'Sin abonar'); ab.put(2, 6, '123'); ab.put(2, 7, 'REF1'); ab.put(2, 8, '1111AAA'); ab.put(2, 13, 'P|123|REF1|1');
-  ab.put(3, 1, e.run('new Date(2026, 8, 30)')); ab.put(3, 2, 'ACEITE'); ab.put(3, 3, '6005HJG'); ab.put(3, 4, 25.55); ab.put(3, 6, 'Sin solicitar');
-  ab.put(3, 7, '463899'); ab.put(3, 8, 'SASH100727'); ab.put(3, 10, 'FCR 1'); ab.put(3, 13, 'A|466307|463899|SASH100727|1');
-  e.run("PropertiesService.getScriptProperties().setProperty('VERSION_HOJA', '2.1.0')");
-  e.run('actualizarHoja_(false)');
-  assert.deepEqual(e.log.console.filter(m => /^\[ERROR\]/.test(m)), []);
-  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map(c => ab.valor(1, c)), ['Fecha abono', 'Descripción pieza', 'Matrícula', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia']);
-  assert.deepEqual([3, 4, 6, 7, 8, 13].map(c => ab.valor(2, c)), ['1111AAA', 56.7, 'Sin abonar', '123', 'REF1', 'P|123|REF1|1'], 'fila escrita en el orden por defecto, recolocada');
-  assert.deepEqual([3, 4, 6, 7, 8, 13].map(c => ab.valor(3, c)), ['6005HJG', 25.55, 'Sin solicitar', '463899', 'SASH100727', 'A|466307|463899|SASH100727|1'], 'fila movida, igual');
-  assert.equal(ab.cell(2, 5).f, '=ROUND($D2*(1+IVA),2)');
-  assert.equal(ab.cell(2, 12).f, '=IF($F2="Sin abonar",TODAY()-$I2,"")');
-  assert.equal(ab.cell(2, 23).f, '=COUNTIF($F:$F,"Sin abonar")', 'el panel cuenta por la columna Estado, esté donde esté');
-  assert.equal(e.run("PropertiesService.getScriptProperties().getProperty('VERSION_HOJA')"), VERSION_ESPERADA);
+  e.run("PropertiesService.getScriptProperties().setProperty('VERSION_HOJA', '3.0.0')");
+  e.run("var __orig = aplicarDiseno_; aplicarDiseno_ = () => { throw new Error('validación'); }");
+  assert.throws(() => e.run('actualizarHoja_(false)'), /validación/);
+  e.run('aplicarDiseno_ = __orig');
+  assert.equal(e.run('actualizarHoja_(false)'), true, 'lo vuelve a intentar');
+  assert.equal(e.run("PropertiesService.getScriptProperties().getProperty('DISENO_PENDIENTE')"), null);
+  assert.equal(e.run('actualizarHoja_(false)'), false, 'y una vez terminado ya no');
 });
 
 test('Abonos con columnas reordenadas a mano: marcar una pieza escribe cada dato bajo su cabecera y respeta el orden', () => {
@@ -421,8 +413,12 @@ test('Abonos con columnas reordenadas a mano: marcar una pieza escribe cada dato
   const orden = ['Fecha abono', 'Descripción pieza', 'Matrícula', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia',
     'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente', 'Clave'];
   orden.forEach((h, i) => ab.put(1, i + 1, h));
+  for (let r = 2; r <= 50; r++) ab.validaciones.set(r + ',5', { lista: ESTADOS });  // desplegable de Estado que se quedó en la E (como la hoja real)
   e.run('repararFormulas()');
   assert.deepEqual(orden.map((h, i) => ab.valor(1, i + 1)), orden, 'reparar no vuelve a poner el orden por defecto');
+  const lista = c => ((ab.validaciones.get('3,' + c) || {}).lista || []).join();
+  assert.equal(lista(5), '', 'Precio con IVA sin desplegable');
+  assert.equal(lista(6), ESTADOS.join(), 'el desplegable va en Estado');
   p.put(2, 1, true); p.put(2, 3, '123456'); p.put(2, 4, 'REF9'); p.put(2, 5, 'FILTRO'); p.put(2, 10, 10);
   e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
   const fila = Object.fromEntries(orden.map((h, i) => [h, ab.valor(2, i + 1)]));

@@ -45,7 +45,10 @@ class Rango {
   getDataValidations() { this._r('getDataValidations'); const o = []; for (let i = 0; i < this.nr; i++) { o.push([]); for (let j = 0; j < this.nc; j++) { const x = this.sh.validaciones.get((this.r + i) + ',' + (this.c + j)); o[i].push(x || null); } } return o; }
   clearDataValidations() { this.sh.validacionesLimpiadas.push(this.c); this._each((r, c) => this.sh.validaciones.delete(r + ',' + c)); return this._w(); }
   /** Como Sheets: una casilla de verificación nunca está vacía, vale FALSE aunque nadie la haya tocado. */
-  setDataValidation(regla) { if (regla && regla.casilla) this._each((r, c) => { if (!this.sh.cell(r, c)) this.sh.put(r, c, false); }); return this._w(); }
+  setDataValidation(regla) {
+    this._each((r, c) => { this.sh.validaciones.set(r + ',' + c, regla); if (regla && regla.casilla && !this.sh.cell(r, c)) this.sh.put(r, c, false); });
+    return this._w();
+  }
   setNumberFormat() { return this._w(); }
   // Celdas combinadas como en Sheets: combinar o separar un rango que corta una combinada a medias da error.
   _cortadas() {
@@ -166,7 +169,7 @@ function crearEntorno(opts = {}) {
   const ss = { sheets: [], namedRanges: {}, io, getSpreadsheetLocale: () => { io.leer('getSpreadsheetLocale'); return opts.locale || 'en_US'; }, toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {},
     setNamedRange(nombre, rango) { ss.namedRanges[nombre] = rango.getSheet().getName(); }, getRangeByName(n) { return ss.namedRanges[n] ? {} : null; }, removeNamedRange(n) { delete ss.namedRanges[n]; }, setActiveSheet() {}, moveActiveSheet() {} };
   const validacion = () => {
-    const b = { casilla: false, requireCheckbox() { b.casilla = true; return b; }, build() { return { casilla: b.casilla }; } };
+    const b = { casilla: false, lista: null, requireCheckbox() { b.casilla = true; return b; }, requireValueInList(l) { b.lista = l; return p; }, build() { return { casilla: b.casilla, lista: b.lista }; } };
     const p = new Proxy(b, { get: (t, k) => (k in t ? t[k] : () => p) });
     return p;
   };
@@ -208,7 +211,7 @@ function crearEntorno(opts = {}) {
     UrlFetchApp: { fetchAll: reqs => reqs.map(r => { log.fetch.push(r); const x = opts.gemini(r); return { getResponseCode: () => x.code || 200, getContentText: () => x.body }; }) },
     Utilities: { formatDate: (d, tz, f) => { const s = new Intl.DateTimeFormat('sv-SE', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); return f === 'yyyy-MM-dd' ? s : s; },
       base64Encode: b => (b && b.nombre) || 'AAAA', sleep() {} },  // el "contenido" de un PDF simulado es su nombre
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = String(v); } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = String(v); }, deleteProperty: k => { delete props[k]; } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => 'test@example.com' }) },
     ScriptApp: { newTrigger: chain, getProjectTriggers: () => [], deleteTrigger() {} },
