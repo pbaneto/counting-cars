@@ -429,6 +429,20 @@ test('Abonos con columnas reordenadas a mano: marcar una pieza escribe cada dato
   assert.equal(ab.valor(3, 2), '', 'no se duplica');
 });
 
+test('Trabajos: fórmulas viejas por debajo de los datos en columnas de entrada (#REF! en Matrícula) se limpian y no cuentan como trabajos', () => {
+  const e = entorno({});
+  const trab = e.ss.getSheetByName('Trabajos');
+  for (let r = 7; r <= 300; r++) { trab.grid.set(r + ',4', { v: '#REF!', f: '=IF(#REF!="","",1)' }); trab.put(r, 11, `=IF(A${r}="","",1)`); }
+  assert.equal(tabla(e, 'Trabajos').length, 2, 'las filas con #REF! no son trabajos');
+  e.run('repararFormulas()');
+  assert.equal(trab.cell(7, 4), undefined, 'Matrícula limpia');
+  assert.equal(trab.cell(300, 11), undefined, 'Factura limpia');
+  assert.equal(trab.valor(6, 4), tabla(e, 'Trabajos')[1]['Matrícula'], 'los datos no se tocan');
+  trab.put(7, 4, '1234ABC');
+  e.ctx.__r = trab.getRange(7, 4); e.run('alEditar({ range: __r })');
+  assert.ok(trab.valor(7, 1), 'el trabajo nuevo va justo debajo de los datos');
+});
+
 test('Trabajos: con una fila en blanco entre el panel y la cabecera, reparar y editar siguen funcionando', () => {
   const e = entorno({});
   const trab = e.ss.getSheetByName('Trabajos');

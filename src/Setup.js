@@ -190,8 +190,10 @@ function escribirFormulas_(nombre, leido) {
       const deseadas = Array.from({ length: ultDatos - fc }, (_, i) => FORMULAS[nombre][h](i + fc + 1));
       if (deseadas.some((f, i) => !mismaFormula_(actual(i + fc + 1, c), f))) sh.getRange(fc + 1, c, ultDatos - fc, 1).setFormulas(deseadas.map(f => [loc_(f)]));
     }
-    if (ultHoja > ultDatos) limpiarFormulasSobrantes_(t, h, ultDatos + 1, ultHoja, actual);
   });
+  // Por debajo de los datos no queda ninguna fórmula, tampoco en las columnas de entrada: restos de versiones con otras
+  // columnas (oct 2026: fórmulas con #REF! en "Matrícula" y en "Factura" de Trabajos tras borrar "Fecha apertura").
+  if (ultHoja > ultDatos) Object.keys(t.map).forEach(h => limpiarFormulasSobrantes_(t, h, ultDatos + 1, ultHoja, actual));
   // Por debajo de los datos una casilla sólo puede valer FALSE (TRUE contaría como dato), así que se quita sin perder nada.
   (t.esq.casillas || []).forEach(h => {
     if (ultDatos >= fc + 1) sh.getRange(fc + 1, t.map[h], ultDatos - fc, 1).setDataValidation(checkbox_());

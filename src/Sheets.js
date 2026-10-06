@@ -42,9 +42,11 @@ function letras_(nombre) {
 
 function filaConDatos_(vals) { return vals.some(x => x !== '' && x !== false && x != null); }
 
+/** Un error de fórmula (#REF!…) no es un dato: suele ser una fórmula vieja que ha perdido su columna. */
 function tieneDatos_(esq, v) {
-  return esq.entradas.some(h => { const x = v[h]; return x !== '' && x !== null && x !== undefined && x !== false; });
+  return esq.entradas.some(h => { const x = v[h]; return x !== '' && x !== null && x !== undefined && x !== false && !esErrorFormula_(x); });
 }
+function esErrorFormula_(x) { return typeof x === 'string' && /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|NUM!|NULL!|ERROR!)$/.test(x); }
 
 /**
  * Lee una tabla con UNA sola lectura (cabecera + datos). La cabecera está en la fila 1, salvo que el esquema
