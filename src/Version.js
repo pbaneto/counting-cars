@@ -14,7 +14,25 @@ const PROP_VERSION_ = 'VERSION_HOJA';
  * repiten enteras). Cuando una ya se ha ejecutado en la hoja real, se borra de aquí en el siguiente cambio: la
  * versión guardada en la hoja impide que vuelva a hacer falta.
  */
-const MIGRACIONES = {};
+const MIGRACIONES = {
+  // Trabajos sin "Fecha apertura": Mes pasa de fórmula a valor (el mes de esa fecha) y se borra la columna.
+  '2.0.0': () => {
+    const sh = hoja_(HOJA.TRAB), fc = ESQUEMA['Trabajos'].filaCabecera;
+    const cab = sh.getRange(fc, 1, 1, sh.getLastColumn()).getValues()[0];
+    const cF = cab.indexOf('Fecha apertura') + 1, cM = cab.indexOf('Mes') + 1, n = sh.getLastRow() - fc;
+    if (cF) {
+      if (cM && n > 0) {
+        const fechas = sh.getRange(fc + 1, cF, n, 1).getValues();
+        sh.getRange(fc + 1, cM, n, 1).setValues(fechas.map(([f]) => { const iso = aISO_(f); return [iso ? mesDe(iso) : '']; }));
+      }
+      sh.deleteColumn(cF);
+    }
+    const ss = ss_(), cfg = leerTabla_(HOJA.CONFIG), f = cfg.filas.find(x => String(x.v['Clave']).trim() === 'DIAS_AVISO_TRABAJO');
+    if (ss.getRangeByName('DIAS_AVISO')) ss.removeNamedRange('DIAS_AVISO');
+    if (f) cfg.sh.deleteRow(f.fila);
+    reiniciarCaches_();
+  },
+};
 
 /** Pone la hoja al día con el código. forzarDiseno: aplicar el diseño aunque la versión no haya cambiado (menú). */
 function actualizarHoja_(forzarDiseno) {

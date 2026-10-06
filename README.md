@@ -22,7 +22,7 @@ Reglas clave:
 - **Precio - abonos (Albaranes) = precio con IVA − piezas con Reembolso ✓ de ese albarán.** No se guarda: es una fórmula. En Trabajos, su suma es «Precio - abono». Un segundo escaneo con **R** manuscrita sólo marca la pieza.
 - Albarán que ya existe **con R** → marca las piezas. **Sin R** → escaneo duplicado: se ignora.
 - Si una fila escrita a mano (sin nº de albarán) coincide en matrícula e importe con un albarán escaneado, se **vincula** en vez de duplicarse.
-- Un trabajo se imputa al mes de su **fecha de apertura**.
+- Un trabajo se imputa a su columna **Mes** (se rellena con la fecha del primer albarán y se puede cambiar a mano).
 - **Cuadre de Abonos por quincena:** `Recambios RM − Abonado = Total factura` (integridad del escaneo) y `Solicitado = Abonado` (nada pendiente ni abonado sin pedir). Los abonos de RM indican el albarán original, así que se emparejan por **nº de albarán + referencia**.
 
 ## Depurar

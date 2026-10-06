@@ -96,7 +96,7 @@ function prepararConfig_() {
     if (f.v['Descripción'] !== desc) actualizarFila_(t, f.fila, { 'Descripción': desc });
   });
   const t2 = añadidas ? leerTabla_(HOJA.CONFIG) : t, ss = ss_();
-  [['IVA', 'IVA'], ['DIAS_AVISO', 'DIAS_AVISO_TRABAJO'], ['DIAS_AVISO_REEMB', 'DIAS_AVISO_REEMBOLSO']].forEach(([nombre, clave]) => {
+  [['IVA', 'IVA'], ['DIAS_AVISO_REEMB', 'DIAS_AVISO_REEMBOLSO']].forEach(([nombre, clave]) => {
     const f = t2.filas.find(x => String(x.v['Clave']).trim() === clave);
     ss.setNamedRange(nombre, sh.getRange(f.fila, t2.map['Valor']));
   });
@@ -285,8 +285,8 @@ function formatoTrabajos_() {
   const sh = hoja_(HOJA.TRAB), n = ESQUEMA['Trabajos'].filasFormato, l = letras_(HOJA.TRAB), fc = ESQUEMA['Trabajos'].filaCabecera;
   const cf = (h, o) => colFmt_(sh, h, n, o, fc);
   cf('Nº trabajo', { ancho: 95 });
-  cf('Fecha apertura', { fmt: FMT.fecha, ancho: 105 });
-  cf('Mes', { gris: true, ancho: 70 });
+  cf('Mes', { validacion: listaValidacion_(MESES), ancho: 70 });
+  sh.getRange(fc + 1, colDe_(sh, 'Mes'), n, 1).setBackground(null);  // antes era una fórmula (gris)
   cf('Quincena', { validacion: listaValidacion_(['1', '2']), ancho: 80 });
   sh.getRange(fc + 1, colDe_(sh, 'Quincena'), n, 1).setHorizontalAlignment('center');
   cf('Matrícula', { validacion: matriculaValidacion_(), ancho: 100 });

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { crearEntorno } = require('./gas-mock');
 
 const PRIV = require('path').join(__dirname, 'fixtures-private.js');
+const VERSION_ESPERADA = '2.0.0';
 require('fs').writeFileSync(PRIV, `const PRIVATE = { SPREADSHEET_ID: 'SS',
   CARPETAS: { CARPETA_ENTRADA: 'ENT', CARPETA_PROCESADOS: 'PROC', CARPETA_FACTURAS_RM: 'FRA', CARPETA_FACTURAS_RM_PROCESADAS: 'FRAP' },
   COCHES: [['1234ABC','Cli A','Peugeot 208'],['4321GHJ','Cli B','Mini'],['5678DEF','Cli C','Peugeot']],
@@ -56,30 +57,31 @@ test('setup crea pestañas, cabeceras, fórmulas y configuración', () => {
   assert.match(alb.cell(2, 3).f, /CHOOSE\(MONTH\(/);
   assert.match(alb.cell(2, 4).f, /^=IF\(B2=""/);          // Quincena
   assert.match(alb.cell(2, 10).f, /SUMIFS\(Piezas!/);       // Precio - abonos
-  assert.match(alb.cell(2, 14).f, /DIAS_AVISO/);           // Avisos en las filas con datos (piloto: filas 2-4)
+  assert.match(alb.cell(2, 14).f, /Nº de albarán duplicado/);           // Avisos en las filas con datos (piloto: filas 2-4)
   assert.equal(alb.cell(5, 14), undefined, 'sin fórmulas en filas vacías: leerlas y recalcularlas era lo lento');
   assert.equal(alb.getLastRow(), 4);
   // Casillas sólo en filas con datos: una casilla vacía vale FALSE y haría leer miles de filas
   const trab = e.ss.getSheetByName('Trabajos');
   assert.equal(trab.getLastRow(), 6, 'Trabajos: panel (filas 1-3) + cabecera (fila 4) + 2 trabajos del piloto (5-6)');
   assert.equal(e.ss.getSheetByName('Piezas').getLastRow(), 1, 'Piezas vacía: sin casillas "Reembolso" por debajo');
-  assert.equal(trab.valor(6, 14), false, 'la fila nueva lleva su casilla (FALSE = sin pagar), columna N');
+  assert.equal(trab.valor(6, 13), false, 'la fila nueva lleva su casilla (FALSE = sin pagar), columna M');
   // Cabecera real en la fila 4 (el panel ocupa la 1-3), datos desde la 5
-  assert.equal(trab.valor(4, 3), 'Mes', 'columna nueva "Mes" junto a "Fecha apertura"');
-  assert.equal(trab.valor(4, 4), 'Quincena', 'Quincena a la derecha de Mes');
-  assert.equal(trab.valor(5, 4), 1, 'rellenada con la fecha de apertura del piloto (15/09 → 1ª quincena)');
-  assert.equal(trab.cell(5, 4).f, '', 'Quincena es un valor, no una fórmula: se puede cambiar a mano');
-  assert.equal(trab.valor(4, 5), 'Matrícula');
-  assert.match(trab.cell(5, 3).f, /CHOOSE\(MONTH\(/);
-  assert.match(trab.cell(5, 10).f, /SUMIFS\(Albaranes!.*"RM"\)/);      // Recambios facturables RM
-  assert.match(trab.cell(5, 11).f, /SUMIFS\(Albaranes!.*"Otros"\)/);  // Recambios facturables Otros
+  assert.equal(trab.valor(4, 2), 'Mes', 'Mes junto a Nº trabajo');
+  assert.equal(trab.valor(4, 3), 'Quincena', 'Quincena a la derecha de Mes');
+  assert.equal(trab.valor(5, 2), 'sep', 'rellenado con la fecha del piloto (15/09)');
+  assert.equal(trab.valor(5, 3), 1, 'rellenada con la fecha del piloto (15/09 → 1ª quincena)');
+  assert.equal(trab.cell(5, 2).f, '', 'Mes es un valor, no una fórmula: se puede cambiar a mano');
+  assert.equal(trab.cell(5, 3).f, '', 'Quincena es un valor, no una fórmula: se puede cambiar a mano');
+  assert.equal(trab.valor(4, 4), 'Matrícula');
+  assert.match(trab.cell(5, 9).f, /SUMIFS\(Albaranes!.*"RM"\)/);      // Recambios facturables RM
+  assert.match(trab.cell(5, 10).f, /SUMIFS\(Albaranes!.*"Otros"\)/);  // Recambios facturables Otros
   // Panel "Resumen (según filtro)" encima de la cabecera: título (1), etiquetas (2), valores (3)
   assert.equal(trab.valor(1, 1), 'Resumen (según filtro)');
   assert.equal(trab.valor(2, 1), 'Trabajos'); assert.equal(trab.valor(2, 5), 'Morosos');
   assert.match(trab.cell(3, 5).f, /SUMPRODUCT/);
   // Ninguna columna calculada (gris) se queda con una validación residual; las de entrada no se tocan
-  assert.deepEqual(new Set(trab.validacionesLimpiadas), new Set([1, 3, 6, 7, 8, 9, 10, 11, 13, 15]),
-    'Mes, Coche, Cliente, Recambios, Recambios facturables, Recambios facturables RM/Otros, Beneficio, Avisos y la fila de valores del panel');
+  assert.deepEqual(new Set(trab.validacionesLimpiadas), new Set([1, 5, 6, 7, 8, 9, 10, 12, 14]),
+    'Coche, Cliente, Recambios, Recambios facturables, Recambios facturables RM/Otros, Beneficio, Avisos y la fila de valores del panel');
   const cfg = tabla(e, 'Config');
   assert.equal(cfg.find(x => x.Clave === 'CARPETA_ENTRADA').Valor, 'ENT');
   assert.equal(cfg.find(x => x.Clave === 'MODELO_GEMINI').Valor, 'gemini-3.5-flash-lite');
@@ -107,18 +109,18 @@ test('repararFormulas quita las fórmulas de las filas vacías (hoja antigua) si
   for (let r = 2; r <= 4001; r++) p.put(r, 1, false);   // casillas "Reembolso" rellenadas hasta la 4001 (valen FALSE)
   const trab = e.ss.getSheetByName('Trabajos');
   // El panel ocupa 1-3, la cabecera la 4, los 2 trabajos del piloto la 5-6: el relleno de sobra empieza en la 7
-  for (let r = 7; r <= 801; r++) trab.put(r, 14, false); // "Pagado" (columna N) hasta la 801
+  for (let r = 7; r <= 801; r++) trab.put(r, 13, false); // "Pagado" (columna M) hasta la 801
   alb.put(900, 11, 'escrito a mano');                 // valor (no fórmula) en la columna calculada "Coche"
   e.run('repararFormulas()');
   assert.equal(alb.cell(700, 4), undefined, 'Quincena vacía por debajo de los datos');
   assert.equal(alb.cell(1501, 14), undefined, 'Avisos vacía por debajo de los datos');
   assert.equal(p.cell(4001, 15), undefined);
-  assert.match(alb.cell(4, 14).f, /DIAS_AVISO/, 'las filas con datos conservan sus fórmulas');
+  assert.match(alb.cell(4, 14).f, /Nº de albarán duplicado/, 'las filas con datos conservan sus fórmulas');
   assert.equal(alb.valor(900, 11), 'escrito a mano', 'no borra un valor escrito a mano');
   assert.ok(e.log.console.some(l => /\[AVISO\] repararFormulas Albaranes!K900/.test(l)));
   assert.equal(p.getLastRow(), 1);
   assert.equal(trab.getLastRow(), 6, 'Trabajos queda con sus 2 filas de datos (panel 1-3, cabecera 4, datos 5-6)');
-  assert.equal(trab.valor(5, 14), true, 'el Pagado de las filas con datos no se toca');
+  assert.equal(trab.valor(5, 13), true, 'el Pagado de las filas con datos no se toca');
 });
 
 test('repararFormulas conserva el año elegido en Abonos', () => {
@@ -141,12 +143,12 @@ test('repararFormulas sólo reescribe las fórmulas que han cambiado', () => {
   const enTablas = () => escritas.filter(x => tablas.some(t => x.startsWith(t)) && !x.startsWith('Trabajos!3,'));  // fila 3 = panel
   e.run('repararFormulas()');
   assert.deepEqual(enTablas(), [], 'sin cambios: ninguna fórmula de las tablas se reescribe');
-  const buena = trab.cell(5, 13).f;
-  trab.put(5, 13, '=1');  // alguien ha pisado la fórmula de Beneficio
+  const buena = trab.cell(5, 12).f;
+  trab.put(5, 12, '=1');  // alguien ha pisado la fórmula de Beneficio
   escritas.length = 0;
   e.run('repararFormulas()');
-  assert.equal(trab.cell(5, 13).f, buena, 'la fórmula pisada se restaura');
-  assert.ok(enTablas().every(x => x.startsWith('Trabajos!') && x.endsWith(',13')), 'sólo se reescribe esa columna');
+  assert.equal(trab.cell(5, 12).f, buena, 'la fórmula pisada se restaura');
+  assert.ok(enTablas().every(x => x.startsWith('Trabajos!') && x.endsWith(',12')), 'sólo se reescribe esa columna');
 });
 
 test('repararFormulas añade a Config las claves nuevas sin pisar los valores existentes', () => {
@@ -155,11 +157,11 @@ test('repararFormulas añade a Config las claves nuevas sin pisar los valores ex
   const fila = clave => e.run(`leerTabla_('Config').filas.find(f => f.v['Clave'] === '${clave}').fila`);
   const r = fila('DIAS_AVISO_REEMBOLSO');
   [1, 2, 3].forEach(c => cfg.put(r, c, ''));            // hoja montada antes de existir la clave
-  cfg.put(fila('DIAS_AVISO_TRABAJO'), 2, 20);           // valor cambiado a mano por el usuario
+  cfg.put(fila('MAX_ARCHIVOS'), 2, 20);                 // valor cambiado a mano por el usuario
   e.run('repararFormulas()');
   const t = tabla(e, 'Config');
   assert.equal(t.find(x => x.Clave === 'DIAS_AVISO_REEMBOLSO').Valor, 45);
-  assert.equal(t.find(x => x.Clave === 'DIAS_AVISO_TRABAJO').Valor, 20);
+  assert.equal(t.find(x => x.Clave === 'MAX_ARCHIVOS').Valor, 20);
 });
 
 test('cargarDatosIniciales: coches y piloto (un trabajo por matrícula) y no pisa datos', () => {
@@ -380,17 +382,35 @@ test('escribir a mano en una columna automática vuelve a poner su fórmula y av
   assert.ok(e.log.toasts.some(t => /"Coche" se rellena sola/.test(t)));
 });
 
-test('Trabajos: Quincena se rellena sola con la fecha de apertura y se puede cambiar a mano', () => {
+test('Trabajos: Mes y Quincena se rellenan solos con la fecha de hoy y se pueden cambiar a mano', () => {
   const e = entorno({});
   const trab = e.ss.getSheetByName('Trabajos');
-  trab.put(7, 2, e.run('new Date(2026, 8, 20)')); trab.put(7, 5, '1234ABC');
-  e.ctx.__r = trab.getRange(7, 5); e.run('alEditar({ range: __r })');
-  assert.equal(trab.valor(7, 4), 2, '20/09 → 2ª quincena');
-  trab.put(7, 4, 1);
+  trab.put(7, 4, '1234ABC');
   e.ctx.__r = trab.getRange(7, 4); e.run('alEditar({ range: __r })');
-  assert.equal(trab.valor(7, 4), 1, 'el cambio a mano se respeta');
+  assert.equal(trab.valor(7, 2), e.run('mesDe(hoyISO_())'));
+  assert.equal(trab.valor(7, 3), e.run('quincenaDe(hoyISO_())'));
+  trab.put(7, 2, 'ene'); trab.put(7, 3, 1);
+  e.ctx.__r = trab.getRange(7, 2, 1, 2); e.run('alEditar({ range: __r })');
+  assert.equal(trab.valor(7, 2), 'ene', 'el cambio a mano se respeta');
   e.run('repararFormulas()');
-  assert.equal(trab.valor(7, 4), 1);
+  assert.equal(trab.valor(7, 2), 'ene'); assert.equal(trab.valor(7, 3), 1);
+});
+
+test('migración 2.0.0: Trabajos pierde "Fecha apertura" y Mes pasa a valor', () => {
+  const e = entorno({});
+  const trab = e.ss.getSheetByName('Trabajos'), fc = 4;
+  trab.insertColumnBefore(2);  // como la hoja real en 1.1.0
+  trab.put(fc, 2, 'Fecha apertura');
+  trab.put(5, 2, e.run('new Date(2026, 8, 15)')); trab.put(6, 2, e.run('new Date(2026, 9, 20)'));
+  trab.put(5, 3, '=IF(B5="","",1)'); trab.put(6, 3, '=IF(B6="","",1)');
+  e.run("PropertiesService.getScriptProperties().setProperty('VERSION_HOJA', '1.1.0')");
+  e.run('actualizarHoja_(false)');
+  assert.equal(trab.valor(fc, 2), 'Mes');
+  assert.equal(trab.valor(5, 2), 'sep'); assert.equal(trab.valor(6, 2), 'oct');
+  assert.equal(trab.cell(5, 2).f, '', 'Mes es un valor');
+  assert.equal(trab.valor(fc, 4), 'Matrícula');
+  assert.ok(!tabla(e, 'Config').some(x => x.Clave === 'DIAS_AVISO_TRABAJO'));
+  assert.equal(e.run("PropertiesService.getScriptProperties().getProperty('VERSION_HOJA')"), VERSION_ESPERADA);
 });
 
 test('edición manual en Albaranes: fecha, proveedor y trabajo automáticos; NUEVO abre otro trabajo', () => {

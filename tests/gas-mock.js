@@ -127,6 +127,18 @@ class Hoja {
     this.grid = nuevo;
     this.ss.io.escrito = true;
   }
+  /** Borra la columna c y mueve a la izquierda todo lo que está a su derecha, como Sheets. */
+  deleteColumn(c) {
+    this.combinadas = this.combinadas.filter(m => !(m.c === c && m.nc === 1));
+    this.combinadas.forEach(m => { if (m.c > c) m.c--; else if (m.c + m.nc > c) m.nc--; });
+    const nuevo = new Map();
+    this.grid.forEach((v, k) => {
+      const [r, col] = k.split(',').map(Number);
+      if (col !== c) nuevo.set(r + ',' + (col > c ? col - 1 : col), v);
+    });
+    this.grid = nuevo;
+    this.ss.io.escrito = true;
+  }
   getLastRow() { this.ss.io.leer(`${this.name}.getLastRow`); let m = 0; this.grid.forEach((x, k) => { const r = Number(k.split(',')[0]); if (r > m) m = r; }); return m; }
   getMaxColumns() { return Math.max(26, this.getLastColumn()); }
   getLastColumn() { let m = 0; this.grid.forEach((x, k) => { const c = Number(k.split(',')[1]); if (c > m) m = c; }); return m; }
@@ -152,7 +164,7 @@ function crearEntorno(opts = {}) {
   let idSeq = 1;
   const io = { escrito: false, lecturasTrasEscribir: [], leer(que) { if (io.escrito) io.lecturasTrasEscribir.push(que); } };
   const ss = { sheets: [], namedRanges: {}, io, getSpreadsheetLocale: () => { io.leer('getSpreadsheetLocale'); return opts.locale || 'en_US'; }, toast: (m, t) => log.toasts.push(m), getId: () => 'SS', setSpreadsheetTimeZone() {},
-    setNamedRange(nombre, rango) { ss.namedRanges[nombre] = rango.getSheet().getName(); }, setActiveSheet() {}, moveActiveSheet() {} };
+    setNamedRange(nombre, rango) { ss.namedRanges[nombre] = rango.getSheet().getName(); }, getRangeByName(n) { return ss.namedRanges[n] ? {} : null; }, removeNamedRange(n) { delete ss.namedRanges[n]; }, setActiveSheet() {}, moveActiveSheet() {} };
   const validacion = () => {
     const b = { casilla: false, requireCheckbox() { b.casilla = true; return b; }, build() { return { casilla: b.casilla }; } };
     const p = new Proxy(b, { get: (t, k) => (k in t ? t[k] : () => p) });

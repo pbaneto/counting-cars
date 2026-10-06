@@ -90,6 +90,7 @@ function daysBetween(isoA, isoB) {
 
 /** 1 si día 1-15, 2 en el resto. */
 function quincenaDe(iso) { return Number(iso.slice(8, 10)) <= 15 ? 1 : 2; }
+function mesDe(iso) { return MESES[Number(iso.slice(5, 7)) - 1]; }
 
 function ultimoDiaMes(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
 
@@ -401,6 +402,6 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
-    pickOpenJob, isoValid, daysBetween, quincenaDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
+    pickOpenJob, isoValid, daysBetween, quincenaDe, mesDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
     validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
 }

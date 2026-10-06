@@ -13,7 +13,7 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '1.1.0';
+const VERSION = '2.0.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', COCHES: 'Coches', RESUMEN: 'Resumen',
@@ -29,10 +29,10 @@ const ESQUEMA = {
     filasFormato: 1500,
   },
   'Trabajos': {
-    // Quincena: valor (no fórmula) para poder cambiarlo a mano; se rellena con la fecha de apertura (= primer albarán).
-    cabeceras: ['Nº trabajo', 'Fecha apertura', 'Mes', 'Quincena', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Precio - abono', 'Recambios facturables RM',
+    // Mes y Quincena: valores (no fórmulas) para poder cambiarlos a mano; se rellenan con la fecha del primer albarán.
+    cabeceras: ['Nº trabajo', 'Mes', 'Quincena', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Precio - abono', 'Recambios facturables RM',
       'Recambios facturables Otros', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
-    entradas: ['Nº trabajo', 'Fecha apertura', 'Matrícula', 'Factura', 'Pagado'],
+    entradas: ['Nº trabajo', 'Mes', 'Quincena', 'Matrícula', 'Factura', 'Pagado'],
     casillas: ['Pagado'],
     filasFormato: 800,
     filaCabecera: 4,  // filas 1-3: panel "Resumen (según filtro)" encima de la cabecera real
@@ -78,7 +78,6 @@ const ESQUEMA = {
 const CONFIG_DEFECTO = [
   ['MODELO_GEMINI', 'gemini-3.5-flash-lite', 'Modelo de Gemini que lee albaranes y facturas'],
   ['IVA', 0.21, 'IVA aplicado a las piezas (0,21 = 21 %)'],
-  ['DIAS_AVISO_TRABAJO', 30, 'Avisar si un albarán se suma a un trabajo sin pagar abierto hace más de estos días'],
   ['DIAS_AVISO_REEMBOLSO', 45, 'Avisar en Abonos si una pieza pedida lleva más de estos días sin que RM la abone'],
   ['PARALELISMO', 8, 'Nº de PDFs que se envían a Gemini a la vez'],
   ['MAX_ARCHIVOS', 30, 'Máximo de albaranes que se procesan por ejecución (límite de 6 min de Apps Script)'],

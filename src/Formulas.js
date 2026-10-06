@@ -1,7 +1,7 @@
 /**
  * Fórmulas de las columnas automáticas (grises). Todas por fila: funcionan con ordenar, filtrar e insertar filas.
  * Se construyen con las letras REALES de las cabeceras (letras_), así que insertar una columna no las rompe al reparar.
- * Named ranges usados: IVA, DIAS_AVISO, DIAS_AVISO_REEMB (apuntan a la pestaña Config).
+ * Named ranges usados: IVA, DIAS_AVISO_REEMB (apuntan a la pestaña Config).
  */
 
 const FORMULAS = {
@@ -24,10 +24,9 @@ const FORMULAS = {
     },
     'Avisos': r => {
       const a = letras_(HOJA.ALB), t = letras_(HOJA.TRAB), c = letras_(HOJA.COCHES);
-      const E = `${a['Nº albarán']}${r}`, F = `${a['Nº trabajo']}${r}`, G = `${a['Matrícula']}${r}`, H = `${a['Precio con IVA']}${r}`, A = `${a['Fecha escaneo']}${r}`;
+      const E = `${a['Nº albarán']}${r}`, F = `${a['Nº trabajo']}${r}`, G = `${a['Matrícula']}${r}`, H = `${a['Precio con IVA']}${r}`;
       const fila = `MATCH(${F},Trabajos!$${t['Nº trabajo']}:$${t['Nº trabajo']},0)`;
       const idx = h => `INDEX(Trabajos!$${t[h]}:$${t[h]},${fila})`;
-      const dias = `(${A}-${idx('Fecha apertura')})`;
       return `=IF(AND(${G}="",${H}="",${E}=""),"",` +
         `IF(${H}="","⚠ Falta el precio",` +
         `IF(${G}="","⚠ Falta la matrícula",` +
@@ -35,14 +34,11 @@ const FORMULAS = {
         `IF(${F}="","⚠ Sin nº de trabajo",` +
         `IF(COUNTIF(Trabajos!$${t['Nº trabajo']}:$${t['Nº trabajo']},${F})=0,"⚠ El trabajo "&${F}&" no existe",` +
         `IF(${idx('Matrícula')}<>${G},"⚠ El trabajo "&${F}&" es de otra matrícula",` +
-        `IF(AND(${E}<>"",COUNTIF($${a['Nº albarán']}:$${a['Nº albarán']},${E})>1),"⚠ Nº de albarán duplicado",` +
-        `IF(IFERROR(AND(${A}<>"",${idx('Pagado')}<>TRUE,${dias}>DIAS_AVISO),FALSE),"⚠ Trabajo "&${F}&" abierto hace "&${dias}&" días: ¿es un trabajo nuevo? Elige NUEVO en Nº trabajo",""))))))))) `.trim();
+        `IF(AND(${E}<>"",COUNTIF($${a['Nº albarán']}:$${a['Nº albarán']},${E})>1),"⚠ Nº de albarán duplicado",""))))))))`;
     },
   },
 
   'Trabajos': {
-    // CHOOSE con la lista fija en vez de TEXT(fecha,"mmm"): TEXT depende del idioma de la hoja y en español da "sept." para septiembre.
-    'Mes': r => { const t = letras_(HOJA.TRAB); return `=IF(${t['Fecha apertura']}${r}="","",CHOOSE(MONTH(${t['Fecha apertura']}${r}),"ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"))`; },
     'Coche': r => { const t = letras_(HOJA.TRAB); return `=IF(${t['Matrícula']}${r}="","",IFERROR(VLOOKUP(${t['Matrícula']}${r},Coches!$A:$C,${indice_(HOJA.COCHES, 'Coche')},FALSE),"⚠ Matrícula no está en Coches"))`; },
     'Cliente': r => { const t = letras_(HOJA.TRAB); return `=IF(${t['Matrícula']}${r}="","",IFERROR(VLOOKUP(${t['Matrícula']}${r},Coches!$A:$C,${indice_(HOJA.COCHES, 'Cliente')},FALSE),""))`; },
     'Recambios': r => {
@@ -65,14 +61,13 @@ const FORMULAS = {
     'Beneficio': r => { const t = letras_(HOJA.TRAB); return `=IF(OR(${t['Nº trabajo']}${r}="",${t['Factura']}${r}=""),"",${t['Factura']}${r}-${t['Precio - abono']}${r})`; },
     'Avisos': r => {
       const t = letras_(HOJA.TRAB), a = letras_(HOJA.ALB), c = letras_(HOJA.COCHES);
-      const N = `${t['Nº trabajo']}${r}`, B = `${t['Fecha apertura']}${r}`, C = `${t['Matrícula']}${r}`, G = `${t['Precio - abono']}${r}`, H = `${t['Factura']}${r}`, J = `${t['Pagado']}${r}`;
+      const N = `${t['Nº trabajo']}${r}`, C = `${t['Matrícula']}${r}`, G = `${t['Precio - abono']}${r}`, H = `${t['Factura']}${r}`;
       return `=IF(${N}="","",` +
         `IF(${C}="","⚠ Falta la matrícula",` +
         `IF(COUNTIF(Coches!$${c['Matrícula']}:$${c['Matrícula']},${C})=0,"⚠ La matrícula no está en Coches",` +
         `IF(COUNTIF($${t['Nº trabajo']}:$${t['Nº trabajo']},${N})>1,"⚠ Nº de trabajo duplicado",` +
         `IF(COUNTIF(Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${N})=0,"ℹ Sin albaranes",` +
-        `IF(IFERROR(AND(${J}<>TRUE,${B}<>"",TODAY()-${B}>DIAS_AVISO),FALSE),"ℹ Sin pagar desde hace "&(TODAY()-${B})&" días",` +
-        `IF(AND(${H}<>"",${H}<${G}),"ℹ Factura menor que los recambios (pérdida)","")))))))`;
+        `IF(AND(${H}<>"",${H}<${G}),"ℹ Factura menor que los recambios (pérdida)",""))))))`;
     },
   },
 

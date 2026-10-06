@@ -2,8 +2,7 @@
 
 function listaTrabajos_(tabTrab) {
   return tabTrab.filas.map(f => ({
-    num: String(f.v['Nº trabajo']).trim(), plate: normPlate(f.v['Matrícula']), pagado: f.v['Pagado'] === true,
-    apertura: aISO_(f.v['Fecha apertura']), fila: f.fila,
+    num: String(f.v['Nº trabajo']).trim(), plate: normPlate(f.v['Matrícula']), pagado: f.v['Pagado'] === true, fila: f.fila,
   }));
 }
 
@@ -11,7 +10,7 @@ function listaTrabajos_(tabTrab) {
 function crearTrabajo_(tabTrab, matricula, fechaISO) {
   const num = nextJobNumber(jobPrefix(matricula), tabTrab.filas.map(f => f.v['Nº trabajo']));
   const fecha = fechaISO || hoyISO_();
-  agregarFilas_(tabTrab, [{ 'Nº trabajo': num, 'Fecha apertura': aFecha_(fecha), 'Quincena': quincenaDe(fecha), 'Matrícula': normPlate(matricula), 'Pagado': false }]);
+  agregarFilas_(tabTrab, [{ 'Nº trabajo': num, 'Mes': mesDe(fecha), 'Quincena': quincenaDe(fecha), 'Matrícula': normPlate(matricula), 'Pagado': false }]);
   return num;
 }
 

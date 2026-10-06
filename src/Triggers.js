@@ -140,11 +140,11 @@ function editarTrabajos_(r0, n, c0, nc) {
     if (String(g('Nº trabajo')).trim() === '') {
       const otros = tab.filas.filter(f => f.fila !== r).map(f => f.v['Nº trabajo']);
       set('Nº trabajo', nextJobNumber(jobPrefix(plate), otros));
-      if (!g('Fecha apertura')) set('Fecha apertura', aFecha_(hoy));
       log_('INFO', 'alEditar', `${HOJA.TRAB}!${r}`, `Trabajo ${g('Nº trabajo')} creado a mano para ${plate}`);
     }
-    // Quincena: se rellena sola con la fecha de apertura sólo si está vacía (después se puede cambiar a mano).
-    if (g('Quincena') === '' && aISO_(g('Fecha apertura'))) set('Quincena', quincenaDe(aISO_(g('Fecha apertura'))));
+    // Mes y Quincena: se rellenan solos con la fecha de hoy sólo si están vacíos (después se pueden cambiar a mano).
+    if (g('Mes') === '') set('Mes', mesDe(hoy));
+    if (g('Quincena') === '') set('Quincena', quincenaDe(hoy));
     coches = coches || new Set(leerTabla_(HOJA.COCHES).filas.map(f => normPlate(f.v['Matrícula'])));
     if (!coches.has(plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
   }

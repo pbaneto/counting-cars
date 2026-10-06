@@ -1,7 +1,7 @@
 /**
  * Pestaña Resumen (equivale a la pestaña TOTAL del Excel antiguo).
  *  - Año en curso: meses anteriores a MES_EN_VIVO = valores importados del Excel antiguo; el resto se calcula desde Trabajos
- *    (un trabajo se imputa al mes de su Fecha de apertura).
+ *    (un trabajo se imputa al mes de su columna Mes).
  *  - Años anteriores (2025, 2024): valores históricos.
  *  - 3 gráficos de barras con el beneficio mensual.
  * Los importes históricos vienen de src/private.js (no está en el repositorio).
@@ -50,11 +50,11 @@ function montarResumen_() {
   // ---- Año en curso ----
   titAnio(RES.anioFila, d.anio);
   sh.getRange(RES.cabFila, 1, 1, 8).setValues([RES.cab]); estiloCab(RES.cabFila, 8);
-  const fApert = `Trabajos!$${t['Fecha apertura']}:$${t['Fecha apertura']}`;
+  const colMes = `Trabajos!$${t['Mes']}:$${t['Mes']}`;
   for (let m = 1; m <= 12; m++) {
     const r = RES.ini + m - 1, s = d.y26[m - 1];
     const enVivo = m >= d.mesEnVivo;
-    const rango = `${fApert},">="&DATE($A$${RES.anioFila},${m},1),${fApert},"<="&EOMONTH(DATE($A$${RES.anioFila},${m},1),0)`;
+    const rango = `${colMes},"${MESES[m - 1]}"`;
     const suma = h => `SUMIFS(Trabajos!$${t[h]}:$${t[h]},${rango})`;
     const rec = enVivo ? `=${suma('Precio - abono')}` : (s[0] || 0);
     const ing = enVivo ? `=${suma('Factura')}` : (s[2] || 0);

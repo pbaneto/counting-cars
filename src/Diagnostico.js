@@ -11,7 +11,6 @@ function diagnostico() {
     const fact = leerTabla_(HOJA.FACT), lin = leerTabla_(HOJA.LINEAS);
     const cochesSet = new Set(coches.filas.map(f => normPlate(f.v['Matrícula'])));
     const jobs = {}; trab.filas.forEach(f => { jobs[String(f.v['Nº trabajo']).trim()] = f; });
-    const dias = cfgNum_('DIAS_AVISO_TRABAJO'), hoy = hoyISO_();
 
     // Albaranes
     const numsAlb = {};
@@ -23,11 +22,7 @@ function diagnostico() {
         if (!cochesSet.has(plate)) add('AVISO', HOJA.ALB, f.fila, `La matrícula ${plate} no está en Coches`);
         if (!job) add('ERROR', HOJA.ALB, f.fila, 'Sin nº de trabajo');
         else if (!jobs[job]) add('ERROR', HOJA.ALB, f.fila, `El trabajo ${job} no existe en Trabajos`);
-        else {
-          if (normPlate(jobs[job].v['Matrícula']) !== plate) add('ERROR', HOJA.ALB, f.fila, `El trabajo ${job} es de otra matrícula (${jobs[job].v['Matrícula']})`);
-          const ap = aISO_(jobs[job].v['Fecha apertura']), es = aISO_(v['Fecha escaneo']);
-          if (ap && es && jobs[job].v['Pagado'] !== true && daysBetween(ap, es) > dias) add('AVISO', HOJA.ALB, f.fila, `Sumado al trabajo ${job}, abierto hace ${daysBetween(ap, es)} días: ¿es un trabajo nuevo?`);
-        }
+        else if (normPlate(jobs[job].v['Matrícula']) !== plate) add('ERROR', HOJA.ALB, f.fila, `El trabajo ${job} es de otra matrícula (${jobs[job].v['Matrícula']})`);
       }
       if (num) { if (numsAlb[num]) add('ERROR', HOJA.ALB, f.fila, `Nº de albarán ${num} duplicado (también en fila ${numsAlb[num]})`); else numsAlb[num] = f.fila; }
       if (String(v['Nota escaneo'] || '').trim()) add('INFO', HOJA.ALB, f.fila, 'Nota del escaneo: ' + v['Nota escaneo']);
