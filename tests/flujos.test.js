@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { crearEntorno } = require('./gas-mock');
 
 const PRIV = require('path').join(__dirname, 'fixtures-private.js');
-const VERSION_ESPERADA = '2.1.0';
+const VERSION_ESPERADA = '3.0.0';
 require('fs').writeFileSync(PRIV, `const PRIVATE = { SPREADSHEET_ID: 'SS',
   CARPETAS: { CARPETA_ENTRADA: 'ENT', CARPETA_PROCESADOS: 'PROC', CARPETA_FACTURAS_RM: 'FRA', CARPETA_FACTURAS_RM_PROCESADAS: 'FRAP' },
   COCHES: [['1234ABC','Cli A','Peugeot 208'],['4321GHJ','Cli B','Mini'],['5678DEF','Cli C','Peugeot']],
@@ -396,28 +396,41 @@ test('Trabajos: Mes y Quincena se rellenan solos con la fecha de hoy y se pueden
   assert.equal(trab.valor(7, 2), 'ene'); assert.equal(trab.valor(7, 3), 1);
 });
 
-test('migración 2.1.0: Trabajos pierde "Fecha apertura" aunque haya una fila en blanco encima de la cabecera', () => {
+test('migración 3.0.0: Abonos vuelve al orden de columnas movido a mano y las filas escritas en el orden por defecto se recolocan', () => {
   const e = entorno({});
-  const trab = e.ss.getSheetByName('Trabajos');
-  trab.insertColumnBefore(2);  // como la hoja real en 1.1.0, restaurada desde el historial
-  trab.put(4, 2, 'Fecha apertura');
-  trab.put(5, 2, e.run('new Date(2026, 8, 15)')); trab.put(6, 2, e.run('new Date(2026, 9, 20)'));
-  trab.put(5, 3, '=IF(B5="","",1)'); trab.put(6, 3, '=IF(B6="","",1)');
-  trab.insertRowsBefore(4, 1);  // fila en blanco entre el panel y la cabecera: la cabecera pasa a la fila 5
-  const matriculas = [trab.valor(6, 5), trab.valor(7, 5)], pagados = [trab.valor(6, 14), trab.valor(7, 14)];
-  e.run("PropertiesService.getScriptProperties().setProperty('VERSION_HOJA', '2.0.0')");
+  const ab = e.ss.getSheetByName('Abonos');
+  // Como la hoja real: cabecera por defecto escrita encima de datos con "Matrícula" movida a la C
+  ab.put(2, 2, 'PIEZA NUEVA'); ab.put(2, 3, 56.7); ab.put(2, 5, 'Sin abonar'); ab.put(2, 6, '123'); ab.put(2, 7, 'REF1'); ab.put(2, 8, '1111AAA'); ab.put(2, 13, 'P|123|REF1|1');
+  ab.put(3, 1, e.run('new Date(2026, 8, 30)')); ab.put(3, 2, 'ACEITE'); ab.put(3, 3, '6005HJG'); ab.put(3, 4, 25.55); ab.put(3, 6, 'Sin solicitar');
+  ab.put(3, 7, '463899'); ab.put(3, 8, 'SASH100727'); ab.put(3, 10, 'FCR 1'); ab.put(3, 13, 'A|466307|463899|SASH100727|1');
+  e.run("PropertiesService.getScriptProperties().setProperty('VERSION_HOJA', '2.1.0')");
   e.run('actualizarHoja_(false)');
   assert.deepEqual(e.log.console.filter(m => /^\[ERROR\]/.test(m)), []);
-  assert.equal(trab.valor(4, 1), '', 'la fila en blanco se queda');
-  assert.equal(trab.valor(5, 1), 'Nº trabajo'); assert.equal(trab.valor(5, 2), 'Mes'); assert.equal(trab.valor(5, 4), 'Matrícula');
-  assert.equal(trab.valor(6, 2), 'sep'); assert.equal(trab.valor(7, 2), 'oct');
-  assert.equal(trab.cell(6, 2).f, '', 'Mes es un valor');
-  assert.deepEqual([trab.valor(6, 4), trab.valor(7, 4)], matriculas, 'Matrícula intacta');
-  assert.deepEqual([trab.valor(6, 13), trab.valor(7, 13)], pagados, 'Pagado intacto');
-  assert.match(trab.cell(6, 5).f, /VLOOKUP\(D6,/, 'Coche: fórmula en su columna y su fila');
-  assert.match(trab.cell(3, 1).f, /\$A\$6:\$A\$805/, 'el panel cuenta desde la primera fila de datos');
-  assert.ok(!tabla(e, 'Config').some(x => x.Clave === 'DIAS_AVISO_TRABAJO'));
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map(c => ab.valor(1, c)), ['Fecha abono', 'Descripción pieza', 'Matrícula', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia']);
+  assert.deepEqual([3, 4, 6, 7, 8, 13].map(c => ab.valor(2, c)), ['1111AAA', 56.7, 'Sin abonar', '123', 'REF1', 'P|123|REF1|1'], 'fila escrita en el orden por defecto, recolocada');
+  assert.deepEqual([3, 4, 6, 7, 8, 13].map(c => ab.valor(3, c)), ['6005HJG', 25.55, 'Sin solicitar', '463899', 'SASH100727', 'A|466307|463899|SASH100727|1'], 'fila movida, igual');
+  assert.equal(ab.cell(2, 5).f, '=ROUND($D2*(1+IVA),2)');
+  assert.equal(ab.cell(2, 12).f, '=IF($F2="Sin abonar",TODAY()-$I2,"")');
+  assert.equal(ab.cell(2, 23).f, '=COUNTIF($F:$F,"Sin abonar")', 'el panel cuenta por la columna Estado, esté donde esté');
   assert.equal(e.run("PropertiesService.getScriptProperties().getProperty('VERSION_HOJA')"), VERSION_ESPERADA);
+});
+
+test('Abonos con columnas reordenadas a mano: marcar una pieza escribe cada dato bajo su cabecera y respeta el orden', () => {
+  const e = entorno({});
+  const ab = e.ss.getSheetByName('Abonos'), p = e.ss.getSheetByName('Piezas');
+  const orden = ['Fecha abono', 'Descripción pieza', 'Matrícula', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia',
+    'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente', 'Clave'];
+  orden.forEach((h, i) => ab.put(1, i + 1, h));
+  e.run('repararFormulas()');
+  assert.deepEqual(orden.map((h, i) => ab.valor(1, i + 1)), orden, 'reparar no vuelve a poner el orden por defecto');
+  p.put(2, 1, true); p.put(2, 3, '123456'); p.put(2, 4, 'REF9'); p.put(2, 5, 'FILTRO'); p.put(2, 10, 10);
+  e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
+  const fila = Object.fromEntries(orden.map((h, i) => [h, ab.valor(2, i + 1)]));
+  assert.equal(fila['Estado'], 'Sin abonar'); assert.equal(fila['Nº albarán'], '123456'); assert.equal(fila['Referencia'], 'REF9');
+  assert.equal(fila['Precio sin IVA'], 10); assert.match(fila['Clave'], /^P\|123456\|REF9\|1$/);
+  assert.equal(ab.cell(2, 5).f, '=ROUND($D2*(1+IVA),2)');
+  e.run('actualizarAbonos()');
+  assert.equal(ab.valor(3, 2), '', 'no se duplica');
 });
 
 test('Trabajos: con una fila en blanco entre el panel y la cabecera, reparar y editar siguen funcionando', () => {
@@ -590,6 +603,28 @@ test('factura RM: guarda líneas, detecta abonos (Abonada / Sin solicitar) y avi
   e.run('procesarFacturasRM()');
   assert.equal(tabla(e, 'Líneas RM').length, 4);
   assert.equal(tabla(e, 'Facturas RM').length, 1);
+});
+
+test('Abonos: marcar en Piezas una pieza cuyo abono ya llegó en la factura completa su fila "Sin solicitar" (no añade otra arriba)', () => {
+  const e = entorno({ 'fra.pdf': facturaRaw() });
+  ['FRA', 'FRAP', 'ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
+  const p = e.ss.getSheetByName('Piezas'), ab = e.ss.getSheetByName('Abonos');
+  p.put(2, 1, false); p.put(2, 3, '443645'); p.put(2, 4, 'VARTAA8'); p.put(2, 5, 'A8 AGM'); p.put(2, 10, 130.10);  // sin marcar todavía
+  subir(e, ['fra.pdf'], 'FRA');
+  e.run('procesarFacturasRM()');
+  const filas = () => [2, 3, 4, 5].map(r => ({ ref: ab.valor(r, 7), estado: ab.valor(r, 5), nota: ab.valor(r, 11), clave: ab.valor(r, 13) })).filter(f => f.estado);
+  const antes = filas();
+  assert.equal(antes.find(f => f.ref === 'VARTAA8').estado, 'Sin solicitar');
+  p.put(2, 1, true);
+  e.ctx.__r = p.getRange(2, 1); e.run('alEditar({ range: __r })');
+  const despues = filas();
+  assert.equal(despues.length, antes.length, 'no se añade ninguna fila');
+  const f = despues.find(x => x.ref === 'VARTAA8');
+  assert.equal(f.estado, 'Abonada');
+  assert.equal(f.nota, '', 'fuera la nota "no tiene Reembolso marcado"');
+  assert.match(f.clave, /^A\|446334\|443645\|VARTAA8\|1;P\|443645\|VARTAA8\|1$/);
+  e.run('actualizarAbonos()');
+  assert.equal(filas().length, antes.length, 'y sigue sin duplicarse');
 });
 
 test('Abonos editable: lo nuevo va arriba y no pisa lo cambiado a mano; borrar una fila desmarca la pieza', () => {

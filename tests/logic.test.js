@@ -209,6 +209,32 @@ test('sincronizarAbonos: una fila de abono borrada no vuelve; una pieza desmarca
   assert.equal(r2.nuevas.length, 1, 'la otra pieza marcada, que faltaba, sí se añade');
 });
 
+test('sincronizarAbonos: marcar una pieza cuyo abono ya está como "Sin solicitar" completa esa fila (no añade otra)', () => {
+  const piezas = piezasEj();
+  const existentes = [{ clave: 'A|446334|443645|VARTAA8|1', estado: 'Sin solicitar', albaran: '443645', ref: 'VARTAA8', sinIva: 130.10,
+    fechaAbono: '2026-09-04', fechaSolicitud: '', factura: 'FCR 00001', nota: 'La pieza existe en Piezas pero no tiene Reembolso marcado' }];
+  const r = L.sincronizarAbonos(existentes, [piezas[0]], piezas, [], new Set(['A|446334|443645|VARTAA8|1']));
+  assert.equal(r.nuevas.length, 0, 'no se duplica');
+  assert.deepEqual(r.cambios, [{ i: 0, v: { clave: 'A|446334|443645|VARTAA8|1;' + piezas[0].clave, estado: 'Abonada', fechaSolicitud: '2026-09-04', nota: '' } }]);
+  // Sin referencia que coincida, vale el mismo albarán e importe
+  const sinRef = [Object.assign({}, existentes[0], { ref: 'OTRA', nota: '' })];
+  const r2 = L.sincronizarAbonos(sinRef, [piezas[0]], piezas, [], new Set());
+  assert.equal(r2.nuevas.length, 0);
+  assert.equal(r2.cambios[0].v.estado, 'Abonada');
+  // Una fila "Abonada" que ya tiene su pieza no se reutiliza para otra
+  const conPieza = [Object.assign({}, existentes[0], { clave: 'P|443645|VARTAA8|9;A|446334|443645|VARTAA8|1', estado: 'Abonada' })];
+  assert.equal(L.sincronizarAbonos(conPieza, [piezas[0]], piezas, [], new Set()).nuevas.length, 1);
+});
+
+test('sincronizarAbonos: una fila sin clave con la misma descripción e importe se adopta (no se duplica en cada sincronización)', () => {
+  const piezas = piezasEj();
+  const existentes = [{ clave: '', estado: 'Sin abonar', albaran: '', ref: '', descripcion: piezas[0].desc, sinIva: 130.1 },
+    { clave: '', estado: 'Sin abonar', albaran: '', ref: '', descripcion: piezas[0].desc, sinIva: 130.1 }];
+  const r = L.sincronizarAbonos(existentes, [piezas[0]], piezas, [], new Set());
+  assert.equal(r.nuevas.length, 0);
+  assert.deepEqual(r.cambios, [{ i: 0, v: { clave: piezas[0].clave, albaran: '443645', referencia: 'VARTAA8', fechaSolicitud: '2026-09-04' } }]);
+});
+
 test('mapaMatriculas y sincronizarAbonos: rellena sólo las matrículas vacías', () => {
   const m = L.mapaMatriculas([['100', ''], ['100', '1234 abc'], ['100', '9999ZZZ'], ['', 'X']]);
   assert.deepEqual(m, { 100: '1234ABC' });

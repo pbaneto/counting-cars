@@ -15,18 +15,29 @@ const PROP_VERSION_ = 'VERSION_HOJA';
  * versión guardada en la hoja impide que vuelva a hacer falta.
  */
 const MIGRACIONES = {
-  // Trabajos sin "Fecha apertura": Mes pasa de fórmula a valor (el mes de esa fecha) y se borra la columna.
-  // Antes era la 2.0.0; se repite como 2.1.0 para la hoja restaurada desde el historial tras la fila en blanco.
-  '2.1.0': () => {
-    const t = leerTabla_(HOJA.TRAB), cF = t.map['Fecha apertura'], cM = t.map['Mes'], n = t.valores.length - t.fc;
-    if (cF) {
-      if (n > 0) t.sh.getRange(t.fc + 1, cM, n, 1).setValues(t.valores.slice(t.fc).map(r => { const iso = aISO_(r[cF - 1]); return [iso ? mesDe(iso) : '']; }));
-      t.sh.deleteColumn(cF);
-    }
-    const ss = ss_(), cfg = leerTabla_(HOJA.CONFIG), f = cfg.filas.find(x => String(x.v['Clave']).trim() === 'DIAS_AVISO_TRABAJO');
-    if (ss.getRangeByName('DIAS_AVISO')) ss.removeNamedRange('DIAS_AVISO');
-    if (f) cfg.sh.deleteRow(f.fila);
-    reiniciarCaches_();
+  // Abonos: en la hoja real se movió "Matrícula" a la columna C y luego el diseño volvió a escribir encima las cabeceras
+  // en el orden por defecto, y las filas nuevas se escribieron en ese orden. Se vuelve al orden de los datos movidos
+  // (cabecera incluida) y se pasan a él las filas escritas en el orden por defecto. Desde 3.0.0 las columnas de Abonos
+  // se buscan por su nombre, así que no puede volver a pasar.
+  '3.0.0': () => {
+    const sh = hoja_(HOJA.ABONOS), ct = ABONOS.cabTabla, n = ct.length, ult = sh.getLastRow();
+    if (ult < 2) return;
+    const vals = sh.getRange(1, 1, ult, n).getValues();
+    const est = x => ESTADOS_ABONO.indexOf(String(x)) >= 0, vacia = r => r.every(x => x === '' || x == null);
+    if (vals[0].join('|') !== ct.join('|') || !vals.slice(1).some(r => est(r[5]) && !est(r[4]))) return;
+    // ct: 0 Fecha abono, 1 Descripción, 2 Precio sin IVA, 3 Precio con IVA, 4 Estado, 5 Nº albarán, 6 Referencia, 7 Matrícula, 8…12 igual
+    const aMovida = r => [r[0], r[1], r[7], r[2], r[3], r[4], r[5], r[6]].concat(r.slice(8));
+    const movida = r => est(r[5]) || (!est(r[4]) && typeof r[2] !== 'number');
+    const filas = vals.slice(1).map((r, i) => {
+      if (vacia(r)) return r;
+      const f = movida(r) ? r.slice() : aMovida(r), fila = i + 2;
+      f[4] = loc_(`=ROUND($D${fila}*(1+IVA),2)`);
+      f[11] = loc_(`=IF($F${fila}="Sin abonar",TODAY()-$I${fila},"")`);
+      return f;
+    });
+    sh.getRange(1, 1, 1, n).setValues([aMovida(ct)]);
+    sh.getRange(2, 1, filas.length, n).setValues(filas);
+    _colsAbonos = null;
   },
 };
 

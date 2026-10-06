@@ -7,11 +7,35 @@
  *      · borra la fila de una pieza que se desmarca en Piezas.
  *    Y al revés: borrar a mano una fila de pieza aquí la desmarca en Piezas (alCambiar / editarAbonos_).
  *    Cada fila lleva sus claves en la columna oculta "Clave" (Logic.js ▸ clavesPiezas / clavesAbonos).
+ *  Las columnas de la tabla se buscan por el nombre de su cabecera: se pueden reordenar a mano (colsAbonos_).
  */
 
-const COL_ABONOS_ = { fechaAbono: 1, descripcion: 2, sinIva: 3, estado: 5, albaran: 6, referencia: 7, matricula: 8, fechaSolicitud: 9, factura: 10, nota: 11, clave: 13 };
-// Columnas que escribe una persona o la sincronización (no las fórmulas D y L): si están todas vacías, la fila se ha borrado.
-const COLS_ENTRADA_ABONOS_ = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11];
+const CAMPOS_ABONOS_ = {
+  fechaAbono: 'Fecha abono', descripcion: 'Descripción pieza', sinIva: 'Precio sin IVA', conIva: 'Precio con IVA', estado: 'Estado',
+  albaran: 'Nº albarán', referencia: 'Referencia', matricula: 'Matrícula', fechaSolicitud: 'Fecha solicitud', factura: 'Factura RM',
+  nota: 'Nota', dias: 'Días pendiente', clave: 'Clave',
+};
+// Campos que escribe una persona o la sincronización (no las fórmulas): si están todos vacíos, la fila se ha borrado.
+const ENTRADAS_ABONOS_ = ['fechaAbono', 'descripcion', 'sinIva', 'estado', 'albaran', 'referencia', 'matricula', 'fechaSolicitud', 'factura', 'nota'];
+
+let _colsAbonos = null;
+/**
+ * {campo: nº de columna} según la cabecera de la tabla (fila 1, columnas A-M). Hoja nueva (cabecera vacía): el orden de
+ * ABONOS.cabTabla. fila1: la cabecera si ya se ha leído.
+ */
+function colsAbonos_(fila1) {
+  if (_colsAbonos) return _colsAbonos;
+  const ct = ABONOS.cabTabla;
+  fila1 = fila1 || hoja_(HOJA.ABONOS).getRange(ABONOS.filaCabTabla, 1, 1, ct.length).getValues()[0];
+  const cab = fila1.every(x => x === '' || x == null) ? ct : fila1.map(x => String(x).trim()), c = {};
+  Object.keys(CAMPOS_ABONOS_).forEach(k => {
+    const i = cab.indexOf(CAMPOS_ABONOS_[k]);
+    if (i < 0) throw new Error(`Falta la columna "${CAMPOS_ABONOS_[k]}" en la tabla de Abonos (columnas A-${colLetra_(ct.length)}). Si la has renombrado o sacado de la tabla, vuelve a ponerla.`);
+    c[k] = i + 1;
+  });
+  return (_colsAbonos = c);
+}
+function letraAbonos_(campo) { return colLetra_(colsAbonos_()[campo]); }
 
 /** escaneados: líneas de albaranes de ABONO recién escaneados (ver abonosEscaneados_), que aún no están en ninguna factura. */
 function sincronizarAbonos_(escaneados) {
@@ -36,7 +60,9 @@ function leerParaAbonos_(tabP, crono) {
   leerTabla_(HOJA.FACT).filas.forEach(f => { fechaFactura[String(f.v['Nº factura']).trim()] = aISO_(f.v['Fecha factura']); });
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ultFila = sh.getLastRow(), maxFilas = sh.getMaxRows();
   // getLastRow cuenta también el resumen de la derecha: se quitan las filas vacías del final de la tabla.
-  const tabla = ultFila >= tb ? sh.getRange(tb, 1, ultFila - tb + 1, ncol).getValues() : [];
+  const leido = sh.getRange(ABONOS.filaCabTabla, 1, Math.max(ultFila, tb) - ABONOS.filaCabTabla + 1, ncol).getValues();
+  colsAbonos_(leido[0]);
+  const tabla = leido.slice(tb - ABONOS.filaCabTabla);
   while (tabla.length && tabla[tabla.length - 1].every(x => x === '' || x == null)) tabla.pop();
   const shC = ss_().getSheetByName(HOJA.CLAVES), ultC = shC ? shC.getLastRow() : 0;
   const vistas = new Set(ultC ? shC.getRange(1, 1, ultC, 1).getValues().map(r => String(r[0])).filter(Boolean) : []);
@@ -94,13 +120,16 @@ function escribirAbonos_(d, filasDesmarcadas, escaneados) {
   const deFacturas = abonosDeLineas_(tabL, plateDe, d.fechaFactura);
   const abonos = deFacturas.concat(clavesAbonos((escaneados || []).map(a => Object.assign({}, a, { matricula: plateDe[normAlbaran(a.albaranOrigen)] || '' }))));
 
-  const existentes = d.tabla.map(r => ({ clave: r[12], fechaAbono: r[0], descripcion: r[1], sinIva: r[2], estado: r[4], albaran: r[5], ref: r[6], matricula: r[7], factura: r[9], nota: r[10] }));
+  const c = colsAbonos_(), g = (r, k) => r[c[k] - 1];
+  const existentes = d.tabla.map(r => ({ clave: g(r, 'clave'), fechaAbono: g(r, 'fechaAbono'), descripcion: g(r, 'descripcion'), sinIva: g(r, 'sinIva'),
+    estado: g(r, 'estado'), albaran: g(r, 'albaran'), ref: g(r, 'referencia'), matricula: g(r, 'matricula'), fechaSolicitud: g(r, 'fechaSolicitud'),
+    factura: g(r, 'factura'), nota: g(r, 'nota') }));
   const res = sincronizarAbonos(existentes, marcadas, todas, abonos, d.vistas, quitar, { matriculas: plateDe });
   crono.paso(`cruce (${abonos.length} abonos)`);
 
   // 1) Celdas vacías de filas existentes (antes de borrar o insertar: los índices aún valen).
   res.cambios.forEach(({ i, v }) => Object.keys(v).forEach(k => {
-    sh.getRange(tb + i, COL_ABONOS_[k]).setValue(k === 'fechaAbono' ? aFecha_(v[k]) : v[k]);
+    sh.getRange(tb + i, c[k]).setValue(k === 'fechaAbono' || k === 'fechaSolicitud' ? aFecha_(v[k]) : v[k]);
   }));
   // 2) Filas de piezas desmarcadas, de abajo arriba. Sólo las celdas de la tabla (A-M): una fila entera se llevaría
   //    también la fila del resumen que hay a la derecha.
@@ -137,9 +166,13 @@ function abonosDeLineas_(tabL, plateDe, fechaFactura) {
 }
 
 function filaAbono_(f, r) {
+  const c = colsAbonos_(), L = letraAbonos_, fila = new Array(ABONOS.cabTabla.length).fill('');
   // "Precio con IVA" y "Días pendiente" son fórmulas: la primera usa el IVA de Config y la segunda se actualiza sola cada día.
-  return [aFecha_(f.fechaAbono), f.descripcion, f.sinIva, loc_(`=ROUND($C${r}*(1+IVA),2)`), f.estado, f.albaran, f.referencia, f.matricula,
-    aFecha_(f.fechaSolicitud), f.factura, f.nota, loc_(`=IF($E${r}="Sin abonar",TODAY()-$I${r},"")`), f.clave];
+  const v = { fechaAbono: aFecha_(f.fechaAbono), descripcion: f.descripcion, sinIva: f.sinIva, conIva: loc_(`=ROUND($${L('sinIva')}${r}*(1+IVA),2)`),
+    estado: f.estado, albaran: f.albaran, referencia: f.referencia, matricula: f.matricula, fechaSolicitud: aFecha_(f.fechaSolicitud),
+    factura: f.factura, nota: f.nota, dias: loc_(`=IF($${L('estado')}${r}="Sin abonar",TODAY()-$${L('fechaSolicitud')}${r},"")`), clave: f.clave };
+  Object.keys(v).forEach(k => { fila[c[k] - 1] = v[k]; });
+  return fila;
 }
 
 /** Claves de abonos de factura ya añadidos alguna vez: si se borra su fila a mano, no vuelve a aparecer. */
@@ -167,9 +200,9 @@ function abonosEscaneados_(doc, hoy) {
  */
 function desmarcarPiezasBorradas_() {
   if (recolocarTablaAbonos_()) montarAbonos_();
-  const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ult = sh.getLastRow();
+  const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ult = sh.getLastRow();
   const enTabla = new Set();
-  if (ult >= tb) sh.getRange(tb, ncol, ult - tb + 1, 1).getValues().forEach(r => partirClaves(r[0]).forEach(k => enTabla.add(k)));
+  if (ult >= tb) sh.getRange(tb, colsAbonos_().clave, ult - tb + 1, 1).getValues().forEach(r => partirClaves(r[0]).forEach(k => enTabla.add(k)));
   const tabP = leerTabla_(HOJA.PIEZAS);
   const { todas } = piezasParaAbonos_(tabP, leerTabla_(HOJA.ALB), null);
   const quitar = todas.filter(p => p.marcada && !enTabla.has(p.clave));
@@ -193,8 +226,8 @@ function editarAbonos_(r0, n, c0) {
   const desde = Math.max(r0, tb), hasta = r0 + n, ult = sh.getLastRow();
   if (hasta <= desde) return;
   const vals = sh.getRange(desde, 1, hasta - desde, ncol).getValues();
-  const vacias = [];
-  vals.forEach((v, i) => { if (COLS_ENTRADA_ABONOS_.every(c => v[c - 1] === '' || v[c - 1] == null)) vacias.push(desde + i); });
+  const cols = ENTRADAS_ABONOS_.map(k => colsAbonos_()[k]), vacias = [];
+  vals.forEach((v, i) => { if (cols.every(c => v[c - 1] === '' || v[c - 1] == null)) vacias.push(desde + i); });
   if (!vacias.length) return;
   // Lo que queda por debajo de la última fila con algo ya está en blanco. De abajo arriba para no mover las siguientes.
   vacias.filter(r => r <= ult).sort((a, b) => b - a).forEach(r => sh.getRange(r, 1, 1, ncol).deleteCells(SpreadsheetApp.Dimension.ROWS));
@@ -211,10 +244,10 @@ function recolocarTablaAbonos_() {
   const n = Math.min(Math.max(sh.getLastRow(), 1), 80);
   const vals = sh.getRange(1, 1, n, ct.length).getValues();
   const vacia = r => r.every(x => x === '' || x == null);
-  const idx = vals.findIndex(r => r[0] === ct[0] && r[1] === ct[1]);
+  const idx = vals.findIndex(r => r.indexOf(CAMPOS_ABONOS_.fechaAbono) >= 0 && r.indexOf(CAMPOS_ABONOS_.clave) >= 0);
   if (idx < 0) {
     if (vals.every(vacia)) return false;  // hoja nueva: aún no hay tabla
-    throw new Error('No encuentro la cabecera de la tabla de Abonos ("Fecha abono", "Descripción pieza"). ' +
+    throw new Error('No encuentro la cabecera de la tabla de Abonos ("Fecha abono" … "Clave" en la fila 1). ' +
       'Si se ha borrado, deshazlo (Ctrl+Z) o recupera la fila desde Archivo ▸ Historial de versiones.');
   }
   const real = idx + 1;

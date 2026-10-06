@@ -214,12 +214,14 @@ function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x =>
 
 /**
  * Sincroniza la tabla EDITABLE de Abonos sin tocar lo que ya hay escrito:
- *  - pieza marcada que no está en la tabla → fila nueva "Sin abonar";
+ *  - pieza marcada que no está en la tabla: si ya hay una fila de su abono sin pieza (mismo albarán + referencia, o mismo
+ *    importe), se le añade la pieza y pasa a "Abonada"; si hay una fila sin clave con la misma descripción e importe
+ *    (escrita a mano o de una versión anterior), se adopta; si no, fila nueva "Sin abonar";
  *  - línea de abono nueva (ni en la tabla ni vista antes) → rellena la fila "Sin abonar" de su pieza (mismo albarán +
  *    referencia, o mismo importe) y la pasa a "Abonada"; si no hay pieza pedida, fila nueva "Sin solicitar";
  *  - quitar: claves P de piezas desmarcadas → se borran sus filas.
  * De las filas existentes sólo se rellenan celdas VACÍAS, y el Estado sólo cambia si seguía en "Sin abonar".
- *  existentes: filas de la tabla, en orden {clave, estado, albaran, ref, sinIva, fechaAbono, factura, nota}
+ *  existentes: filas de la tabla, en orden {clave, estado, albaran, ref, descripcion, sinIva, fechaAbono, fechaSolicitud, factura, nota}
  *  marcadas / todasPiezas: {clave, albaran, ref, desc, sinIva, fechaReembolso, matricula}
  *  abonos: {clave, factura, fecha, albaranAbono, albaranOrigen, ref, desc, importe, matricula}: de las facturas RM (con
  *    factura) y de albaranes de abono escaneados (sin factura). Si una línea está en los dos, cuenta la de la factura.
@@ -237,10 +239,34 @@ function sincronizarAbonos(existentes, marcadas, todasPiezas, abonos, vistas, qu
     if (ks.some(k => quitar.has(k))) { borrar.push(i); return; }
     ks.forEach(k => enTabla.add(k));
   });
-  const nuevas = [];
+  const nuevas = [], adoptadas = new Set();
+  const libre = (f, i) => borrar.indexOf(i) < 0 && !adoptadas.has(i);
+  const mismoImporte = (x, y) => Math.abs(Math.abs(parseNumber(x)) - Math.abs(parseNumber(y))) < 0.02;
   marcadas.forEach(p => {
     if (enTabla.has(p.clave) || quitar.has(p.clave)) return;
     enTabla.add(p.clave);
+    const ks = f => partirClaves(f.clave);
+    const deSuAbono = (porRef) => existentes.findIndex((f, i) => libre(f, i) && ks(f).length && ks(f).every(k => k.indexOf('A|') === 0) &&
+      normAlbaran(f.albaran) === normAlbaran(p.albaran) && (porRef ? refKey(p.ref) && refKey(f.ref) === refKey(p.ref) : mismoImporte(f.sinIva, p.sinIva)));
+    let i = deSuAbono(true);
+    if (i < 0) i = deSuAbono(false);
+    if (i >= 0) {
+      const f = existentes[i], v = { clave: ks(f).concat(p.clave).join(';') };
+      if (f.estado === 'Sin solicitar') v.estado = 'Abonada';
+      if (!f.fechaSolicitud && p.fechaReembolso) v.fechaSolicitud = p.fechaReembolso;
+      if (/no tiene Reembolso marcado/.test(String(f.nota || ''))) v.nota = '';
+      adoptadas.add(i); cambios[i] = Object.assign(cambios[i] || {}, v);
+      return;
+    }
+    i = existentes.findIndex((f, j) => libre(f, j) && !ks(f).length && refKey(f.descripcion) && refKey(f.descripcion) === refKey(p.desc) && mismoImporte(f.sinIva, p.sinIva));
+    if (i >= 0) {
+      const f = existentes[i], v = { clave: p.clave };
+      if (!String(f.albaran || '').trim()) v.albaran = normAlbaran(p.albaran);
+      if (!String(f.ref || '').trim() && p.ref) v.referencia = p.ref;
+      if (!f.fechaSolicitud && p.fechaReembolso) v.fechaSolicitud = p.fechaReembolso;
+      adoptadas.add(i); cambios[i] = Object.assign(cambios[i] || {}, v);
+      return;
+    }
     nuevas.push({ clave: p.clave, fechaAbono: '', descripcion: p.desc, sinIva: round2(parseNumber(p.sinIva)), estado: 'Sin abonar',
       albaran: normAlbaran(p.albaran), referencia: p.ref || '', matricula: p.matricula || '', fechaSolicitud: p.fechaReembolso || '', factura: '', nota: '' });
   });

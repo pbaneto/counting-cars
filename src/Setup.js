@@ -53,17 +53,17 @@ function fijarFilas_(sh, n) { if (sh.getFrozenRows() < n) sh.setFrozenRows(n); }
 
 /**
  * Reglas de color: se cambian las nuestras (las que tienen la misma fórmula, sin contar números de fila) y se
- * conservan las que haya añadido alguien a mano.
+ * conservan las que haya añadido alguien a mano. esNuestra(fórmula): para reconocer como nuestras otras más (opcional).
  */
-function ponerReglas_(sh, reglas) {
+function ponerReglas_(sh, reglas, esNuestra) {
   const norm = f => String(f || '').replace(/(\$?[A-Z]{1,3})\$?\d+/g, '$1').replace(/\s+/g, '').toUpperCase();
   const nuestras = new Set(reglas.map(r => norm(r.formula)));
   const formulaDe = r => { try { const c = r.getBooleanCondition(); return c ? c.getCriteriaValues()[0] : ''; } catch (e) { return ''; } };
-  const ajenas = (sh.getConditionalFormatRules() || []).filter(r => !nuestras.has(norm(formulaDe(r))));
+  const ajenas = (sh.getConditionalFormatRules() || []).filter(r => !nuestras.has(norm(formulaDe(r))) && !(esNuestra && esNuestra(String(formulaDe(r)))));
   sh.setConditionalFormatRules(ajenas.concat(reglas.map(r => r.regla)));
 }
 
-function reiniciarCaches_() { _ss = null; _cfg = null; _letras = {}; _pyc = null; _filaCab = {}; }
+function reiniciarCaches_() { _ss = null; _cfg = null; _letras = {}; _pyc = null; _filaCab = {}; _colsAbonos = null; }
 
 function crearHojas_() {
   const ss = ss_();
@@ -446,7 +446,7 @@ function montarResumenAbonos_() {
   const A = `$${colLetra_(c0 + 1)}$1`;  // celda del año (ABONOS.celdaAnio, P1) en absoluto
 
   sh.getRange(ABONOS.filaCabResumen, c0, 1, cab.length).setValues([cab]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
-  const col = h => `$${h}:$${h}`, ESTADO_ = col('E'), CONIVA_ = col('D'), DIAS_ = col('L'), FECHA_ = col('A');
+  const col = k => `$${letraAbonos_(k)}:$${letraAbonos_(k)}`, ESTADO_ = col('estado'), CONIVA_ = col('conIva'), DIAS_ = col('dias'), FECHA_ = col('fechaAbono');
   for (let k = 0; k < ABONOS.filas; k++) {
     const r = ini + k, mes = Math.floor(k / 2) + 1, q = (k % 2) + 1;
     if (q === 1) sh.getRange(r, c0, 2, 1).merge().setValue(MESES[mes - 1]).setVerticalAlignment('middle').setHorizontalAlignment('center').setFontWeight('bold');
@@ -504,17 +504,21 @@ function resumenAbonosEnSuSitio_(sh) {
 function montarTablaAbonos_() {
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ct = ABONOS.cabTabla, fin = finTablaAbonos_(sh), maxRows = sh.getMaxRows();
   if (maxRows < fin) sh.insertRowsAfter(maxRows, fin - maxRows);
-  sh.getRange(ABONOS.filaCabTabla, 1, 1, ct.length).setValues([ct]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
-  const n = fin - tb + 1;
+  // La cabecera sólo se escribe en una hoja nueva: si alguien ha reordenado las columnas, se respeta (colsAbonos_).
+  const cabRango = sh.getRange(ABONOS.filaCabTabla, 1, 1, ct.length);
+  if (cabRango.getValues()[0].every(x => x === '' || x == null)) cabRango.setValues([ct]);
+  _colsAbonos = null;
+  const c = colsAbonos_();
+  cabRango.setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
+  const n = fin - tb + 1, col = k => sh.getRange(tb, c[k], n, 1);
   sh.getRange(tb, 1, n, ct.length).clearDataValidations();
-  sh.getRange(tb, 1, n, 1).setNumberFormat(FMT.fecha);
-  sh.getRange(tb, 3, n, 2).setNumberFormat(FMT.euro);
-  sh.getRange(tb, 5, n, 1).setDataValidation(listaValidacion_(ESTADOS_ABONO));
-  sh.getRange(tb, 6, n, 1).setNumberFormat(FMT.texto);
-  sh.getRange(tb, 9, n, 1).setNumberFormat(FMT.fecha);
-  sh.getRange(tb, 12, n, 1).setNumberFormat('0');
+  ['fechaAbono', 'fechaSolicitud'].forEach(k => col(k).setNumberFormat(FMT.fecha));
+  ['sinIva', 'conIva'].forEach(k => col(k).setNumberFormat(FMT.euro));
+  col('estado').setDataValidation(listaValidacion_(ESTADOS_ABONO));
+  col('albaran').setNumberFormat(FMT.texto);
+  col('dias').setNumberFormat('0');
   [90, 260, 130, 130, 130, 150, 110, 110, 120, 110, 260, 100].forEach((w, i) => ancho_(sh, i + 1, w));
-  sh.hideColumns(ct.length);  // "Clave": une cada fila con su pieza / línea de abono; no se toca a mano
+  sh.hideColumns(c.clave);  // "Clave": une cada fila con su pieza / línea de abono; no se toca a mano
   // Filtro que incluye la columna oculta: ordenar con él mueve la clave junto con su fila.
   if (!sh.getFilter()) sh.getRange(ABONOS.filaCabTabla, 1, fin - ABONOS.filaCabTabla + 1, ct.length).createFilter();
   const shC = ss_().getSheetByName(HOJA.CLAVES);
@@ -525,13 +529,16 @@ function montarTablaAbonos_() {
 
 function reglasAbonos_(sh) {
   const tb = ABONOS.filaTabla, fin = finTablaAbonos_(sh), pc = ABONOS.panelCol, pv = pc + 1, UMBRAL_ = `$${colLetra_(pv)}$4`;
+  const E = letraAbonos_('estado'), D = letraAbonos_('dias'), T = `A${tb}:${colLetra_(ABONOS.cabTabla.length)}${fin}`;
+  // Las reglas por Estado son nuestras aunque apunten a otra columna (p. ej. tras mover columnas): se cambian todas.
+  const deEstado = f => ESTADOS_ABONO.some(e => f.indexOf(`="${e}"`) >= 0);
   ponerReglas_(sh, [
     regla_(sh, `${colLetra_(pc)}5:${colLetra_(pv)}5`, `=${colLetra_(pv)}5>0`, COLORES.naranja),
-    regla_(sh, `A${tb}:L${fin}`, `=AND($E${tb}="Sin abonar",$L${tb}>${UMBRAL_})`, COLORES.naranja),
-    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Abonada"`, COLORES.verde),
-    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin abonar"`, COLORES.rojo),
-    regla_(sh, `A${tb}:L${fin}`, `=$E${tb}="Sin solicitar"`, COLORES.amarillo),
-  ]);
+    regla_(sh, T, `=AND($${E}${tb}="Sin abonar",$${D}${tb}>${UMBRAL_})`, COLORES.naranja),
+    regla_(sh, T, `=$${E}${tb}="Abonada"`, COLORES.verde),
+    regla_(sh, T, `=$${E}${tb}="Sin abonar"`, COLORES.rojo),
+    regla_(sh, T, `=$${E}${tb}="Sin solicitar"`, COLORES.amarillo),
+  ], deEstado);
 }
 
 function instalarTriggers_() {
