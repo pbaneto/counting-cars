@@ -88,7 +88,7 @@ function contextoAlbaranes_() {
   const ult = alb.sh.getLastRow();
   if (ult > 1) alb.sh.getRange(2, alb.map['Ver PDF'], ult - 1, 1).getFormulas().forEach(r => { const id = idDeEnlace_(r[0]); if (id) idsPdf.add(id); });
   return { alb, trab, piezas, idsPdf, iva: cfgNum_('IVA'), hoy: hoyISO_(), tocaAbonos: false, abonosEscaneados: [],
-    coches: new Set(coches.filas.map(f => normPlate(f.v['Matrícula']))) };
+    coches };
 }
 
 /** Devuelve { estado: 'creado' | 'reembolso' | 'duplicado' | 'abono' | 'descuadre' | 'error', motivo }. */
@@ -133,7 +133,7 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
     log_('INFO', 'procesarAlbaranes', `${HOJA.ALB}!${filaAlb}`, `Albarán ${num} vinculado a la fila manual (misma matrícula e importe)`);
   } else {
     const trabajo = doc.matricula ? asignarTrabajo_(ctx.trab, doc.matricula, fecha) : { num: '' };
-    if (doc.matricula && !ctx.coches.has(doc.matricula)) log_('AVISO', 'procesarAlbaranes', ref, `La matrícula ${doc.matricula} no está en Coches`);
+    anadirCoche_(ctx.coches, doc.matricula);
     filaAlb = agregarFilas_(ctx.alb, [{ 'Fecha escaneo': aFecha_(hoy), 'Fecha albarán': aFecha_(fecha), 'Proveedor': doc.proveedor, 'Nº albarán': num,
       'Nº trabajo': trabajo.num, 'Matrícula': doc.matricula, 'Precio con IVA': doc.total, 'Ver PDF': enlacePdf_(archivo), 'Nota escaneo': nota }])[0];
     if (trabajo.num) ponerDesplegableTrabajo_(ctx.alb, filaAlb, ctx.trab, doc.matricula);

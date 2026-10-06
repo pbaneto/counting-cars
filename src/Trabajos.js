@@ -28,3 +28,16 @@ function ponerDesplegableTrabajo_(tabAlb, fila, tabTrab, matricula) {
     .setHelpText('Elige el trabajo de este coche, o NUEVO para abrir uno nuevo.').build();
   tabAlb.sh.getRange(fila, tabAlb.map['Nº trabajo']).setDataValidation(regla);
 }
+
+/**
+ * Matrícula que no está en Coches: se añade una fila sólo con la matrícula y el cliente y el coche se rellenan a mano.
+ * tabCoches: la tabla de Coches ya leída (se mantiene al día). Devuelve true si la ha añadido; false si ya estaba o si es
+ * demasiado corta para ser una matrícula.
+ */
+function anadirCoche_(tabCoches, matricula) {
+  const plate = normPlate(matricula);
+  if (plate.length < MATRICULA_LARGO_MIN_COCHE || tabCoches.filas.some(f => normPlate(f.v['Matrícula']) === plate)) return false;
+  agregarFilas_(tabCoches, [{ 'Matrícula': plate }]);
+  log_('INFO', 'anadirCoche', HOJA.COCHES, `Matrícula ${plate} añadida a Coches: falta rellenar el cliente y el coche`);
+  return true;
+}

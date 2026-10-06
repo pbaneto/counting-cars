@@ -82,8 +82,8 @@ function editarAlbaranes_(r0, n, c0, nc) {
   const tab = leerTabla_(HOJA.ALB), hoy = hoyISO_(), ancho = anchoTabla_(tab);
   let trab = null, cochesTab = null;
   // Se carga una sola vez por lote de filas editadas, y sólo si hace falta (alguna fila con matrícula).
-  const coches_ = () => cochesTab || (cochesTab = leerTabla_(HOJA.COCHES).filas.map(
-    f => ({ plate: normPlate(f.v['Matrícula']), cliente: f.v['Cliente'], coche: f.v['Coche'] })));
+  const tabCoches_ = () => cochesTab || (cochesTab = leerTabla_(HOJA.COCHES));
+  const coches_ = () => tabCoches_().filas.map(f => ({ plate: normPlate(f.v['Matrícula']), cliente: f.v['Cliente'], coche: f.v['Coche'] }));
   for (let r = Math.max(r0, 2); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
     const g = h => vals[tab.map[h] - 1];
@@ -91,9 +91,10 @@ function editarAlbaranes_(r0, n, c0, nc) {
 
     const escrita = normPlate(g('Matrícula'));
     if (String(g('Matrícula')) !== escrita) set('Matrícula', escrita);
-    let plate = escrita;
+    let plate = escrita, ambigua = false;
     if (plate) {
       const res = resolverMatricula(plate, coches_());
+      ambigua = res.tipo === 'varias';
       if (res.tipo === 'unica') {
         plate = res.candidatos[0].plate;
         set('Matrícula', plate);
@@ -128,7 +129,8 @@ function editarAlbaranes_(r0, n, c0, nc) {
       ponerDesplegableTrabajo_(tab, r, trab, plate);
       log_('INFO', 'alEditar', `${HOJA.ALB}!${r}`, `Trabajo ${num2} asignado a ${plate}`);
     }
-    if (!coches_().some(c => c.plate === plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
+    if (!ambigua && anadirCoche_(tabCoches_(), plate)) toast_(`${plate} añadida a la pestaña Coches: rellena allí el cliente y el coche.`, '🚗 Coche nuevo', 8);
+    else if (!tabCoches_().filas.some(f => normPlate(f.v['Matrícula']) === plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
   }
 }
 
@@ -152,8 +154,9 @@ function editarTrabajos_(r0, n, c0, nc) {
     // Mes y Quincena: se rellenan solos con la fecha de hoy sólo si están vacíos (después se pueden cambiar a mano).
     if (g('Mes') === '') set('Mes', mesDe(hoy));
     if (g('Quincena') === '') set('Quincena', quincenaDe(hoy));
-    coches = coches || new Set(leerTabla_(HOJA.COCHES).filas.map(f => normPlate(f.v['Matrícula'])));
-    if (!coches.has(plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
+    coches = coches || leerTabla_(HOJA.COCHES);
+    if (anadirCoche_(coches, plate)) toast_(`${plate} añadida a la pestaña Coches: rellena allí el cliente y el coche.`, '🚗 Coche nuevo', 8);
+    else if (!coches.filas.some(f => normPlate(f.v['Matrícula']) === plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
   }
 }
 

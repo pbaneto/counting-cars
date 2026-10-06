@@ -361,6 +361,8 @@ function buscarFilaManual(rows, plate, total) {
 
 /** Bajo este nº de caracteres no se busca por coincidencia parcial: demasiado ambiguo para ser útil. */
 const MATRICULA_LARGO_MIN_BUSQUEDA = 3;
+// Para añadirla sola a Coches: más corta suele ser un trozo o un error de escritura ("4", "DARE").
+const MATRICULA_LARGO_MIN_COCHE = 5;
 
 /**
  * Resuelve lo que se ha escrito en la celda Matrícula contra la lista de coches conocidos, buscando la
@@ -428,6 +430,6 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
-    pickOpenJob, isoValid, daysBetween, quincenaDe, mesDe, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
+    pickOpenJob, isoValid, daysBetween, quincenaDe, mesDe, MATRICULA_LARGO_MIN_COCHE, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
     validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, sincronizarAbonos, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
 }

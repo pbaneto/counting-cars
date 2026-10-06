@@ -498,6 +498,22 @@ test('edición manual en Albaranes: fecha, proveedor y trabajo automáticos; NUE
   assert.equal(tabla(e, 'Trabajos').filter(x => x['Matrícula'] === '1234ABC').length, 2);
 });
 
+test('una matrícula que no está en Coches se añade allí (sólo la matrícula) para rellenar cliente y coche a mano', () => {
+  const e = entorno({});
+  const alb = e.ss.getSheetByName('Albaranes'), trab = e.ss.getSheetByName('Trabajos');
+  const enCoches = p => tabla(e, 'Coches').filter(c => c['Matrícula'] === p);
+  alb.put(10, 8, '9999 xyz'); alb.put(10, 9, 20);
+  e.ctx.__r = alb.getRange(10, 8, 1, 2); e.run('alEditar({ range: __r })');
+  assert.equal(enCoches('9999XYZ').map(c => c['Cliente'] + '|' + c['Coche']).join(), '|', 'añadida, sin cliente ni coche');
+  assert.ok(e.log.toasts.some(t => /9999XYZ añadida a la pestaña Coches/.test(t)));
+  alb.put(11, 8, '9999XYZ'); alb.put(11, 9, 30);
+  e.ctx.__r = alb.getRange(11, 8, 1, 2); e.run('alEditar({ range: __r })');
+  assert.equal(enCoches('9999XYZ').length, 1, 'no se repite');
+  trab.put(7, 4, '8888WWW');
+  e.ctx.__r = trab.getRange(7, 4); e.run('alEditar({ range: __r })');
+  assert.equal(enCoches('8888WWW').length, 1, 'también desde Trabajos');
+});
+
 test('Matrícula en Albaranes: busca por cualquier combinación de letras o dígitos, no sólo al principio', () => {
   const e = entorno({});  // Coches del piloto: 1234ABC, 4321GHJ, 5678DEF
   const alb = e.ss.getSheetByName('Albaranes');
