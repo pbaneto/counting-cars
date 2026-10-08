@@ -17,7 +17,25 @@ const PROP_DISENO_PENDIENTE_ = 'DISENO_PENDIENTE';
  * escritura (oct 2026: la 3.0.0 escribió fórmulas donde había quedado el desplegable de Estado y cortó el diseño). Cuando una ya se ha ejecutado en la hoja real, se borra de aquí en el siguiente cambio: la
  * versión guardada en la hoja impide que vuelva a hacer falta.
  */
-const MIGRACIONES = {};
+const MIGRACIONES = {
+  // Albaranes escaneados el 7 y el 8 de octubre de 2026 que quedaron sin fechas, enlace al PDF ni fórmulas. Los datos (nº
+  // albarán, fecha de escaneo, fecha del albarán, PDF) se han sacado de los PDF y están en src/private.js. Sólo rellena
+  // lo que esté vacío; las fórmulas las vuelve a poner el diseño, que se aplica justo después por cambiar la versión mayor.
+  '4.0.0': () => {
+    if (typeof RECUPERAR_ALBARANES_4_0_0 === 'undefined') return;
+    const alb = leerTabla_(HOJA.ALB), trab = leerTabla_(HOJA.TRAB);
+    RECUPERAR_ALBARANES_4_0_0.forEach(([num, escaneo, fecha, idPdf]) => {
+      const f = alb.filas.find(x => normAlbaran(x.v['Nº albarán']) === num);
+      if (!f) { log_('AVISO', 'migración 4.0.0', num, `No encuentro el albarán ${num} en Albaranes`); return; }
+      const cambios = {};
+      if (!f.v['Fecha escaneo']) cambios['Fecha escaneo'] = aFecha_(escaneo);
+      if (!f.v['Fecha albarán']) cambios['Fecha albarán'] = aFecha_(fecha);
+      if (!f.v['Ver PDF']) cambios['Ver PDF'] = enlacePdfId_(idPdf);
+      actualizarFila_(alb, f.fila, cambios);
+      if (f.v['Nº trabajo'] && f.v['Matrícula']) ponerDesplegableTrabajo_(alb, f.fila, trab, f.v['Matrícula']);
+    });
+  },
+};
 
 /** Pone la hoja al día con el código. forzarDiseno: aplicar el diseño aunque la versión no haya cambiado (menú). */
 function actualizarHoja_(forzarDiseno) {
