@@ -62,8 +62,9 @@ function leerParaAbonos_(tabP, crono) {
   const tabla = leido.slice(tb - ABONOS.filaCabTabla);
   while (tabla.length && tabla[tabla.length - 1].every(x => x === '' || x == null)) tabla.pop();
   loc_('');  // la configuración regional también es una lectura: se guarda ya para escribir las fórmulas luego
+  const desde = aISO_(cfg_('ABONOS_DESDE'));
   crono.paso(`leer Abonos (${tabla.length} filas)`);
-  return { tabP, tabL, tabA, sh, tabla, maxFilas };
+  return { tabP, tabL, tabA, sh, tabla, maxFilas, desde };
 }
 
 /** Piezas de RM (las de proveedor "Otros" no se reclaman), en el formato de informeAbonos. */
@@ -117,7 +118,7 @@ function escribirAbonos_(d) {
   }));
   const nuevos = emparejarAbonos(piezas, abonos);
   nuevos.forEach(({ i, id }) => { abonos[i].idPieza = id; actualizarFila_(tabL, lineas[i].f.fila, { 'ID pieza': id }); });
-  const filas = informeAbonos(piezas, abonos, plateDe);
+  const filas = informeAbonos(piezas, abonos, plateDe, d.desde);
   crono.paso(`cruce (${abonos.length} abonos, ${nuevos.length} emparejados ahora)`);
 
   const valores = filas.map((f, j) => filaAbono_(f, tb + j));

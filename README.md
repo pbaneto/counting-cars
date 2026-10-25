@@ -11,7 +11,7 @@ el resto son fórmulas de la hoja. Diseñado para que sea sencillo de entender y
 | **Albaranes** | Una fila por albarán (escaneado o a mano). Suma su precio al *trabajo* sin pagar de esa matrícula, o abre uno nuevo. |
 | **Trabajos** | Un trabajo = una reparación de un coche. Nº = último dígito + letras + contador (`7853KCC` → `3KCC-1`). Recambios y beneficio salen por fórmula. Puede haber varios trabajos sin pagar del mismo coche. |
 | **Piezas** | Líneas de cada albarán, cada una con un **ID** fijo. El check **Reembolso** resta esa pieza del precio facturable del albarán y del trabajo. **Abonada a mano** (fecha): RM la ha abonado por otra vía. |
-| **Abonos** | **Informe**: se rehace solo desde Piezas y Líneas RM, no se edita. Tabla de piezas pedidas y abonos (`Abonada` / `Abonada (a mano)` / `Sin abonar` / `Sin solicitar`), lo más reciente arriba; a la derecha, cuadre por quincena (albaranes RM ↔ abonado ↔ factura RM). |
+| **Abonos** | **Informe**: se rehace solo desde Piezas y Líneas RM, no se edita. Tabla de piezas pedidas y abonos (`Abonada` / `Abonada (a mano)` / `Sin abonar` / `Sin solicitar`) desde la fecha `ABONOS_DESDE` de Config (lo pendiente sale siempre), lo más reciente arriba; a la derecha, cuadre por quincena (albaranes RM ↔ abonado ↔ factura RM). |
 | **Coches** | Matrícula, cliente y coche (se rellena a mano). |
 | **Resumen** | Ingresos, recambios y beneficio por mes, gastos fijos y gráficos anuales. |
 | *Facturas RM, Líneas RM* | Datos leídos de las facturas quincenales (una fila por línea) y de los albaranes de abono escaneados. En cada abono, **ID pieza** = la pieza abonada (se pone sola; se corrige a mano, `NO` = de ninguna). |

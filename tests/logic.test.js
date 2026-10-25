@@ -165,11 +165,11 @@ const abonosEj = () => [
 ];
 const emparejar = (piezas, abonos) => { L.emparejarAbonos(piezas, abonos).forEach(({ i, id }) => { abonos[i].idPieza = id; }); return abonos; };
 
-test('claves de contenido: estables y distintas para piezas repetidas del mismo albarán', () => {
-  const p = L.clavesPiezas([{ albaran: '1', ref: 'ab-1' }, { albaran: '1', ref: 'AB1' }, { albaran: '1', ref: '', desc: 'Filtro' }]);
-  assert.deepEqual(p.map(x => x.clave), ['P|1|AB1|1', 'P|1|AB1|2', 'P|1|DFILTRO|1']);
-  assert.equal(L.clavesAbonos([{ factura: 'F 1', albaranAbono: '77', albaranOrigen: '9', ref: 'X' }])[0].clave, 'A|77|9|X|1');
-  assert.deepEqual(L.partirClaves(' P|1|A|1 ; A|F|1|A|1 '), ['P|1|A|1', 'A|F|1|A|1']);
+test('clavesAbonos: la misma línea del escaneo y de la factura, aunque el albarán original se lea distinto', () => {
+  const k = a => L.clavesAbonos([a])[0].clave;
+  assert.equal(k({ albaranAbono: '504271', albaranOrigen: '4740419', ref: 'AUTEL 06' }), k({ albaranAbono: '504271', albaranOrigen: '470419', ref: 'AUTEL06' }));
+  assert.deepEqual(L.clavesAbonos([{ albaranAbono: '1', ref: 'X' }, { albaranAbono: '1', ref: 'X' }, { albaranAbono: '1', desc: 'Filtro' }]).map(a => a.clave),
+    ['A|1|X|1', 'A|1|X|2', 'A|1|DFILTRO|1']);
 });
 
 test('emparejarAbonos: mismo albarán y referencia; si no, una pieza pedida con el mismo importe; una pieza, un abono', () => {
@@ -229,6 +229,29 @@ test('informeAbonos: desmarcar una pieza quita su fila; si ya tenía abono, ést
   const sinPieza = L.informeAbonos([], abonos);
   assert.match(sinPieza.find(f => f.referencia === 'VARTAA8').nota, /La pieza 1 ya no está en Piezas/);
   assert.equal(L.informeAbonos([], [Object.assign(abonos[0], { idPieza: 'NO' })])[0].nota, '');
+});
+
+test('emparejarAbonos: RM abona sobre otro albarán, o sin albarán: vale la única pieza pedida con esa referencia, pedida antes', () => {
+  const bomba = { id: 25, albaran: '336950', ref: 'DRI715520576', desc: 'BOMBA DE DIRECCIÓN', sinIva: 147.75, solicitada: true, fechaSolicitud: '2026-09-30' };
+  const sensor = { id: 34, albaran: '489996', ref: 'ERA560020A', desc: 'SENSOR', sinIva: 18.75, solicitada: true, fechaSolicitud: '2026-10-01' };
+  const abonos = [
+    { idPieza: '', fecha: '2026-10-15', albaranOrigen: '332174', ref: 'DRI715520576', importe: -147.75 },
+    { idPieza: '', fecha: '2026-10-15', albaranOrigen: '', ref: 'ERA560020A', importe: -18.75 },
+    { idPieza: '', fecha: '2026-07-31', albaranOrigen: '390518', ref: 'ERA560020A', importe: -18.75 },  // abono de julio: anterior a la petición
+  ];
+  assert.deepEqual(L.emparejarAbonos([bomba, sensor], abonos), [{ i: 0, id: 25 }, { i: 1, id: 34 }]);
+  assert.deepEqual(L.emparejarAbonos([sensor, Object.assign({}, sensor, { id: 35, albaran: '1' })], [abonos[1]]), [], 'dos pedidas con esa referencia: no se adivina');
+  abonos[0].idPieza = 25;
+  assert.match(L.informeAbonos([bomba], [abonos[0]])[0].nota, /RM lo abona sobre el albarán 332174/);
+});
+
+test('informeAbonos: desde una fecha, salvo lo que sigue sin abonar', () => {
+  const piezas = piezasEj();
+  piezas[1].fechaSolicitud = '2026-09-20';
+  const filas = L.informeAbonos(piezas, emparejar(piezas, abonosEj()), {}, '2026-09-05');
+  assert.deepEqual(filas.map(f => [f.estado, f.referencia]), [['Sin abonar', 'DAYCO6PK1090EE'], ['Sin solicitar', 'WALKE80477']]);
+  piezas[1].fechaSolicitud = '2026-08-01';
+  assert.equal(L.informeAbonos(piezas, [], {}, '2026-09-05')[0].estado, 'Sin abonar', 'lo pendiente sale siempre');
 });
 
 test('esMarcaReembolso: sólo una R sola', () => {

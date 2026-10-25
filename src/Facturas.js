@@ -67,7 +67,8 @@ function registrarFactura_(archivo, doc, truncado) {
     const antes = sabido[clave];
     if (antes) sustituidas.add(antes);
     f['ID pieza'] = antes ? antes.v['ID pieza'] : '';
-    f['Fecha abono'] = (antes && antes.v['Fecha abono']) || fechaFactura;
+    // Escaneado antes sin fecha: la del bloque de la factura, que es la del albarán de abono.
+    f['Fecha abono'] = antes ? antes.v['Fecha abono'] || f['Fecha albarán'] : fechaFactura;
   });
   // Reemplazo idempotente: fuera las líneas anteriores de esta misma factura y los abonos escaneados que ya trae.
   if (sustituidas.size) {

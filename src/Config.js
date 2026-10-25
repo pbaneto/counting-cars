@@ -13,7 +13,7 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '5.0.0';
+const VERSION = '6.0.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', COCHES: 'Coches', RESUMEN: 'Resumen',
@@ -84,6 +84,7 @@ const CONFIG_DEFECTO = [
   ['MODELO_GEMINI', 'gemini-3.5-flash-lite', 'Modelo de Gemini que lee albaranes y facturas'],
   ['IVA', 0.21, 'IVA aplicado a las piezas (0,21 = 21 %)'],
   ['DIAS_AVISO_REEMBOLSO', 45, 'Avisar en Abonos si una pieza pedida lleva más de estos días sin que RM la abone'],
+  ['ABONOS_DESDE', '', 'Abonos sólo enseña lo abonado o pedido desde esta fecha (vacía = todo). Lo pendiente de abonar sale siempre'],
   ['PARALELISMO', 8, 'Nº de PDFs que se envían a Gemini a la vez'],
   ['MAX_ARCHIVOS', 30, 'Máximo de albaranes que se procesan por ejecución (límite de 6 min de Apps Script)'],
   ['CARPETA_ENTRADA', '', 'ID de la carpeta de Drive con los albaranes escaneados'],

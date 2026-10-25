@@ -191,12 +191,10 @@ function periodoFactura(doc) {
 }
 
 /**
- * Claves de contenido:
- *  P|albarán|referencia|n  pieza (n = nº de orden entre las piezas con el mismo albarán y referencia). Sólo la usa la
- *    migración 5.0.0 para leer la tabla de Abonos antigua: desde la 5.0.0 cada pieza tiene un ID fijo.
- *  A|albarán de abono|albarán origen|referencia|n  línea de un albarán de ABONO de RM. La misma clave sale del albarán de
- *    abono escaneado y de la factura quincenal que luego lo incluye (en la factura, el "Nº albarán" del bloque de abono),
- *    así que llegue primero uno u otro, la línea se reconoce y no se duplica.
+ * Clave de una línea de un albarán de ABONO de RM: A|albarán de abono|referencia|n (n = nº de orden entre las líneas
+ * iguales). La misma clave sale del albarán de abono escaneado y de la factura quincenal que luego lo incluye (en la
+ * factura, el "Nº albarán" del bloque de abono), así que llegue primero uno u otro, la línea no se duplica. No lleva el
+ * albarán original: Gemini lo lee mal a veces en el escaneo (4740419 por 470419).
  */
 function ponerClaves(items, prefijo, partes) {
   const vistos = {};
@@ -208,9 +206,7 @@ function ponerClaves(items, prefijo, partes) {
   return items;
 }
 function refODesc_(ref, desc) { return refKey(ref) || 'D' + refKey(desc); }
-function clavesPiezas(piezas) { return ponerClaves(piezas, 'P', p => [normAlbaran(p.albaran), refODesc_(p.ref, p.desc)]); }
-function clavesAbonos(abonos) { return ponerClaves(abonos, 'A', a => [normAlbaran(a.albaranAbono), normAlbaran(a.albaranOrigen), refODesc_(a.ref, a.desc)]); }
-function partirClaves(s) { return String(s == null ? '' : s).split(';').map(x => x.trim()).filter(Boolean); }
+function clavesAbonos(abonos) { return ponerClaves(abonos, 'A', a => [normAlbaran(a.albaranAbono), refODesc_(a.ref, a.desc)]); }
 
 /** "ID pieza" de una línea de abono: "NO" = no corresponde a ninguna pieza (no se empareja sola). */
 const SIN_PIEZA = 'NO';
@@ -218,9 +214,10 @@ function idPiezaDe(v) { const s = String(v == null ? '' : v).trim(); return s.to
 
 /**
  * Empareja cada línea de abono SIN "ID pieza" con su pieza: mismo albarán (el original del abono) y misma referencia;
- * si no, una pieza pedida con el mismo importe. Cada pieza recibe un solo abono. Un ID ya puesto (por el script o a
- * mano) no se cambia nunca, aunque la pieza ya no exista.
- *  piezas: [{id, albaran, ref, sinIva, solicitada}]   abonos: [{idPieza, albaranOrigen, ref, importe, fecha}]
+ * si no, una pieza pedida con el mismo importe; si no, la ÚNICA pieza pedida con esa referencia en otro albarán, pedida
+ * antes del abono (RM a veces abona sobre otro albarán, o sobre ninguno: "NO CODIFICA PUESTO EL ORIGINAL"). Cada pieza
+ * recibe un solo abono. Un ID ya puesto (por el script o a mano) no se cambia nunca, aunque la pieza ya no exista.
+ *  piezas: [{id, albaran, ref, sinIva, solicitada, fechaSolicitud}]   abonos: [{idPieza, albaranOrigen, ref, importe, fecha}]
  * Devuelve [{i (índice en abonos), id}] con los emparejamientos nuevos.
  */
 function emparejarAbonos(piezas, abonos) {
@@ -232,7 +229,11 @@ function emparejarAbonos(piezas, abonos) {
     .forEach(({ a, i }) => {
       const libres = piezas.filter(p => !usadas.has(String(p.id)) && normAlbaran(p.albaran) === normAlbaran(a.albaranOrigen));
       const porRef = libres.filter(p => refKey(a.ref) && refKey(p.ref) === refKey(a.ref));
-      const p = porRef.find(x => x.solicitada) || porRef[0] || libres.find(x => x.solicitada && mismoImporte(x.sinIva, a.importe));
+      let p = porRef.find(x => x.solicitada) || porRef[0] || libres.find(x => x.solicitada && mismoImporte(x.sinIva, a.importe));
+      if (!p && refKey(a.ref) && a.fecha) {
+        const otras = piezas.filter(x => !usadas.has(String(x.id)) && x.solicitada && refKey(x.ref) === refKey(a.ref) && x.fechaSolicitud && x.fechaSolicitud <= a.fecha);
+        if (otras.length === 1) p = otras[0];
+      }
       if (!p) return;
       usadas.add(String(p.id));
       nuevos.push({ i, id: p.id });
@@ -247,9 +248,10 @@ function emparejarAbonos(piezas, abonos) {
  *  piezas: [{id, albaran, ref, desc, sinIva, solicitada, fechaSolicitud, abonadaAMano, matricula}] (sólo las de RM)
  *  abonos: [{idPieza, fecha, factura, albaranOrigen, ref, desc, importe, matricula}]
  *  matriculas: {nº albarán: matrícula} para las filas sin matrícula.
- * Lo más reciente arriba (fecha de abono o, si no hay, de solicitud).
+ *  desde: fecha ISO; las filas anteriores (fecha de abono o, si no hay, de solicitud) no salen, salvo las "Sin abonar".
+ * Lo más reciente arriba.
  */
-function informeAbonos(piezas, abonos, matriculas) {
+function informeAbonos(piezas, abonos, matriculas, desde) {
   matriculas = matriculas || {};
   const porId = {};
   piezas.forEach(p => { porId[String(p.id)] = p; });
@@ -258,12 +260,14 @@ function informeAbonos(piezas, abonos, matriculas) {
   abonos.forEach(a => {
     const id = idPiezaDe(a.idPieza), p = id && id !== SIN_PIEZA ? porId[id] : null;
     const sin = round2(Math.abs(parseNumber(a.importe) || 0));
-    let nota = '';
+    const notas = [];
     if (p && pedida(p)) {
       const pedido = round2(parseNumber(p.sinIva));
-      if (Number.isFinite(pedido) && Math.abs(pedido - sin) > 0.02) nota = `Importe abonado distinto: se pidió ${pedido} sin IVA`;
-    } else if (p) nota = 'La pieza existe en Piezas pero no tiene Reembolso marcado';
-    else if (id && id !== SIN_PIEZA) nota = `La pieza ${id} ya no está en Piezas`;
+      if (Number.isFinite(pedido) && Math.abs(pedido - sin) > 0.02) notas.push(`Importe abonado distinto: se pidió ${pedido} sin IVA`);
+    } else if (p) notas.push('La pieza existe en Piezas pero no tiene Reembolso marcado');
+    else if (id && id !== SIN_PIEZA) notas.push(`La pieza ${id} ya no está en Piezas`);
+    if (p && normAlbaran(a.albaranOrigen) !== normAlbaran(p.albaran)) notas.push(a.albaranOrigen ? `RM lo abona sobre el albarán ${normAlbaran(a.albaranOrigen)}` : 'RM lo abona sin decir el albarán');
+    const nota = notas.join('; ');
     if (p) abonadas.add(String(p.id));
     const albaran = normAlbaran(p ? p.albaran : a.albaranOrigen);
     filas.push({ idPieza: p ? p.id : '', fechaAbono: a.fecha || '', descripcion: (p && p.desc) || a.desc || '', sinIva: sin,
@@ -279,7 +283,7 @@ function informeAbonos(piezas, abonos, matriculas) {
   });
   // Misma fecha: lo que va después en Piezas o en Líneas RM (lo último que se ha añadido) va antes.
   const fecha = f => f.fechaAbono || f.fechaSolicitud || '';
-  return filas.map((f, i) => ({ f, i })).sort((x, y) => fecha(y.f).localeCompare(fecha(x.f)) || y.i - x.i).map(x => x.f);
+  return filas.map((f, i) => ({ f, i })).filter(({ f }) => !desde || f.estado === 'Sin abonar' || !fecha(f) || fecha(f) >= desde).sort((x, y) => fecha(y.f).localeCompare(fecha(x.f)) || y.i - x.i).map(x => x.f);
 }
 
 /**
@@ -390,5 +394,5 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, isoValid, daysBetween, quincenaDe, mesDe, MATRICULA_LARGO_MIN_COCHE, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
-    validarFactura, periodoFactura, clavesPiezas, clavesAbonos, partirClaves, SIN_PIEZA, idPiezaDe, emparejarAbonos, informeAbonos, esMarcaReembolso, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
+    validarFactura, periodoFactura, clavesAbonos, SIN_PIEZA, idPiezaDe, emparejarAbonos, informeAbonos, esMarcaReembolso, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
 }

@@ -792,54 +792,32 @@ test('Abonos: tabla arriba y resumen a la derecha; filas insertadas encima se qu
   assert.equal(ab.valor(3, 15), 'Mes'); assert.equal(ab.valor(4, 16), 1);
 });
 
-test('migración 5.0.0: la tabla editable de Abonos pasa a Piezas y Líneas RM y se rehace como informe', () => {
+test('migración 6.0.0: Piezas y Abonos empiezan en octubre (las piezas pedidas de antes se quedan)', () => {
   const e = entorno({});
-  const p = e.ss.getSheetByName('Piezas'), l = e.ss.getSheetByName('Líneas RM'), ab = e.ss.getSheetByName('Abonos'), fr = e.ss.getSheetByName('Facturas RM');
-  const fecha = iso => e.run(`aFecha_('${iso}')`), iso = x => e.run(`aISO_(new Date(${+x}))`);
-  // La hoja como estaba en la 4.0.0
-  p.deleteColumn(17); p.deleteColumn(13);
-  l.put(1, 14, ''); l.put(1, 15, '');
-  ab.put(1, 13, 'Clave');
-  for (let r = 2; r <= 20; r++) ab.validaciones.set(r + ',5', { lista: ESTADOS });
-  e.ss.insertSheet('Abonos (claves)');
-  e.props.VERSION_HOJA = '4.0.0';
-  [['443645', 'VARTAA8', 'A8 AGM', 130.10, true], ['200', 'BBB', 'Pieza B', 20, true], ['439139', 'WALKE80477', 'CLAMP', 6.79, false]].forEach(([alb, ref, desc, precio, marcada], k) => {
-    p.put(2 + k, 1, marcada); p.put(2 + k, 3, alb); p.put(2 + k, 4, ref); p.put(2 + k, 5, desc); p.put(2 + k, 10, precio);
-    if (marcada) p.put(2 + k, 12, fecha('2026-09-01'));
+  const alb = e.ss.getSheetByName('Albaranes'), p = e.ss.getSheetByName('Piezas'), l = e.ss.getSheetByName('Líneas RM'), ab = e.ss.getSheetByName('Abonos');
+  const fecha = iso => e.run(`aFecha_('${iso}')`);
+  [['400', '2026-09-20'], ['497296', '2026-02-10'], ['500', '2026-10-05']].forEach(([n, f], k) => {
+    alb.put(10 + k, 2, fecha(f)); alb.put(10 + k, 5, 'RM'); alb.put(10 + k, 6, n); alb.put(10 + k, 8, '1234ABC'); alb.put(10 + k, 9, 100);
   });
-  fr.put(2, 1, 'FCR 1'); fr.put(2, 2, fecha('2026-09-15'));
-  [['446334', '01000443645', 'VARTAA8', -130.10], ['446877', '01000439139', 'WALKE80477', -6.79]].forEach(([alb, orig, ref, imp], k) => {
-    l.put(2 + k, 1, 'FCR 1'); l.put(2 + k, 2, alb); l.put(2 + k, 3, fecha('2026-09-04')); l.put(2 + k, 5, 'Abono'); l.put(2 + k, 6, orig); l.put(2 + k, 7, ref); l.put(2 + k, 12, imp);
+  // [albarán, referencia, pedida]: sólo la de septiembre sin pedir se va
+  [['400', 'SEP-NO', false], ['400', 'SEP-SI', true], ['497296', 'FEB', false], ['500', 'OCT', false], ['999', 'SIN-ALB', false]].forEach(([n, ref, pedida], k) => {
+    p.put(2 + k, 1, pedida); p.put(2 + k, 3, n); p.put(2 + k, 4, ref); p.put(2 + k, 5, 'Pieza ' + ref); p.put(2 + k, 10, 10); p.put(2 + k, 17, k + 1);
+    if (pedida) p.put(2 + k, 12, fecha('2026-09-21'));
   });
-  const vieja = [
-    ['2026-09-04', 'A8 AGM', 130.10, 'Abonada', '443645', 'VARTAA8', 'FCR 1', 'P|443645|VARTAA8|1;A|446334|443645|VARTAA8|1'],
-    ['', 'Pieza B', 20, 'Sin abonar', '200', 'BBB', '', 'P|200|BBB|1'],
-    ['', 'CLAMP', 6.79, 'Sin solicitar', '439139', 'WALKE80477', 'FCR 1', 'A|446877|439139|WALKE80477|1'],  // fecha borrada a mano
-    ['2026-10-07', 'AMORTIGUADOR', 50, 'Sin solicitar', '502134', 'KAY1', '', 'A|504271|502134|KAY1|1'],  // albarán de abono escaneado
-  ];
-  vieja.forEach(([f, desc, precio, estado, alb, ref, fra, clave], k) => {
-    const r = 2 + k;
-    if (f) ab.put(r, 1, fecha(f));
-    ab.put(r, 2, desc); ab.put(r, 3, precio); ab.put(r, 5, estado); ab.put(r, 6, alb); ab.put(r, 7, ref); ab.put(r, 10, fra); ab.put(r, 13, clave);
+  // Abonos: uno de septiembre de la pieza que se va y otro de octubre sin pieza
+  [['F 9', '410', '2026-09-30', 'SEP-NO', 1], ['F 10', '510', '2026-10-10', 'OTRA', '']].forEach(([fra, n, f, ref, id], k) => {
+    l.put(2 + k, 1, fra); l.put(2 + k, 2, n); l.put(2 + k, 3, fecha(f)); l.put(2 + k, 5, 'Abono'); l.put(2 + k, 6, '400'); l.put(2 + k, 7, ref); l.put(2 + k, 12, -7 - k);
+    l.put(2 + k, 14, id); l.put(2 + k, 15, fecha(f));
   });
+  e.props.VERSION_HOJA = '5.0.0';
   e.run('actualizarHoja_(false)');
-  assert.equal(e.props.VERSION_HOJA, '5.0.0');
-  assert.deepEqual([p.valor(1, 13), p.valor(1, 14), p.valor(1, 17)], ['Abonada a mano', 'Proveedor', 'ID']);
-  assert.deepEqual([2, 3, 4].map(r => p.valor(r, 17)), [1, 2, 3]);
-  assert.ok(esFecha(p.valor(2, 12)), 'las fechas de reembolso siguen en su columna');
-  const lineas = plano(tabla(e, 'Líneas RM')).filter(x => x['Tipo'] === 'Abono');
-  assert.deepEqual(lineas.map(x => [x['Nº factura'], x['Referencia'], x['ID pieza']]), [['FCR 1', 'VARTAA8', 1], ['FCR 1', 'WALKE80477', 3], ['', 'KAY1', '']], 'WALKE80477 se empareja solo con su pieza (sin pedir)');
-  assert.deepEqual([2, 3, 4].map(r => iso(l.valor(r, 15))), ['2026-09-04', '2026-09-15', '2026-10-07'], 'fecha de abono: la de Abonos o, si no, la de la factura');
-  assert.deepEqual([l.valor(4, 2), l.valor(4, 6), l.valor(4, 12)], ['504271', '502134', -50]);
-  assert.equal(ab.valor(1, 13), 'ID pieza');
-  assert.ok(!e.ss.getSheetByName('Abonos (claves)'));
-  assert.ok(![2, 3, 4, 5].some(r => ab.validaciones.get(r + ',5')), 'sin desplegable de Estado');
-  const filas = [2, 3, 4, 5, 6].map(r => [ab.valor(r, 7), ab.valor(r, 5), ab.valor(r, 13)]).filter(f => f[0]);
-  assert.deepEqual(filas, [['KAY1', 'Sin solicitar', ''], ['WALKE80477', 'Sin solicitar', 3], ['VARTAA8', 'Abonada', 1], ['BBB', 'Sin abonar', 2]]);
-  // Repetirla no cambia nada
-  e.run(`MIGRACIONES['5.0.0']()`);
-  assert.equal(plano(tabla(e, 'Líneas RM')).filter(x => x['Tipo'] === 'Abono').length, 3);
-  assert.deepEqual([2, 3, 4, 5, 6].map(r => [ab.valor(r, 7), ab.valor(r, 5), ab.valor(r, 13)]).filter(f => f[0]), filas);
+  assert.equal(e.props.VERSION_HOJA, '6.0.0');
+  assert.deepEqual(plano(tabla(e, 'Piezas')).map(x => x['Referencia pieza']), ['SEP-SI', 'FEB', 'OCT', 'SIN-ALB']);
+  assert.equal(e.run(`aISO_(leerTabla_('Albaranes').filas.find(f => f.v['Nº albarán'] === '497296').v['Fecha albarán'])`), '2026-10-02');
+  assert.equal(e.run(`aISO_(cfg_('ABONOS_DESDE'))`), '2026-10-01');
+  assert.equal(l.valor(2, 14), 'NO', 'el abono de la pieza borrada se queda sin pieza (y no se empareja con otra)');
+  assert.deepEqual([2, 3, 4].map(r => [ab.valor(r, 7), ab.valor(r, 5)]).filter(f => f[0]), [['OTRA', 'Sin solicitar'], ['SEP-SI', 'Sin abonar']],
+    'el abono de septiembre ya no sale; la pieza de septiembre pendiente, sí');
 });
 
 test('diagnóstico lista problemas con enlaces', () => {
