@@ -1,4 +1,4 @@
-/** Facturas quincenales de RM: leer con Gemini, validar el IVA, guardar cabecera + líneas y añadir sus abonos a Abonos. */
+/** Facturas quincenales de RM: leer con Gemini, validar el IVA, guardar cabecera + líneas (sus abonos salen en Abonos). */
 
 function procesarFacturasRM() {
   ejecutar_('procesarFacturasRM', () => conBloqueo_(10, () => {
@@ -20,7 +20,7 @@ function procesarFacturasRM() {
         lineas.push(`${res.numero} (${MESES[res.periodo.month - 1]} quincena ${res.periodo.quincena}): ${res.estado}`);
       } catch (e) { log_('ERROR', 'procesarFacturasRM', nombre, (e && e.stack) || e); lineas.push(`${nombre}: error, mira Registro`); }
     });
-    sincronizarAbonos_();
+    actualizarInformeAbonos_();
     avisar_(lineas.join('\n'), 'Facturas RM');
   }));
 }
@@ -35,14 +35,15 @@ function registrarFactura_(archivo, doc, truncado) {
   const per = periodoFactura(doc);
   const estado = v.warnings.length ? '⚠ ' + v.warnings.join('; ') : 'OK';
 
-  // Reemplazo idempotente: quitar las líneas anteriores de esta misma factura.
   const tabL = leerTabla_(HOJA.LINEAS);
-  const previas = tabL.filas.filter(f => String(f.v['Nº factura']).trim() === doc.numero_factura);
-  if (previas.length) {
-    const resto = tabL.filas.filter(f => String(f.v['Nº factura']).trim() !== doc.numero_factura).map(f => f.v);
-    vaciarTabla_(tabL);
-    agregarFilas_(tabL, resto);
-  }
+  // Lo que ya se sabía de cada línea de abono (su pieza y su fecha de abono) pasa a la línea nueva con la misma clave: de
+  // esta misma factura si se procesa otra vez, o de su albarán de abono escaneado antes, que deja de estar suelto.
+  const sabido = {}, sustituidas = new Set();
+  lineasAbono_(tabL).forEach(({ f, clave }) => {
+    const fra = String(f.v['Nº factura']).trim();
+    if (fra === doc.numero_factura || fra === '') sabido[clave] = f;
+  });
+  tabL.filas.forEach(f => { if (String(f.v['Nº factura']).trim() === doc.numero_factura) sustituidas.add(f); });
   // Los bloques de abono traen "MATRICULA:" vacía: se pone la del albarán original (de esta factura, de otra ya
   // procesada o de la pestaña Albaranes). Si el original tampoco la tiene, se queda vacía.
   const matriculaDe = mapaMatriculas(doc.albaranes.filter(a => !a.es_abono).map(a => [a.numero_albaran, a.matricula])
@@ -60,6 +61,25 @@ function registrarFactura_(archivo, doc, truncado) {
       'Descuento': l.descuento_pct == null ? '' : l.descuento_pct / 100, 'Importe sin IVA': l.importe == null ? 0 : l.importe,
     }));
   });
+  const fechaFactura = aFecha_(doc.fecha_factura);
+  clavesAbonos(filas.filter(f => f['Tipo'] === 'Abono').map(f => ({ f, albaranAbono: normAlbaran(f['Nº albarán']), albaranOrigen: albaranOrigen(f['Albarán origen']),
+    ref: f['Referencia'], desc: f['Descripción'] }))).forEach(({ f, clave }) => {
+    const antes = sabido[clave];
+    if (antes) sustituidas.add(antes);
+    f['ID pieza'] = antes ? antes.v['ID pieza'] : '';
+    f['Fecha abono'] = (antes && antes.v['Fecha abono']) || fechaFactura;
+  });
+  // Reemplazo idempotente: fuera las líneas anteriores de esta misma factura y los abonos escaneados que ya trae.
+  if (sustituidas.size) {
+    // Sin las columnas de fórmula: agregarFilas_ las vuelve a poner (con su valor leído quedarían fijas).
+    const resto = tabL.filas.filter(f => !sustituidas.has(f)).map(f => {
+      const v = Object.assign({}, f.v);
+      Object.keys(FORMULAS[HOJA.LINEAS]).forEach(h => delete v[h]);
+      return v;
+    });
+    vaciarTabla_(tabL);
+    agregarFilas_(tabL, resto);
+  }
   agregarFilas_(tabL, filas);
 
   const tabF = leerTabla_(HOJA.FACT);

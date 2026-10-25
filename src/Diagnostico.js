@@ -45,8 +45,10 @@ function diagnostico() {
 
     // Facturas y líneas
     fact.filas.forEach(f => { if (String(f.v['Estado']).indexOf('OK') !== 0) add('AVISO', HOJA.FACT, f.fila, `Factura ${f.v['Nº factura']}: ${f.v['Estado']}`); });
-    const noEsc = {};
+    const noEsc = {}, idsPiezas = new Set(piezas.filas.map(f => String(f.v['ID'])));
     lin.filas.forEach(f => {
+      const id = f.v['Tipo'] === 'Abono' ? idPiezaDe(f.v['ID pieza']) : '';
+      if (id && id !== SIN_PIEZA && !idsPiezas.has(id)) add('AVISO', HOJA.LINEAS, f.fila, `Abono de ${f.v['Referencia'] || f.v['Descripción']}: la pieza ${id} ya no está en Piezas`);
       const c = String(f.v['Conciliación'] || '');
       if (c.indexOf('no escaneado') > 0 && !noEsc[f.v['Nº albarán']]) { noEsc[f.v['Nº albarán']] = 1; add('AVISO', HOJA.LINEAS, f.fila, `Albarán ${f.v['Nº albarán']} (${f.v['Matrícula'] || 'sin matrícula'}) está en la factura ${f.v['Nº factura']} pero no en Albaranes`); }
       if (c.indexOf('Importe distinto') > 0 && !noEsc['d' + f.v['Nº albarán']]) { noEsc['d' + f.v['Nº albarán']] = 1; add('AVISO', HOJA.LINEAS, f.fila, `Albarán ${f.v['Nº albarán']}: el importe de la factura no coincide con Albaranes`); }

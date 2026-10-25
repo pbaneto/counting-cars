@@ -5,7 +5,7 @@
  * Se aplica solo cuando cambia la versión del código (ver Version.js); el menú "Reparar fórmulas y formato" lo fuerza.
  */
 
-const ORDEN_HOJAS = [HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.ABONOS, HOJA.COCHES, HOJA.RESUMEN, HOJA.FACT, HOJA.LINEAS, HOJA.CONFIG, HOJA.REG, HOJA.CLAVES];
+const ORDEN_HOJAS = [HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.ABONOS, HOJA.COCHES, HOJA.RESUMEN, HOJA.FACT, HOJA.LINEAS, HOJA.CONFIG, HOJA.REG];
 
 /** true sólo al preparar una hoja nueva (setup): es cuando se ponen los anchos de columna. */
 let _hojaNueva = false;
@@ -261,6 +261,7 @@ function regla_(sh, a1, formula, color) {
 
 const FMT = { fecha: 'dd/mm/yyyy', fechaHora: 'dd/mm/yyyy hh:mm', euro: '#,##0.00 "€"', texto: '@', pct: '0.##%' };
 function checkbox_() { return SpreadsheetApp.newDataValidation().requireCheckbox().build(); }
+function fechaValidacion_() { return SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false).build(); }
 function listaValidacion_(vals) { return SpreadsheetApp.newDataValidation().requireValueInList(vals, true).setAllowInvalid(false).build(); }
 function matriculaValidacion_() {
   return SpreadsheetApp.newDataValidation().requireValueInRange(hoja_(HOJA.COCHES).getRange('A2:A5000'), true).setAllowInvalid(true)
@@ -367,9 +368,11 @@ function formatoPiezas_() {
   colFmt_(sh, 'Precio descontado sin IVA', n, { fmt: FMT.euro, ancho: 130 });
   colFmt_(sh, 'Precio descontado con IVA', n, { fmt: FMT.euro, gris: true, ancho: 130 });
   colFmt_(sh, 'Fecha reembolso', n, { fmt: FMT.fecha, ancho: 110 });
+  colFmt_(sh, 'Abonada a mano', n, { fmt: FMT.fecha, validacion: fechaValidacion_(), ancho: 110 });
   colFmt_(sh, 'Proveedor', n, { gris: true, ancho: 85 });
   colFmt_(sh, 'Origen', n, { ancho: 80 });
   colFmt_(sh, 'Avisos', n, { gris: true, ancho: 340 });
+  colFmt_(sh, 'ID', n, { gris: true, ancho: 60 });
   const ult = colLetra_(ESQUEMA['Piezas'].cabeceras.length);
   ponerReglas_(sh, [
     regla_(sh, `A2:${ult}${n + 1}`, `=$${l['Reembolso']}2=TRUE`, COLORES.amarillo),
@@ -403,6 +406,8 @@ function formatoLineas_() {
   colFmt_(sh, 'Descuento', n, { fmt: FMT.pct });
   colFmt_(sh, 'Importe sin IVA', n, { fmt: FMT.euro, ancho: 120 });
   colFmt_(sh, 'Conciliación', n, { gris: true, ancho: 190 });
+  colFmt_(sh, 'ID pieza', n, { ancho: 80 });
+  colFmt_(sh, 'Fecha abono', n, { fmt: FMT.fecha, ancho: 105 });
   const ultCol = colLetra_(ESQUEMA['Líneas RM'].cabeceras.length);
   ponerReglas_(sh, [
     regla_(sh, `${l['Conciliación']}2:${l['Conciliación']}${n + 1}`, `=LEFT($${l['Conciliación']}2,1)="⚠"`, COLORES.naranja),
@@ -502,7 +507,7 @@ function resumenAbonosEnSuSitio_(sh) {
   return v[ABONOS.filaIni - 1 + n][1] === '';
 }
 
-/** Tabla grande: cabecera en la fila 1 (fija), formatos, desplegable de Estado, columna Clave oculta y filtro. */
+/** Tabla grande: cabecera en la fila 1 (fija), formatos, columna "ID pieza" oculta y filtro. Sin desplegables: no se edita. */
 function montarTablaAbonos_() {
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ct = ABONOS.cabTabla, fin = finTablaAbonos_(sh), maxRows = sh.getMaxRows();
   if (maxRows < fin) sh.insertRowsAfter(maxRows, fin - maxRows);
@@ -516,15 +521,11 @@ function montarTablaAbonos_() {
   sh.getRange(tb, 1, n, ct.length).clearDataValidations();
   ['fechaAbono', 'fechaSolicitud'].forEach(k => col(k).setNumberFormat(FMT.fecha));
   ['sinIva', 'conIva'].forEach(k => col(k).setNumberFormat(FMT.euro));
-  col('estado').setDataValidation(listaValidacion_(ESTADOS_ABONO));
   col('albaran').setNumberFormat(FMT.texto);
   col('dias').setNumberFormat('0');
   [90, 260, 130, 130, 130, 150, 110, 110, 120, 110, 260, 100].forEach((w, i) => ancho_(sh, i + 1, w));
-  sh.hideColumns(c.clave);  // "Clave": une cada fila con su pieza / línea de abono; no se toca a mano
-  // Filtro que incluye la columna oculta: ordenar con él mueve la clave junto con su fila.
+  sh.hideColumns(c.idPieza);
   if (!sh.getFilter()) sh.getRange(ABONOS.filaCabTabla, 1, fin - ABONOS.filaCabTabla + 1, ct.length).createFilter();
-  const shC = ss_().getSheetByName(HOJA.CLAVES);
-  if (shC) shC.hideSheet();
   fijarFilas_(sh, ABONOS.filaCabTabla);
   reglasAbonos_(sh);
 }
@@ -538,6 +539,7 @@ function reglasAbonos_(sh) {
     regla_(sh, `${colLetra_(pc)}5:${colLetra_(pv)}5`, `=${colLetra_(pv)}5>0`, COLORES.naranja),
     regla_(sh, T, `=AND($${E}${tb}="Sin abonar",$${D}${tb}>${UMBRAL_})`, COLORES.naranja),
     regla_(sh, T, `=$${E}${tb}="Abonada"`, COLORES.verde),
+    regla_(sh, T, `=$${E}${tb}="Abonada (a mano)"`, COLORES.azul),
     regla_(sh, T, `=$${E}${tb}="Sin abonar"`, COLORES.rojo),
     regla_(sh, T, `=$${E}${tb}="Sin solicitar"`, COLORES.amarillo),
   ], deEstado);
@@ -547,6 +549,6 @@ function instalarTriggers_() {
   const ss = ss_();
   ScriptApp.getProjectTriggers().forEach(t => { if (['alEditar', 'alAbrir', 'alCambiar'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('alEditar').forSpreadsheet(ss).onEdit().create();
-  ScriptApp.newTrigger('alCambiar').forSpreadsheet(ss).onChange().create();  // borrar filas en Abonos desmarca la pieza
+  ScriptApp.newTrigger('alCambiar').forSpreadsheet(ss).onChange().create();  // filas insertadas o borradas (no disparan onEdit)
   ScriptApp.newTrigger('alAbrir').forSpreadsheet(ss).onOpen().create();
 }

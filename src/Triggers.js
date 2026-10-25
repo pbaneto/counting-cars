@@ -25,7 +25,7 @@ function alAbrir() {
 function alEditar(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet(), nombre = sh.getName();
-  if ([HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.COCHES, HOJA.ABONOS].indexOf(nombre) < 0) return;
+  if ([HOJA.ALB, HOJA.TRAB, HOJA.PIEZAS, HOJA.COCHES, HOJA.ABONOS, HOJA.LINEAS].indexOf(nombre) < 0) return;
   ejecutar_('alEditar', () => {
     if (e.source) _ss = e.source;  // la hoja ya viene abierta en el evento: evita abrirla otra vez por ID
     const crono = cronometro_(`alEditar (${nombre})`);
@@ -38,6 +38,7 @@ function alEditar(e) {
       else if (nombre === HOJA.TRAB) editarTrabajos_(r0, n, c0, nc);
       else if (nombre === HOJA.PIEZAS) editarPiezas_(r0, n, c0, nc);
       else if (nombre === HOJA.ABONOS) editarAbonos_(r0, n, c0);
+      else if (nombre === HOJA.LINEAS) editarLineas_(r0, n, c0, nc);
       else editarCoches_(r0, n);
       crono.paso(`editar ${nombre}`);
       crono.fin();
@@ -46,9 +47,9 @@ function alEditar(e) {
 }
 
 /**
- * Trigger INSTALABLE onChange: insertar o borrar filas no dispara onEdit. En Abonos, borrar la fila de una pieza la
- * desmarca en Piezas, y el resumen de la derecha (que comparte filas con la tabla) se vuelve a montar si se ha movido.
- * Los cambios hechos por el propio script no disparan este trigger.
+ * Trigger INSTALABLE onChange: insertar o borrar filas no dispara onEdit. En Abonos, el resumen de la derecha (que
+ * comparte filas con la tabla) se vuelve a montar si se ha movido y la tabla se rehace. Borrar filas de Piezas o de
+ * Líneas RM también cambia Abonos. Los cambios hechos por el propio script no disparan este trigger.
  */
 function alCambiar(e) {
   if (!e || ['REMOVE_ROW', 'INSERT_ROW'].indexOf(e.changeType) < 0) return;
@@ -56,13 +57,16 @@ function alCambiar(e) {
   if (nombre === HOJA.ABONOS) {
     ejecutar_('alCambiar', () => {
       if (e.source) _ss = e.source;
-      conBloqueo_(20, () => revisarAbonosTrasCambioDeFilas_(e.changeType === 'REMOVE_ROW'));
+      conBloqueo_(20, () => revisarAbonosTrasCambioDeFilas_());
     }, true);
   } else if (ESQUEMA[nombre]) {
     // Filas insertadas o borradas encima de la cabecera: leer la tabla la devuelve a su sitio (ver filaCabecera_).
     ejecutar_('alCambiar', () => {
       if (e.source) _ss = e.source;
-      conBloqueo_(20, () => leerTabla_(nombre));
+      conBloqueo_(20, () => {
+        const tab = leerTabla_(nombre);
+        if (e.changeType === 'REMOVE_ROW' && (nombre === HOJA.PIEZAS || nombre === HOJA.LINEAS)) actualizarInformeAbonos_(nombre === HOJA.PIEZAS ? tab : null);
+      });
     }, true);
   }
 }
@@ -80,6 +84,8 @@ function avisarColumnaAutomatica_(tab, puestas, c0, nc) {
 
 function editarAlbaranes_(r0, n, c0, nc) {
   const tab = leerTabla_(HOJA.ALB), hoy = hoyISO_(), ancho = anchoTabla_(tab);
+  // La matrícula y el proveedor de un albarán salen en Abonos (las piezas de "Otros" no se reclaman a RM).
+  const tocaAbonos = ['Nº albarán', 'Matrícula', 'Proveedor'].some(h => tocada_(tab, h, c0, nc));
   let trab = null, cochesTab = null;
   // Se carga una sola vez por lote de filas editadas, y sólo si hace falta (alguna fila con matrícula).
   const tabCoches_ = () => cochesTab || (cochesTab = leerTabla_(HOJA.COCHES));
@@ -132,6 +138,7 @@ function editarAlbaranes_(r0, n, c0, nc) {
     if (!ambigua && anadirCoche_(tabCoches_(), plate)) toast_(`${plate} añadida a la pestaña Coches: rellena allí el cliente y el coche.`, '🚗 Coche nuevo', 8);
     else if (!tabCoches_().filas.some(f => normPlate(f.v['Matrícula']) === plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
   }
+  if (tocaAbonos) { SpreadsheetApp.flush(); actualizarInformeAbonos_(); }
 }
 
 function editarTrabajos_(r0, n, c0, nc) {
@@ -164,6 +171,8 @@ function editarTrabajos_(r0, n, c0, nc) {
  * Primero TODAS las lecturas, luego todas las escrituras y al final se guarda de una vez: en Sheets, una lectura
  * hecha después de escribir espera a que se recalculen las fórmulas que dependen de Piezas (Albaranes, Trabajos,
  * Resumen, Abonos), y eso costaba más de un segundo por edición.
+ * Abonos se rehace siempre: cualquier dato de una pieza (precio, referencia, albarán…) puede salir allí. Si no cambia
+ * nada, no se escribe.
  */
 function editarPiezas_(r0, n, c0, nc) {
   const crono = cronometro_('editarPiezas_');
@@ -178,12 +187,8 @@ function editarPiezas_(r0, n, c0, nc) {
     editadas.push({ r, formulas: formulas[r - desde], vals: Array.from({ length: ancho }, (_, i) => (leida[i] === undefined ? '' : leida[i])) });
   }
   crono.paso(`leer fórmulas de ${editadas.length} fila(s)`);
-  const iReembolso = tab.map['Reembolso'] - 1;
-  const puedeTocar = tocada_(tab, 'Reembolso', c0, nc) || editadas.some(e => e.vals[iReembolso] === true);
-  let paraAbonos = puedeTocar ? leerParaAbonos_(tab, crono) : null;  // lee con la tabla de Piezas ya leída; se mantiene al día abajo
+  const paraAbonos = leerParaAbonos_(tab, crono);  // con la tabla de Piezas ya leída; se mantiene al día abajo
 
-  let toca = false;
-  const desmarcadas = [];
   editadas.forEach(({ r, vals, formulas: formulasFila }) => {
     const fila = tab.filas.find(f => f.fila === r);
     const g = h => vals[tab.map[h] - 1];
@@ -196,21 +201,34 @@ function editarPiezas_(r0, n, c0, nc) {
       if (g('Reembolso') === true) {
         if (!num) { set('Reembolso', false); toast_('Para pedir un reembolso hay que poner antes el nº de albarán de la pieza.', '⚠ Falta el nº de albarán', 10); return; }
         if (!g('Fecha reembolso')) set('Fecha reembolso', aFecha_(hoy));
-      } else { set('Fecha reembolso', ''); desmarcadas.push(r); }
-      toca = true;
-    } else if (g('Reembolso') === true) toca = true;
-
+      } else set('Fecha reembolso', '');
+    }
     if (!g('Origen') && (num || g('Descripción') || g('Precio descontado sin IVA') !== '')) set('Origen', 'Manual');
   });
   crono.paso(`revisar ${editadas.length} fila(s) editada(s)`);
-  if (toca) {
-    paraAbonos = paraAbonos || leerParaAbonos_(tab, crono);
-    escribirAbonos_(paraAbonos, desmarcadas);
-    crono.paso('sincronizar Abonos');
-  }
+  escribirAbonos_(paraAbonos);
+  crono.paso('Abonos');
   SpreadsheetApp.flush();
   crono.paso('guardar cambios y recalcular');
-  crono.fin(toca ? '' : 'sin cambios en reembolsos: Abonos no se toca');
+  crono.fin();
+}
+
+/**
+ * Edición a mano en Líneas RM (normalmente, corregir a qué pieza corresponde un abono en "ID pieza"): se comprueba el
+ * ID escrito y se rehace Abonos.
+ */
+function editarLineas_(r0, n, c0, nc) {
+  const tab = leerTabla_(HOJA.LINEAS);
+  if (r0 + n <= 2) return;
+  if (tocada_(tab, 'ID pieza', c0, nc)) {
+    const ids = new Set(leerTabla_(HOJA.PIEZAS).filas.map(f => String(f.v['ID'])));
+    for (let r = Math.max(r0, 2); r < r0 + n; r++) {
+      const c = tab.sh.getRange(r, tab.map['ID pieza']), v = c.getValue(), id = idPiezaDe(v);
+      if (id === SIN_PIEZA && v !== SIN_PIEZA) c.setValue(SIN_PIEZA);
+      else if (id && id !== SIN_PIEZA && !ids.has(id)) toast_(`No hay ninguna pieza con ID ${id} en Piezas. Escribe el ID de la pieza, o ${SIN_PIEZA} si el abono no es de ninguna.`, '⚠ ID pieza', 10);
+    }
+  }
+  actualizarInformeAbonos_();
 }
 
 function editarCoches_(r0, n) {

@@ -35,7 +35,7 @@ function procesarAlbaranes() {
     // Volver a procesar es seguro: un albarán ya guardado lleva el enlace a su PDF y se reconoce como ya registrado.
     if (!fallo) {
       try {
-        if (ctx.tocaAbonos || ctx.abonosEscaneados.length) sincronizarAbonos_(ctx.abonosEscaneados);
+        if (ctx.tocaAbonos) actualizarInformeAbonos_(ctx.piezas);
         SpreadsheetApp.flush();
       } catch (e) { fallo = { nombre: '', e }; }
     }
@@ -49,7 +49,7 @@ function procesarAlbaranes() {
     }
     const linea = (n, txt) => (n ? `${txt}: ${n}\n` : '');
     let msg = linea(cuenta.creado, 'Albaranes nuevos') + linea(cuenta.reembolso, 'Reembolsos marcados') + linea(cuenta.duplicado, 'Duplicados ignorados') +
-      linea(cuenta.abono, 'Albaranes de abono (a la pestaña Abonos)') + linea(cuenta.error, 'No legibles (carpeta Errores)') +
+      linea(cuenta.abono, 'Albaranes de abono (a Líneas RM y Abonos)') + linea(cuenta.error, 'No legibles (carpeta Errores)') +
       linea(cuenta.pendiente, 'Sin procesar, siguen en Entrada');
     if (descuadres.length) msg += `\nNo cuadran los importes, siguen en Entrada (${descuadres.length}):\n` + descuadres.map(d => '• ' + d).join('\n') + '\n';
     if (fallo) msg = '⚠ No se ha podido guardar en la hoja: no se ha movido ningún PDF, siguen todos en Entrada. Detalle en Registro.';
@@ -87,8 +87,7 @@ function contextoAlbaranes_() {
   const idsPdf = new Set();
   const ult = alb.sh.getLastRow();
   if (ult > 1) alb.sh.getRange(2, alb.map['Ver PDF'], ult - 1, 1).getFormulas().forEach(r => { const id = idDeEnlace_(r[0]); if (id) idsPdf.add(id); });
-  return { alb, trab, piezas, idsPdf, iva: cfgNum_('IVA'), hoy: hoyISO_(), tocaAbonos: false, abonosEscaneados: [],
-    coches };
+  return { alb, trab, piezas, idsPdf, iva: cfgNum_('IVA'), hoy: hoyISO_(), tocaAbonos: false, lineas: null, coches };
 }
 
 /** Devuelve { estado: 'creado' | 'reembolso' | 'duplicado' | 'abono' | 'descuadre' | 'error', motivo }. */
@@ -97,13 +96,14 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
   if (ctx.idsPdf.has(archivo.getId())) { log_('AVISO', 'procesarAlbaranes', ref, 'Este PDF ya estaba registrado: se archiva sin cambios'); return { estado: 'duplicado' }; }
   if (!doc.es_albaran) { log_('ERROR', 'procesarAlbaranes', ref, 'El documento no parece un albarán: se mueve a Errores'); return { estado: 'error' }; }
   if (doc.es_abono) {
-    // Devolución de RM: no es un gasto del taller, así que no va a Albaranes; va a la pestaña Abonos (al final del lote):
-    // marca como Abonada la pieza que se pidió, o añade una fila "Sin solicitar". La factura quincenal lo traerá después.
-    const lineas = abonosEscaneados_(doc, hoy);
+    // Devolución de RM: no es un gasto del taller, así que no va a Albaranes. Sus líneas van a Líneas RM (sin factura:
+    // la quincenal las traerá después) y salen en Abonos: "Abonada" si la pieza se pidió; si no, "Sin solicitar".
     if (!num) log_('AVISO', 'procesarAlbaranes', ref, 'Albarán de abono sin número: cuando llegue la factura RM puede salir repetido en Abonos');
-    if (!lineas.length) log_('AVISO', 'procesarAlbaranes', ref, `Albarán de abono ${num}: no se ha leído ninguna línea`);
-    ctx.abonosEscaneados.push(...lineas);
-    log_('INFO', 'procesarAlbaranes', ref, `Albarán de abono ${num} (${doc.total} €): ${lineas.length} pieza(s) a Abonos`);
+    ctx.lineas = ctx.lineas || leerTabla_(HOJA.LINEAS);
+    const n = guardarAbonosEscaneados_(ctx.lineas, ctx.alb, doc, hoy);
+    if (!doc.lineas.length) log_('AVISO', 'procesarAlbaranes', ref, `Albarán de abono ${num}: no se ha leído ninguna línea`);
+    ctx.tocaAbonos = true;
+    log_('INFO', 'procesarAlbaranes', ref, `Albarán de abono ${num} (${doc.total} €): ${n} línea(s) nueva(s) en Líneas RM`);
     return { estado: 'abono' };
   }
   const v = validarAlbaran(doc, ctx.iva);
@@ -140,7 +140,7 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
   }
   ctx.idsPdf.add(archivo.getId());
   if (num) {
-    agregarFilas_(ctx.piezas, lineasPiezas.map(l => filaPieza_(l, num, hoy, 'Escaneo'))).length;
+    agregarFilas_(ctx.piezas, filasPiezas_(ctx.piezas, lineasPiezas, num, hoy, 'Escaneo'));
     if (lineasPiezas.some(l => l.reembolso)) ctx.tocaAbonos = true;
   } else if (lineasPiezas.length) {
     log_('AVISO', 'procesarAlbaranes', `${HOJA.ALB}!${filaAlb}`, 'Albarán sin número: no se guardan sus piezas (no se podrían reembolsar). Escribe el número y vuelve a escanearlo si hace falta');
@@ -154,7 +154,7 @@ function procesarSegundoEscaneo_(ctx, archivo, doc, existente, lineasPiezas) {
   const piezasAlb = piezasDeAlbaran_(ctx.piezas, num);
   const hayR = lineasPiezas.some(l => l.reembolso);
   if (!piezasAlb.length && lineasPiezas.length) {  // el primer escaneo se quedó sin piezas: se completan
-    agregarFilas_(ctx.piezas, lineasPiezas.map(l => filaPieza_(l, num, hoy, 'Escaneo')));
+    agregarFilas_(ctx.piezas, filasPiezas_(ctx.piezas, lineasPiezas, num, hoy, 'Escaneo'));
     log_('INFO', 'procesarAlbaranes', ref, `Albarán ${num} ya existía sin piezas: piezas añadidas`);
     if (hayR) ctx.tocaAbonos = true;
     return { estado: hayR ? 'reembolso' : 'duplicado' };
@@ -163,7 +163,7 @@ function procesarSegundoEscaneo_(ctx, archivo, doc, existente, lineasPiezas) {
   const plan = aplicarReembolsos(piezasAlb.map(p => ({ ref: p.v['Referencia pieza'], desc: p.v['Descripción'], reembolso: p.v['Reembolso'] === true })), doc.lineas);
   if (!plan.marcar.length && !plan.anadir.length) { log_('AVISO', 'procesarAlbaranes', ref, `Albarán ${num}: las piezas con R ya estaban marcadas`); return { estado: 'duplicado' }; }
   plan.marcar.forEach(i => actualizarFila_(ctx.piezas, piezasAlb[i].fila, { 'Reembolso': true, 'Fecha reembolso': aFecha_(hoy) }));
-  if (plan.anadir.length) agregarFilas_(ctx.piezas, plan.anadir.map(l => filaPieza_(l, num, hoy, 'Escaneo')));
+  if (plan.anadir.length) agregarFilas_(ctx.piezas, filasPiezas_(ctx.piezas, plan.anadir, num, hoy, 'Escaneo'));
   const resumen = `Reembolso ${hoy.slice(8)}/${hoy.slice(5, 7)}: ${plan.marcar.length + plan.anadir.length} pieza(s)`;
   const previa = String(existente.v['Nota escaneo'] || '');
   actualizarFila_(ctx.alb, existente.fila, { 'Nota escaneo': previa ? previa + ' | ' + resumen : resumen });

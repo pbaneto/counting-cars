@@ -18,22 +18,84 @@ const PROP_DISENO_PENDIENTE_ = 'DISENO_PENDIENTE';
  * versión guardada en la hoja impide que vuelva a hacer falta.
  */
 const MIGRACIONES = {
-  // Albaranes escaneados el 7 y el 8 de octubre de 2026 que quedaron sin fechas, enlace al PDF ni fórmulas. Los datos (nº
-  // albarán, fecha de escaneo, fecha del albarán, PDF) se han sacado de los PDF y están en src/private.js. Sólo rellena
-  // lo que esté vacío; las fórmulas las vuelve a poner el diseño, que se aplica justo después por cambiar la versión mayor.
-  '4.0.0': () => {
-    if (typeof RECUPERAR_ALBARANES_4_0_0 === 'undefined') return;
-    const alb = leerTabla_(HOJA.ALB), trab = leerTabla_(HOJA.TRAB);
-    RECUPERAR_ALBARANES_4_0_0.forEach(([num, escaneo, fecha, idPdf]) => {
-      const f = alb.filas.find(x => normAlbaran(x.v['Nº albarán']) === num);
-      if (!f) { log_('AVISO', 'migración 4.0.0', num, `No encuentro el albarán ${num} en Albaranes`); return; }
-      const cambios = {};
-      if (!f.v['Fecha escaneo']) cambios['Fecha escaneo'] = aFecha_(escaneo);
-      if (!f.v['Fecha albarán']) cambios['Fecha albarán'] = aFecha_(fecha);
-      if (!f.v['Ver PDF']) cambios['Ver PDF'] = enlacePdfId_(idPdf);
-      actualizarFila_(alb, f.fila, cambios);
-      if (f.v['Nº trabajo'] && f.v['Matrícula']) ponerDesplegableTrabajo_(alb, f.fila, trab, f.v['Matrícula']);
+  // Abonos pasa a ser un informe que se rehace entero (ver Abonos.js). Lo que sólo estaba en su tabla pasa a su sitio:
+  //  - Piezas: columnas "Abonada a mano" (tras "Fecha reembolso") e "ID" (al final), con un ID para cada pieza;
+  //  - Líneas RM: columnas "ID pieza" y "Fecha abono"; cada línea de abono recibe la pieza y la fecha de abono que tenía
+  //    su fila en Abonos, y los albaranes de abono escaneados que aún no venían en ninguna factura se añaden como líneas;
+  //  - Abonos: la columna oculta "Clave" pasa a ser "ID pieza", sin el desplegable de Estado; fuera "Abonos (claves)".
+  // Sólo rellena lo que esté vacío y no añade dos veces la misma línea: se puede repetir entera.
+  '5.0.0': () => {
+    const ss = ss_(), shP = hoja_(HOJA.PIEZAS), shL = hoja_(HOJA.LINEAS), shAb = hoja_(HOJA.ABONOS);
+    const cabDe = sh => sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(x => String(x).trim());
+    let cab = cabDe(shP);
+    if (cab.indexOf('Abonada a mano') < 0) {
+      const c = cab.indexOf('Fecha reembolso') + 1;
+      if (!c) throw new Error('Migración 5.0.0: no encuentro la columna "Fecha reembolso" en Piezas.');
+      shP.insertColumnBefore(c + 1);
+      shP.getRange(1, c + 1).setValue('Abonada a mano');
+      cab = cabDe(shP);
+    }
+    const ponerCabecera = (sh, h, cab) => {
+      if (cab.indexOf(h) >= 0) return;
+      const c = ESQUEMA[sh.getName()].cabeceras.indexOf(h) + 1;
+      if (cab[c - 1]) throw new Error(`Migración 5.0.0: la columna ${colLetra_(c)} de "${sh.getName()}" debería quedar libre para "${h}" y tiene "${cab[c - 1]}".`);
+      sh.getRange(1, c).setValue(h);
+    };
+    ponerCabecera(shP, 'ID', cab);
+    ponerCabecera(shL, 'ID pieza', cabDe(shL));
+    ponerCabecera(shL, 'Fecha abono', cabDe(shL));
+    reiniciarCaches_();
+
+    const tabP = leerTabla_(HOJA.PIEZAS), tabL = leerTabla_(HOJA.LINEAS), tabA = leerTabla_(HOJA.ALB);
+    const fechaFactura = {};
+    leerTabla_(HOJA.FACT).filas.forEach(f => { fechaFactura[String(f.v['Nº factura']).trim()] = f.v['Fecha factura']; });
+    const ncol = ABONOS.cabTabla.length, ult = shAb.getLastRow();
+    const tabla = ult >= ABONOS.filaTabla ? shAb.getRange(ABONOS.filaCabTabla, 1, ult - ABONOS.filaCabTabla + 1, ncol).getValues() : [[]];
+    const cabAb = tabla[0].map(x => String(x).trim()), col = h => cabAb.indexOf(h);
+    const iClave = col('Clave') >= 0 ? col('Clave') : col('ID pieza');
+    asegurarIdsPiezas_(tabP);
+
+    // Claves de la versión anterior: P|albarán|referencia|n contaba sólo las piezas de RM, en el orden de Piezas.
+    const proveedorDe = {};
+    tabA.filas.forEach(f => { const n = normAlbaran(f.v['Nº albarán']); if (n) proveedorDe[n] = f.v['Proveedor']; });
+    const idDeP = {};
+    clavesPiezas(tabP.filas.filter(p => String(proveedorDe[normAlbaran(p.v['Nº albarán'])] || 'RM') !== 'Otros')
+      .map(p => ({ id: p.v['ID'], albaran: p.v['Nº albarán'], ref: p.v['Referencia pieza'], desc: p.v['Descripción'] }))).forEach(p => { idDeP[p.clave] = p.id; });
+    const lineas = lineasAbono_(tabL), lineaDeA = {};
+    lineas.forEach(x => { lineaDeA[x.clave] = x.f; });
+
+    const cambios = new Map(), sueltas = [];
+    const cambiar = (f, h, v) => { if (v === '' || v == null || (f.v[h] !== '' && f.v[h] != null)) return; f.v[h] = v; cambios.set(f, true); };
+    tabla.slice(1).forEach(r => {
+      const ks = iClave >= 0 ? partirClaves(r[iClave]) : [], kA = ks.find(k => k.indexOf('A|') === 0), kP = ks.find(k => k.indexOf('P|') === 0);
+      if (!kA) return;
+      const id = kP && idDeP[kP] !== undefined ? idDeP[kP] : '', fecha = r[col('Fecha abono')];
+      const f = lineaDeA[kA];
+      if (f) { cambiar(f, 'ID pieza', id); cambiar(f, 'Fecha abono', fecha); return; }
+      // Albarán de abono escaneado que aún no ha llegado en ninguna factura: sólo estaba en Abonos.
+      const [, albAbono, orig] = kA.split('|');
+      sueltas.push({ 'Nº factura': r[col('Factura RM')] || '', 'Nº albarán': albAbono, 'Fecha albarán': fecha, 'Tipo': 'Abono', 'Matrícula': r[col('Matrícula')],
+        'Albarán origen': orig, 'Referencia': r[col('Referencia')], 'Descripción': r[col('Descripción pieza')], 'Importe sin IVA': -Math.abs(parseNumber(r[col('Precio sin IVA')]) || 0),
+        'ID pieza': id, 'Fecha abono': fecha });
+      lineaDeA[kA] = { v: {} };
     });
+    // Líneas de abono que no estaban en la tabla: la fecha de su factura.
+    lineas.forEach(({ f }) => cambiar(f, 'Fecha abono', fechaFactura[String(f.v['Nº factura']).trim()] || f.v['Fecha albarán']));
+    ['ID pieza', 'Fecha abono'].forEach(h => {
+      if (!tabL.filas.length) return;
+      const desde = tabL.filas[0].fila, hasta = tabL.filas[tabL.filas.length - 1].fila, porFila = {};
+      tabL.filas.forEach(f => { porFila[f.fila] = f.v[h]; });
+      shL.getRange(desde, tabL.map[h], hasta - desde + 1, 1).setValues(Array.from({ length: hasta - desde + 1 }, (_, k) => [porFila[desde + k] == null ? '' : porFila[desde + k]]));
+    });
+    agregarFilas_(tabL, sueltas);
+
+    if (iClave >= 0 && cabAb[iClave] === 'Clave') shAb.getRange(ABONOS.filaCabTabla, iClave + 1).setValue(CAMPOS_ABONOS_.idPieza);
+    shAb.getRange(ABONOS.filaTabla, 1, Math.max(shAb.getMaxRows() - ABONOS.filaTabla + 1, 1), ncol).clearDataValidations();
+    const shC = ss.getSheetByName('Abonos (claves)');
+    if (shC) ss.deleteSheet(shC);
+    _colsAbonos = null;
+    log_('INFO', 'migración 5.0.0', '', `${tabP.filas.length} piezas con ID; ${cambios.size} líneas de abono completadas; ${sueltas.length} abonos escaneados pasados a Líneas RM`);
+    actualizarInformeAbonos_(tabP);
   },
 };
 

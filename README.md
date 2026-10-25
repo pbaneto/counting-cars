@@ -10,20 +10,20 @@ el resto son fórmulas de la hoja. Diseñado para que sea sencillo de entender y
 |---|---|
 | **Albaranes** | Una fila por albarán (escaneado o a mano). Suma su precio al *trabajo* sin pagar de esa matrícula, o abre uno nuevo. |
 | **Trabajos** | Un trabajo = una reparación de un coche. Nº = último dígito + letras + contador (`7853KCC` → `3KCC-1`). Recambios y beneficio salen por fórmula. Puede haber varios trabajos sin pagar del mismo coche. |
-| **Piezas** | Líneas de cada albarán. El check **Reembolso** resta esa pieza del precio facturable del albarán y del trabajo. |
-| **Abonos** | Arriba, cuadre por quincena (albaranes RM ↔ reembolsos ↔ factura RM). Debajo, tabla **editable** de piezas reembolsadas y abonos (`Abonada` / `Sin abonar` / `Sin solicitar`): lo nuevo se añade arriba sin tocar lo que ya hay; desmarcar una pieza borra su fila y borrar la fila de una pieza la desmarca en Piezas. |
+| **Piezas** | Líneas de cada albarán, cada una con un **ID** fijo. El check **Reembolso** resta esa pieza del precio facturable del albarán y del trabajo. **Abonada a mano** (fecha): RM la ha abonado por otra vía. |
+| **Abonos** | **Informe**: se rehace solo desde Piezas y Líneas RM, no se edita. Tabla de piezas pedidas y abonos (`Abonada` / `Abonada (a mano)` / `Sin abonar` / `Sin solicitar`), lo más reciente arriba; a la derecha, cuadre por quincena (albaranes RM ↔ abonado ↔ factura RM). |
 | **Coches** | Matrícula, cliente y coche (se rellena a mano). |
 | **Resumen** | Ingresos, recambios y beneficio por mes, gastos fijos y gráficos anuales. |
-| *Facturas RM, Líneas RM* | Datos leídos de las facturas quincenales (una fila por línea). |
+| *Facturas RM, Líneas RM* | Datos leídos de las facturas quincenales (una fila por línea) y de los albaranes de abono escaneados. En cada abono, **ID pieza** = la pieza abonada (se pone sola; se corrige a mano, `NO` = de ninguna). |
 | *Config, Registro, Diagnóstico* | Ajustes, historial de incidencias y buscador de problemas. |
 
 Reglas clave:
 
-- **Precio - abonos (Albaranes) = precio con IVA − piezas con Reembolso ✓ de ese albarán.** No se guarda: es una fórmula. En Trabajos, su suma es «Precio - abono». Un segundo escaneo con **R** manuscrita sólo marca la pieza.
+- **Precio - abonos (Albaranes) = precio con IVA − piezas con Reembolso ✓ de ese albarán.** No se guarda: es una fórmula. En Trabajos, su suma es «Precio - abono». Un segundo escaneo con **R** manuscrita sólo marca la pieza. Sólo cuenta una R sola junto a la línea: nombres, matrículas o números escritos a mano no son reembolsos.
 - Albarán que ya existe **con R** → marca las piezas. **Sin R** → escaneo duplicado: se ignora.
 - Si una fila escrita a mano (sin nº de albarán) coincide en matrícula e importe con un albarán escaneado, se **vincula** en vez de duplicarse.
 - Un trabajo se imputa a su columna **Mes** (se rellena con la fecha del primer albarán y se puede cambiar a mano).
-- **Cuadre de Abonos por quincena:** `Recambios RM − Abonado = Total factura` (integridad del escaneo) y `Solicitado = Abonado` (nada pendiente ni abonado sin pedir). Los abonos de RM indican el albarán original, así que se emparejan por **nº de albarán + referencia**.
+- **Cuadre de Abonos por quincena:** `Recambios RM − Abonado = Total factura` (integridad del escaneo) y `Solicitado = Abonado` (nada pendiente ni abonado sin pedir). Los abonos de RM indican el albarán original, así que se emparejan una vez con su pieza por **nº de albarán + referencia** (o, si no, el importe de una pieza pedida) y queda guardado en Líneas RM. El total abonado sólo cuenta lo que trae RM, no «Abonada a mano».
 
 ## Depurar
 

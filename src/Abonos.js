@@ -1,22 +1,21 @@
 /**
- * Pestaña Abonos.
- *  - Resumen por quincena (filas 4-27, fórmulas creadas en setup).
- *  - Tabla grande (cabecera en la fila 30): EDITABLE, nunca se regenera. Cada sincronización sólo:
- *      · añade ARRIBA las filas nuevas (pieza con Reembolso ✓ → "Sin abonar"; abono de factura RM sin pedir → "Sin solicitar"),
- *      · rellena las celdas VACÍAS de la fila de una pieza cuando llega su abono (y "Sin abonar" → "Abonada"),
- *      · borra la fila de una pieza que se desmarca en Piezas.
- *    Y al revés: borrar a mano una fila de pieza aquí la desmarca en Piezas (alCambiar / editarAbonos_).
- *    Cada fila lleva sus claves en la columna oculta "Clave" (Logic.js ▸ clavesPiezas / clavesAbonos).
- *  Las columnas de la tabla se buscan por el nombre de su cabecera: se pueden reordenar a mano (colsAbonos_).
+ * Pestaña Abonos: un INFORME que se rehace entero desde los datos, así que nunca se desajusta con ellos:
+ *  - Piezas: la solicitud (Reembolso ✓ + Fecha reembolso) y "Abonada a mano"; cada pieza tiene un ID fijo.
+ *  - Líneas RM: los abonos de RM (de las facturas quincenales y de los albaranes de abono escaneados), cada uno con el
+ *    "ID pieza" de la pieza abonada. El emparejamiento se hace una sola vez (emparejarAbonos) y se guarda ahí, donde se
+ *    puede corregir a mano.
+ *  - Estado, precio, descripción… se calculan (informeAbonos en Logic.js). Lo que se escriba a mano en la tabla se pierde.
+ * Las columnas de la tabla se buscan por el nombre de su cabecera: se pueden reordenar a mano (colsAbonos_).
+ * A la derecha van el resumen por quincena y el panel de pendientes (Setup.js ▸ montarResumenAbonos_).
  */
 
 const CAMPOS_ABONOS_ = {
   fechaAbono: 'Fecha abono', descripcion: 'Descripción pieza', sinIva: 'Precio sin IVA', conIva: 'Precio con IVA', estado: 'Estado',
   albaran: 'Nº albarán', referencia: 'Referencia', matricula: 'Matrícula', fechaSolicitud: 'Fecha solicitud', factura: 'Factura RM',
-  nota: 'Nota', dias: 'Días pendiente', clave: 'Clave',
+  nota: 'Nota', dias: 'Días pendiente', idPieza: 'ID pieza',
 };
-// Campos que escribe una persona o la sincronización (no las fórmulas): si están todos vacíos, la fila se ha borrado.
-const ENTRADAS_ABONOS_ = ['fechaAbono', 'descripcion', 'sinIva', 'estado', 'albaran', 'referencia', 'matricula', 'fechaSolicitud', 'factura', 'nota'];
+// Columnas con fórmula: no cuentan al comparar la tabla que hay con la que debería haber.
+const FORMULAS_ABONOS_ = ['conIva', 'dias'];
 
 let _colsAbonos = null;
 /**
@@ -37,17 +36,17 @@ function colsAbonos_(fila1) {
 }
 function letraAbonos_(campo) { return colLetra_(colsAbonos_()[campo]); }
 
-/** escaneados: líneas de albaranes de ABONO recién escaneados (ver abonosEscaneados_), que aún no están en ninguna factura. */
-function sincronizarAbonos_(escaneados) {
-  const crono = cronometro_('sincronizarAbonos_');
-  const d = leerParaAbonos_(null, crono);
+/** Rehace la tabla de Abonos. tabP: Piezas si quien llama ya la ha leído. Devuelve {filas, escrito}. */
+function actualizarInformeAbonos_(tabP) {
+  const crono = cronometro_('actualizarInformeAbonos_');
+  const d = leerParaAbonos_(tabP, crono);
   crono.fin();
-  return escribirAbonos_(d, null, escaneados);
+  return escribirAbonos_(d);
 }
 
 /**
- * Todo lo que la sincronización necesita LEER, para hacerlo antes de escribir nada: en Sheets, una lectura hecha
- * después de una escritura espera a que se recalculen las fórmulas que dependen de lo escrito.
+ * Todo lo que el informe necesita LEER, para hacerlo antes de escribir nada: en Sheets, una lectura hecha después de una
+ * escritura espera a que se recalculen las fórmulas que dependen de lo escrito.
  * tabP: la tabla de Piezas si quien llama ya la ha leído (y la mantiene al día con lo que escriba después).
  */
 function leerParaAbonos_(tabP, crono) {
@@ -56,37 +55,27 @@ function leerParaAbonos_(tabP, crono) {
   if (!tabP) { tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${leida(tabP)})`); }
   const tabL = leerTabla_(HOJA.LINEAS); crono.paso(`leer Líneas RM (${leida(tabL)})`);
   const tabA = leerTabla_(HOJA.ALB); crono.paso(`leer Albaranes (${leida(tabA)})`);
-  const fechaFactura = {};
-  leerTabla_(HOJA.FACT).filas.forEach(f => { fechaFactura[String(f.v['Nº factura']).trim()] = aISO_(f.v['Fecha factura']); });
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ultFila = sh.getLastRow(), maxFilas = sh.getMaxRows();
   // getLastRow cuenta también el resumen de la derecha: se quitan las filas vacías del final de la tabla.
   const leido = sh.getRange(ABONOS.filaCabTabla, 1, Math.max(ultFila, tb) - ABONOS.filaCabTabla + 1, ncol).getValues();
   colsAbonos_(leido[0]);
   const tabla = leido.slice(tb - ABONOS.filaCabTabla);
   while (tabla.length && tabla[tabla.length - 1].every(x => x === '' || x == null)) tabla.pop();
-  const shC = ss_().getSheetByName(HOJA.CLAVES), ultC = shC ? shC.getLastRow() : 0;
-  const vistas = new Set(ultC ? shC.getRange(1, 1, ultC, 1).getValues().map(r => String(r[0])).filter(Boolean) : []);
   loc_('');  // la configuración regional también es una lectura: se guarda ya para escribir las fórmulas luego
-  crono.paso(`leer Abonos (${tabla.length} filas, ${vistas.size} claves vistas)`);
-  return { tabP, tabL, tabA, sh, tabla, vistas, ultFila: tb + tabla.length - 1, maxFilas, fechaFactura };
+  crono.paso(`leer Abonos (${tabla.length} filas)`);
+  return { tabP, tabL, tabA, sh, tabla, maxFilas };
 }
 
-/**
- * Piezas de RM (las de proveedor "Otros" no se reclaman) con su clave P. La numeración de la clave cuenta TODAS las
- * piezas, marcadas o no, para que no cambie al marcar o desmarcar otra pieza del mismo albarán y referencia.
- */
-function piezasParaAbonos_(tabP, tabA, tabL) {
+/** Piezas de RM (las de proveedor "Otros" no se reclaman), en el formato de informeAbonos. */
+function piezasParaAbonos_(tabP, tabA, plateDe) {
   const proveedorDe = {};
   tabA.filas.forEach(f => { const n = normAlbaran(f.v['Nº albarán']); if (n) proveedorDe[n] = f.v['Proveedor']; });
-  const plateDe = matriculasDeAlbaranes_(tabA, tabL);
-  const todas = [];
-  tabP.filas.forEach(p => {
+  return tabP.filas.filter(p => String(proveedorDe[normAlbaran(p.v['Nº albarán'])] || 'RM') !== 'Otros').map(p => {
     const alb = normAlbaran(p.v['Nº albarán']);
-    if (String(proveedorDe[alb] || 'RM') === 'Otros') return;
-    todas.push({ fila: p.fila, marcada: p.v['Reembolso'] === true && !!alb, albaran: alb, ref: p.v['Referencia pieza'], desc: p.v['Descripción'],
-      sinIva: p.v['Precio descontado sin IVA'], fechaReembolso: aISO_(p.v['Fecha reembolso']), matricula: p.v['Matrícula'] || plateDe[alb] || '' });
+    return { id: p.v['ID'], fila: p.fila, albaran: alb, ref: p.v['Referencia pieza'], desc: p.v['Descripción'], sinIva: p.v['Precio descontado sin IVA'],
+      solicitada: p.v['Reembolso'] === true && !!alb, fechaSolicitud: aISO_(p.v['Fecha reembolso']), abonadaAMano: aISO_(p.v['Abonada a mano']),
+      matricula: p.v['Matrícula'] || plateDe[alb] || '' };
   });
-  return { todas: clavesPiezas(todas), plateDe };
 }
 
 /**
@@ -99,70 +88,49 @@ function matriculasDeAlbaranes_(tabA, tabL) {
   return mapaMatriculas(pares);
 }
 
-/**
- * Aplica a la tabla de Abonos lo leído en leerParaAbonos_. No lee nada de la hoja.
- * filasDesmarcadas: filas de Piezas a las que se acaba de quitar el Reembolso (su fila de Abonos se borra).
- * escaneados: líneas de albaranes de abono recién escaneados (opcional).
- */
-function escribirAbonos_(d, filasDesmarcadas, escaneados) {
-  const crono = cronometro_('escribirAbonos_');
-  const { tabP, tabL, tabA, sh } = d;
-  const hoy = hoyISO_(), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
-  const { todas, plateDe } = piezasParaAbonos_(tabP, tabA, tabL);
-  const marcadas = todas.filter(p => p.marcada);
-  let fechasEscritas = 0;
-  marcadas.forEach(p => {
-    if (!p.fechaReembolso) { p.fechaReembolso = hoy; actualizarFila_(tabP, p.fila, { 'Fecha reembolso': aFecha_(hoy) }); fechasEscritas++; }
-  });
-  const quitar = todas.filter(p => (filasDesmarcadas || []).indexOf(p.fila) >= 0).map(p => p.clave);
-  crono.paso(`preparar piezas (${marcadas.length} marcadas, ${fechasEscritas} fechas escritas)`);
-
-  const deFacturas = abonosDeLineas_(tabL, plateDe, d.fechaFactura);
-  const abonos = deFacturas.concat(clavesAbonos((escaneados || []).map(a => Object.assign({}, a, { matricula: plateDe[normAlbaran(a.albaranOrigen)] || '' }))));
-
-  const c = colsAbonos_(), g = (r, k) => r[c[k] - 1];
-  const existentes = d.tabla.map(r => ({ clave: g(r, 'clave'), fechaAbono: g(r, 'fechaAbono'), descripcion: g(r, 'descripcion'), sinIva: g(r, 'sinIva'),
-    estado: g(r, 'estado'), albaran: g(r, 'albaran'), ref: g(r, 'referencia'), matricula: g(r, 'matricula'), fechaSolicitud: g(r, 'fechaSolicitud'),
-    factura: g(r, 'factura'), nota: g(r, 'nota') }));
-  const res = sincronizarAbonos(existentes, marcadas, todas, abonos, d.vistas, quitar, { matriculas: plateDe });
-  crono.paso(`cruce (${abonos.length} abonos)`);
-
-  // 1) Celdas vacías de filas existentes (antes de borrar o insertar: los índices aún valen).
-  res.cambios.forEach(({ i, v }) => Object.keys(v).forEach(k => {
-    sh.getRange(tb + i, c[k]).setValue(k === 'fechaAbono' || k === 'fechaSolicitud' ? aFecha_(v[k]) : v[k]);
-  }));
-  // 2) Filas de piezas desmarcadas, de abajo arriba. Sólo las celdas de la tabla (A-M): una fila entera se llevaría
-  //    también la fila del resumen que hay a la derecha.
-  res.borrar.slice().sort((a, b) => b - a).forEach(i => sh.getRange(tb + i, 1, 1, ncol).deleteCells(SpreadsheetApp.Dimension.ROWS));
-  // 3) Filas nuevas ARRIBA, justo debajo de la cabecera, desplazando hacia abajo sólo las celdas de la tabla.
-  const k = res.nuevas.length;
-  if (k) {
-    if (d.ultFila + k > d.maxFilas) sh.insertRowsAfter(d.maxFilas, d.ultFila + k - d.maxFilas + 100);  // al final: no mueve nada
-    sh.getRange(tb, 1, k, ncol).insertCells(SpreadsheetApp.Dimension.ROWS);
-    const modelo = sh.getRange(tb + k, 1, 1, ncol), destino = sh.getRange(tb, 1, k, ncol);
-    modelo.copyTo(destino, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
-    modelo.copyTo(destino, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
-    destino.setValues(res.nuevas.map((f, j) => filaAbono_(f, tb + j)));
-  }
-  if (res.registrar.length) registrarClavesAbonos_(res.registrar);
-  crono.paso(`escribir (${k} nuevas, ${res.cambios.length} completadas, ${res.borrar.length} borradas)`);
-  // Sólo a Ejecuciones: escribirlo en Registro en cada edición costaba ~300 ms y llenaba Registro de filas INFO.
-  crono.fin(ESTADOS_ABONO.map(e => e + ' ' + res.nuevas.filter(f => f.estado === e).length).join(', '));
-  return res;
+/** Líneas de abono de Líneas RM con su clave A (Logic.js ▸ clavesAbonos), en el orden de la pestaña. */
+function lineasAbono_(tabL) {
+  return clavesAbonos(tabL.filas.filter(f => f.v['Tipo'] === 'Abono').map(f => ({
+    f, albaranAbono: normAlbaran(f.v['Nº albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']), ref: f.v['Referencia'], desc: f.v['Descripción'],
+  })));
 }
 
 /**
- * Líneas de abono de las facturas RM, con su clave A. Fecha de abono = fecha de la factura (si la pieza la marca la
- * factura; si antes llegó el albarán de abono escaneado, esa fila ya tiene la fecha del albarán y no se cambia).
+ * Aplica lo leído en leerParaAbonos_. No lee nada de la hoja. Escribe sólo lo que cambia: IDs de piezas nuevas, la fecha
+ * de reembolso que falte, el "ID pieza" de los abonos recién emparejados y la tabla, si no es ya la que debe ser.
  */
-function abonosDeLineas_(tabL, plateDe, fechaFactura) {
-  return clavesAbonos(tabL.filas.filter(f => f.v['Tipo'] === 'Abono').map(f => ({
-    factura: f.v['Nº factura'], fecha: (fechaFactura || {})[String(f.v['Nº factura']).trim()] || aISO_(f.v['Fecha albarán']),
-    albaranAbono: normAlbaran(f.v['Nº albarán']), albaranOrigen: albaranOrigen(f.v['Albarán origen']),
-    ref: f.v['Referencia'], desc: f.v['Descripción'], importe: parseNumber(f.v['Importe sin IVA']),
-    // El bloque de abono de la factura trae la matrícula vacía: la buena es la de su albarán original.
-    matricula: plateDe[albaranOrigen(f.v['Albarán origen'])] || normPlate(f.v['Matrícula']),
-  })));
+function escribirAbonos_(d) {
+  const crono = cronometro_('escribirAbonos_');
+  const { tabP, tabL, tabA, sh } = d, hoy = hoyISO_(), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
+  const ids = asegurarIdsPiezas_(tabP);
+  const plateDe = matriculasDeAlbaranes_(tabA, tabL);
+  const piezas = piezasParaAbonos_(tabP, tabA, plateDe);
+  // Marcada sin pasar por la edición de la celda (p. ej. pegando): su fecha de reembolso es hoy.
+  const sinFecha = piezas.filter(p => p.solicitada && !p.fechaSolicitud);
+  sinFecha.forEach(p => { p.fechaSolicitud = hoy; actualizarFila_(tabP, p.fila, { 'Fecha reembolso': aFecha_(hoy) }); });
+  crono.paso(`preparar piezas (${piezas.filter(p => p.solicitada).length} pedidas, ${ids} IDs nuevos, ${sinFecha.length} fechas escritas)`);
+
+  const lineas = lineasAbono_(tabL);
+  const abonos = lineas.map(({ f, albaranAbono, albaranOrigen: orig, ref, desc }) => ({
+    idPieza: f.v['ID pieza'], fecha: aISO_(f.v['Fecha abono']) || aISO_(f.v['Fecha albarán']), factura: String(f.v['Nº factura'] || '').trim(),
+    albaranAbono, albaranOrigen: orig, ref, desc, importe: parseNumber(f.v['Importe sin IVA']), matricula: plateDe[orig] || f.v['Matrícula'],
+  }));
+  const nuevos = emparejarAbonos(piezas, abonos);
+  nuevos.forEach(({ i, id }) => { abonos[i].idPieza = id; actualizarFila_(tabL, lineas[i].f.fila, { 'ID pieza': id }); });
+  const filas = informeAbonos(piezas, abonos, plateDe);
+  crono.paso(`cruce (${abonos.length} abonos, ${nuevos.length} emparejados ahora)`);
+
+  const valores = filas.map((f, j) => filaAbono_(f, tb + j));
+  const escrito = !mismaTablaAbonos_(d.tabla, valores);
+  if (escrito) {
+    if (tb + valores.length - 1 > d.maxFilas) sh.insertRowsAfter(d.maxFilas, tb + valores.length - 1 - d.maxFilas + 100);  // al final: no mueve nada
+    if (valores.length) sh.getRange(tb, 1, valores.length, ncol).setValues(valores);
+    // Sólo las celdas de la tabla (A-M): a la derecha, en las mismas filas, está el resumen.
+    if (d.tabla.length > valores.length) sh.getRange(tb + valores.length, 1, d.tabla.length - valores.length, ncol).clearContent();
+  }
+  // Sólo a Ejecuciones: escribirlo en Registro en cada edición costaba ~300 ms y llenaba Registro de filas INFO.
+  crono.fin(`${escrito ? 'tabla rehecha' : 'tabla ya al día'} | ` + ESTADOS_ABONO.map(e => e + ' ' + filas.filter(f => f.estado === e).length).join(', '));
+  return { filas, escrito };
 }
 
 function filaAbono_(f, r) {
@@ -170,68 +138,44 @@ function filaAbono_(f, r) {
   // "Precio con IVA" y "Días pendiente" son fórmulas: la primera usa el IVA de Config y la segunda se actualiza sola cada día.
   const v = { fechaAbono: aFecha_(f.fechaAbono), descripcion: f.descripcion, sinIva: f.sinIva, conIva: loc_(`=ROUND($${L('sinIva')}${r}*(1+IVA),2)`),
     estado: f.estado, albaran: f.albaran, referencia: f.referencia, matricula: f.matricula, fechaSolicitud: aFecha_(f.fechaSolicitud),
-    factura: f.factura, nota: f.nota, dias: loc_(`=IF($${L('estado')}${r}="Sin abonar",TODAY()-$${L('fechaSolicitud')}${r},"")`), clave: f.clave };
+    factura: f.factura, nota: f.nota, dias: loc_(`=IF($${L('estado')}${r}="Sin abonar",TODAY()-$${L('fechaSolicitud')}${r},"")`), idPieza: f.idPieza };
   Object.keys(v).forEach(k => { fila[c[k] - 1] = v[k]; });
   return fila;
 }
 
-/** Claves de abonos de factura ya añadidos alguna vez: si se borra su fila a mano, no vuelve a aparecer. */
-function registrarClavesAbonos_(claves) {
-  const ss = ss_();
-  let sh = ss.getSheetByName(HOJA.CLAVES);
-  if (!sh) { sh = ss.insertSheet(HOJA.CLAVES); sh.hideSheet(); }
-  sh.getRange(sh.getLastRow() + 1, 1, claves.length, 1).setValues(claves.map(c => [c]));
+/** ¿La tabla leída ya es la que se va a escribir? Compara sólo los datos (no las fórmulas). */
+function mismaTablaAbonos_(leida, nueva) {
+  if (leida.length !== nueva.length) return false;
+  const c = colsAbonos_(), cols = Object.keys(CAMPOS_ABONOS_).filter(k => FORMULAS_ABONOS_.indexOf(k) < 0).map(k => c[k] - 1);
+  const norm = x => (x instanceof Date ? aISO_(x) : typeof x === 'number' ? String(round2(x)) : String(x == null ? '' : x).trim());
+  return leida.every((fila, i) => cols.every(j => norm(fila[j]) === norm(nueva[i][j])));
 }
 
 /**
- * Líneas de un albarán de ABONO escaneado, en el formato de abonosDeLineas_ (sin factura todavía): fecha de abono =
- * fecha del albarán de abono. Sin la línea de residuos (SIGAUS): esa ya llegará con la factura.
+ * Líneas de un albarán de ABONO escaneado → Líneas RM, sin Nº factura (la quincenal lo traerá después): fecha de abono =
+ * la del albarán de abono. Sin la línea de residuos (SIGAUS): esa llega con la factura. Las que ya estén (albarán
+ * escaneado dos veces, o su factura ya procesada) no se repiten. Devuelve cuántas ha añadido.
  */
-function abonosEscaneados_(doc, hoy) {
-  return doc.lineas.filter(l => !esResiduo(l)).map(l => ({
-    factura: '', fecha: doc.fecha || hoy, albaranAbono: normAlbaran(doc.numero_albaran), albaranOrigen: albaranOrigen(l.albaran_origen),
-    ref: l.referencia, desc: l.descripcion, importe: parseNumber(l.importe),
+function guardarAbonosEscaneados_(tabL, tabA, doc, hoy) {
+  const num = normAlbaran(doc.numero_albaran), fecha = aFecha_(doc.fecha || hoy), plateDe = matriculasDeAlbaranes_(tabA, tabL);
+  const ya = new Set(lineasAbono_(tabL).map(x => x.clave));
+  const nuevas = clavesAbonos(doc.lineas.filter(l => !esResiduo(l)).map(l => ({ l, albaranAbono: num, albaranOrigen: albaranOrigen(l.albaran_origen), ref: l.referencia, desc: l.descripcion })));
+  const filas = nuevas.filter(a => !ya.has(a.clave)).map(({ l, albaranOrigen: orig }) => ({
+    'Nº factura': '', 'Nº albarán': num, 'Fecha albarán': fecha, 'Tipo': 'Abono', 'Matrícula': plateDe[orig] || '', 'Albarán origen': orig,
+    'Referencia': l.referencia, 'Descripción': l.descripcion, 'Cantidad': l.cantidad == null ? '' : l.cantidad, 'Precio': l.precio_unitario == null ? '' : l.precio_unitario,
+    'Descuento': l.descuento_pct == null ? '' : l.descuento_pct / 100, 'Importe sin IVA': l.importe == null ? 0 : l.importe, 'Fecha abono': fecha,
   }));
+  agregarFilas_(tabL, filas);
+  return filas.length;
 }
 
 /**
- * Filas borradas a mano en Abonos: las piezas marcadas cuya fila ya no está se desmarcan en Piezas.
- * Una fila de abono sin pieza (Sin solicitar) no afecta a nada más.
- */
-function desmarcarPiezasBorradas_() {
-  if (recolocarTablaAbonos_()) montarAbonos_();
-  const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ult = sh.getLastRow();
-  const enTabla = new Set();
-  if (ult >= tb) sh.getRange(tb, colsAbonos_().clave, ult - tb + 1, 1).getValues().forEach(r => partirClaves(r[0]).forEach(k => enTabla.add(k)));
-  const tabP = leerTabla_(HOJA.PIEZAS);
-  const { todas } = piezasParaAbonos_(tabP, leerTabla_(HOJA.ALB), null);
-  const quitar = todas.filter(p => p.marcada && !enTabla.has(p.clave));
-  quitar.forEach(p => actualizarFila_(tabP, p.fila, { 'Reembolso': false, 'Fecha reembolso': '' }));
-  if (quitar.length) {
-    const lista = quitar.map(p => `${p.albaran} ${p.ref || p.desc}`).join(', ');
-    log_('INFO', 'desmarcarPiezasBorradas', HOJA.PIEZAS, `Fila borrada en Abonos → Reembolso desmarcado: ${lista}`);
-    toast_(`Reembolso desmarcado en Piezas: ${lista}`, 'Abonos', 8);
-  }
-}
-
-/**
- * Edición a mano en la tabla de Abonos. Vaciar una fila entera (seleccionarla y pulsar Suprimir) cuenta como borrarla:
- * se quita el hueco y, si era de una pieza, se desmarca en Piezas. Cualquier otro cambio se respeta tal cual.
+ * Edición a mano en la tabla de Abonos: se vuelve a poner lo que toca (es un informe). El resumen y el panel de la
+ * derecha (el año, por ejemplo) sí se pueden cambiar.
  */
 function editarAbonos_(r0, n, c0) {
-  if (c0 > ABONOS.cabTabla.length) return;  // resumen / panel de la derecha: no es la tabla
-  // Si la tabla estaba descolocada, la fila editada ya no es la que era: sólo se recoloca y se revisan las piezas.
-  if (recolocarTablaAbonos_()) { montarAbonos_(); desmarcarPiezasBorradas_(); return; }
-  const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length;
-  const desde = Math.max(r0, tb), hasta = r0 + n, ult = sh.getLastRow();
-  if (hasta <= desde) return;
-  const vals = sh.getRange(desde, 1, hasta - desde, ncol).getValues();
-  const cols = ENTRADAS_ABONOS_.map(k => colsAbonos_()[k]), vacias = [];
-  vals.forEach((v, i) => { if (cols.every(c => v[c - 1] === '' || v[c - 1] == null)) vacias.push(desde + i); });
-  if (!vacias.length) return;
-  // Lo que queda por debajo de la última fila con algo ya está en blanco. De abajo arriba para no mover las siguientes.
-  vacias.filter(r => r <= ult).sort((a, b) => b - a).forEach(r => sh.getRange(r, 1, 1, ncol).deleteCells(SpreadsheetApp.Dimension.ROWS));
-  desmarcarPiezasBorradas_();
+  if (c0 > ABONOS.cabTabla.length || r0 + n <= ABONOS.filaTabla) return;
+  if (actualizarInformeAbonos_().escrito) toast_('Abonos se rellena solo: cambia el dato en Piezas (o el "ID pieza" de la línea en Líneas RM).', 'Abonos', 8);
 }
 
 /**
@@ -244,10 +188,10 @@ function recolocarTablaAbonos_() {
   const n = Math.min(Math.max(sh.getLastRow(), 1), 80);
   const vals = sh.getRange(1, 1, n, ct.length).getValues();
   const vacia = r => r.every(x => x === '' || x == null);
-  const idx = vals.findIndex(r => r.indexOf(CAMPOS_ABONOS_.fechaAbono) >= 0 && r.indexOf(CAMPOS_ABONOS_.clave) >= 0);
+  const idx = vals.findIndex(r => r.indexOf(CAMPOS_ABONOS_.fechaAbono) >= 0 && r.indexOf(CAMPOS_ABONOS_.estado) >= 0);
   if (idx < 0) {
     if (vals.every(vacia)) return false;  // hoja nueva: aún no hay tabla
-    throw new Error('No encuentro la cabecera de la tabla de Abonos ("Fecha abono" … "Clave" en la fila 1). ' +
+    throw new Error('No encuentro la cabecera de la tabla de Abonos ("Fecha abono" … "Estado" en la fila 1). ' +
       'Si se ha borrado, deshazlo (Ctrl+Z) o recupera la fila desde Archivo ▸ Historial de versiones.');
   }
   const real = idx + 1;
@@ -260,21 +204,19 @@ function recolocarTablaAbonos_() {
   return true;
 }
 
-/**
- * Filas enteras insertadas o borradas a mano en Abonos: la tabla se revisa (y se desmarcan las piezas cuya fila se ha
- * borrado) y, si el resumen de la derecha se ha descolocado, se vuelve a montar.
- */
-function revisarAbonosTrasCambioDeFilas_(borradas) {
+/** Filas enteras insertadas o borradas a mano en Abonos: el resumen vuelve a su sitio y la tabla se rehace. */
+function revisarAbonosTrasCambioDeFilas_() {
   if (recolocarTablaAbonos_()) montarAbonos_();
   else if (!resumenAbonosEnSuSitio_(hoja_(HOJA.ABONOS))) montarResumenAbonos_();
-  if (borradas) desmarcarPiezasBorradas_();
+  actualizarInformeAbonos_();
 }
 
-/** Menú: Actualizar Abonos (añade lo que falte; no cambia ni borra nada de lo que ya hay). */
+/** Menú: Actualizar Abonos. */
 function actualizarAbonos() {
   ejecutar_('actualizarAbonos', () => conBloqueo_(10, () => {
     actualizarHoja_(false);
-    const r = sincronizarAbonos_();
-    toast_(r.nuevas.length ? `Abonos: ${r.nuevas.length} fila(s) nueva(s) arriba.` : 'Abonos ya estaba al día.');
+    const r = actualizarInformeAbonos_();
+    const pendientes = r.filas.filter(f => f.estado === 'Sin abonar').length;
+    toast_(`${r.escrito ? 'Abonos actualizado' : 'Abonos ya estaba al día'}: ${r.filas.length} fila(s), ${pendientes} sin abonar.`);
   }));
 }

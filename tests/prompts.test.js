@@ -5,13 +5,25 @@ const L = require('../src/Logic.js');
 
 test('normalizarAlbaran limpia tipos y matrícula', () => {
   const d = P.normalizarAlbaran({ es_albaran: true, proveedor: 'RM', numero_albaran: ' 462446 ', fecha: '2026-09-15', matricula: '1234 abc',
-    total: '44,54', base_imponible: 36.81, lineas: [{ referencia: 'DAYCO 6PK1090EE', descripcion: ' CORREA  ESTRIADA ', importe: '11,31', reembolso: true }] });
+    total: '44,54', base_imponible: 36.81, lineas: [{ referencia: 'DAYCO 6PK1090EE', descripcion: ' CORREA  ESTRIADA ', importe: '11,31', manuscrito: '—R', reembolso: true }] });
   assert.equal(d.numero_albaran, '462446');
   assert.equal(d.matricula, '1234ABC');
   assert.equal(d.total, 44.54);
   assert.equal(d.lineas[0].referencia, 'DAYCO6PK1090EE');
   assert.equal(d.lineas[0].descripcion, 'CORREA ESTRIADA');
   assert.equal(d.lineas[0].reembolso, true);
+});
+
+test('normalizarAlbaran: sólo una R escrita a mano es reembolso (albaranes 512948 y 512361: "MV821" y "CHEMA")', () => {
+  const linea = (manuscrito, reembolso) => P.normalizarAlbaran({ lineas: [{ referencia: 'X', descripcion: 'BATERIA', importe: 1, manuscrito, reembolso }] }).lineas[0];
+  assert.equal(linea('MV821', true).reembolso, false);
+  assert.equal(linea('CHEMA', true).reembolso, false);
+  assert.equal(linea('R10', true).reembolso, false);
+  assert.equal(linea('', true).reembolso, false, 'sin nada escrito no hay reembolso');
+  assert.equal(linea('R', false).reembolso, false, 'si Gemini duda, no');
+  assert.equal(linea(' R ', true).reembolso, true);
+  assert.equal(linea('CHEMA', true).manuscrito, 'CHEMA');
+  assert.ok(P.SCHEMA_ALBARAN.properties.lineas.items.required.includes('manuscrito'));
 });
 
 test('normalizarAlbaran: fecha inválida -> "" y proveedor por defecto RM', () => {

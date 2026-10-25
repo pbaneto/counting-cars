@@ -13,12 +13,11 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '4.0.0';
+const VERSION = '5.0.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', COCHES: 'Coches', RESUMEN: 'Resumen',
   FACT: 'Facturas RM', LINEAS: 'Líneas RM', CONFIG: 'Config', REG: 'Registro', DIAG: 'Diagnóstico',
-  CLAVES: 'Abonos (claves)',  // oculta: claves de abonos de factura ya añadidos alguna vez a Abonos
 };
 
 const ESQUEMA = {
@@ -39,10 +38,12 @@ const ESQUEMA = {
     cabeceraMovil: true,  // puede bajar si se insertan filas entre el panel y la cabecera (ver filaCabecera_)
   },
   'Piezas': {
+    // ID: número fijo de cada pieza, lo pone el script (ver idsPiezas_). No cuenta como dato: una fila vaciada a mano que
+    // conserve su ID es una fila vacía.
     cabeceras: ['Reembolso', 'Matrícula', 'Nº albarán', 'Referencia pieza', 'Descripción', 'Marca', 'Cantidad', 'Precio base', 'Descuento aplicado',
-      'Precio descontado sin IVA', 'Precio descontado con IVA', 'Fecha reembolso', 'Proveedor', 'Origen', 'Avisos'],
+      'Precio descontado sin IVA', 'Precio descontado con IVA', 'Fecha reembolso', 'Abonada a mano', 'Proveedor', 'Origen', 'Avisos', 'ID'],
     entradas: ['Reembolso', 'Nº albarán', 'Referencia pieza', 'Descripción', 'Marca', 'Cantidad', 'Precio base', 'Descuento aplicado',
-      'Precio descontado sin IVA', 'Fecha reembolso', 'Origen'],
+      'Precio descontado sin IVA', 'Fecha reembolso', 'Abonada a mano', 'Origen'],
     casillas: ['Reembolso'],
     filasFormato: 4000,
   },
@@ -57,10 +58,13 @@ const ESQUEMA = {
     filasFormato: 0,
   },
   'Líneas RM': {
+    // Líneas de las facturas RM y de los albaranes de ABONO escaneados (estos, sin Nº factura hasta que llega su factura).
+    // En las de abono: "ID pieza" = la pieza abonada (la pone el script; se puede corregir a mano, "NO" = sin pieza) y
+    // "Fecha abono" = la del albarán de abono si se escaneó antes, o la de la factura.
     cabeceras: ['Nº factura', 'Nº albarán', 'Fecha albarán', 'Matrícula', 'Tipo', 'Albarán origen', 'Referencia', 'Descripción', 'Cantidad', 'Precio',
-      'Descuento', 'Importe sin IVA', 'Conciliación'],
+      'Descuento', 'Importe sin IVA', 'Conciliación', 'ID pieza', 'Fecha abono'],
     entradas: ['Nº factura', 'Nº albarán', 'Fecha albarán', 'Matrícula', 'Tipo', 'Albarán origen', 'Referencia', 'Descripción', 'Cantidad', 'Precio',
-      'Descuento', 'Importe sin IVA'],
+      'Descuento', 'Importe sin IVA', 'ID pieza', 'Fecha abono'],
     filasFormato: 3000,
   },
   'Registro': {
@@ -92,6 +96,7 @@ const CONFIG_DEFECTO = [
 /**
  * Posiciones fijas de la pestaña Abonos. La tabla grande va arriba del todo (cabecera en la fila 1, que queda fija) en
  * las columnas A-M; el resumen por quincena y el panel de pendientes van a su derecha (columnas O en adelante).
+ * La tabla es un informe: el script la rehace entera desde Piezas y Líneas RM (ver Abonos.js).
  */
 const ABONOS = {
   filaCabTabla: 1, filaTabla: 2, maxTabla: 3000,
@@ -99,10 +104,10 @@ const ABONOS = {
   panelCol: 22, // V (etiqueta) / W (valor): panel "Pendientes de RM", no depende de la quincena en que se pidió el reembolso
   cabResumen: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso abonado', 'Total factura RM', 'Diferencia'],
   cabTabla: ['Fecha abono', 'Descripción pieza', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia', 'Matrícula',
-    'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente', 'Clave'],  // Clave: columna oculta (ver clavesPiezas en Logic.js)
+    'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente', 'ID pieza'],  // ID pieza: columna oculta
 };
 
-const ESTADOS_ABONO = ['Abonada', 'Sin abonar', 'Sin solicitar'];
+const ESTADOS_ABONO = ['Abonada', 'Abonada (a mano)', 'Sin abonar', 'Sin solicitar'];
 const COLORES = {
   cabecera: '#1f3a5f', gris: '#efefef', rojo: '#f4cccc', verde: '#d9ead3', amarillo: '#fff2cc', naranja: '#fce5cd', azul: '#cfe2f3',
 };

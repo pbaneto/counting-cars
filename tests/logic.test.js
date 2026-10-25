@@ -155,118 +155,84 @@ test('periodoFactura: quincena de la última compra', () => {
   assert.deepEqual(L.periodoFactura(facturaReal()), { year: 2026, month: 9, quincena: 1 });
 });
 
-const piezasEj = () => L.clavesPiezas([
-  { albaran: '443645', ref: 'VARTAA8', desc: 'A8 AGM VARTA', sinIva: 130.10, fechaReembolso: '2026-09-04', matricula: '5678DEF' },
-  { albaran: '462446', ref: 'DAYCO6PK1090EE', desc: 'CORREA', sinIva: 11.31, fechaReembolso: '2026-09-16', matricula: '1234ABC' },
-]);
-const abonosEj = () => L.clavesAbonos([
-  { factura: 'FCR 00001', fecha: '2026-09-04', albaranAbono: '446334', albaranOrigen: '443645', ref: 'VARTAA8', desc: 'A8 AGM VARTA 60 AH', importe: -130.10 },
-  { factura: 'FCR 00001', fecha: '2026-09-07', albaranAbono: '446877', albaranOrigen: '439139', ref: 'WALKE80477', desc: 'SPECIAL CLAMP', importe: -6.79 },
-]);
+const piezasEj = () => [
+  { id: 1, albaran: '443645', ref: 'VARTAA8', desc: 'A8 AGM VARTA', sinIva: 130.10, solicitada: true, fechaSolicitud: '2026-09-04', abonadaAMano: '', matricula: '5678DEF' },
+  { id: 2, albaran: '462446', ref: 'DAYCO6PK1090EE', desc: 'CORREA', sinIva: 11.31, solicitada: true, fechaSolicitud: '2026-09-16', abonadaAMano: '', matricula: '1234ABC' },
+];
+const abonosEj = () => [
+  { idPieza: '', factura: 'FCR 00001', fecha: '2026-09-04', albaranAbono: '446334', albaranOrigen: '443645', ref: 'VARTAA8', desc: 'A8 AGM VARTA 60 AH', importe: -130.10 },
+  { idPieza: '', factura: 'FCR 00001', fecha: '2026-09-07', albaranAbono: '446877', albaranOrigen: '439139', ref: 'WALKE80477', desc: 'SPECIAL CLAMP', importe: -6.79 },
+];
+const emparejar = (piezas, abonos) => { L.emparejarAbonos(piezas, abonos).forEach(({ i, id }) => { abonos[i].idPieza = id; }); return abonos; };
 
-test('claves: estables y distintas para piezas repetidas del mismo albarán', () => {
+test('claves de contenido: estables y distintas para piezas repetidas del mismo albarán', () => {
   const p = L.clavesPiezas([{ albaran: '1', ref: 'ab-1' }, { albaran: '1', ref: 'AB1' }, { albaran: '1', ref: '', desc: 'Filtro' }]);
   assert.deepEqual(p.map(x => x.clave), ['P|1|AB1|1', 'P|1|AB1|2', 'P|1|DFILTRO|1']);
   assert.equal(L.clavesAbonos([{ factura: 'F 1', albaranAbono: '77', albaranOrigen: '9', ref: 'X' }])[0].clave, 'A|77|9|X|1');
   assert.deepEqual(L.partirClaves(' P|1|A|1 ; A|F|1|A|1 '), ['P|1|A|1', 'A|F|1|A|1']);
 });
 
-test('sincronizarAbonos: tabla vacía → piezas "Sin abonar" y abonos (Abonada / Sin solicitar), lo más reciente arriba', () => {
-  const piezas = piezasEj(), todas = piezas.concat(L.clavesPiezas([{ albaran: '439139', ref: 'WALKE80477' }]));
-  const r = L.sincronizarAbonos([], piezas, todas, abonosEj(), new Set());
-  assert.deepEqual(r.nuevas.map(f => f.estado), ['Sin abonar', 'Sin solicitar', 'Abonada']);
-  const abonada = r.nuevas[2];
-  assert.equal(abonada.fechaSolicitud, '2026-09-04');
-  assert.equal(abonada.factura, 'FCR 00001');
-  assert.equal(abonada.clave, 'P|443645|VARTAA8|1;A|446334|443645|VARTAA8|1');
-  assert.match(r.nuevas[1].nota, /no tiene Reembolso/);
-  assert.deepEqual(r.registrar.sort(), ['A|446334|443645|VARTAA8|1', 'A|446877|439139|WALKE80477|1']);
+test('emparejarAbonos: mismo albarán y referencia; si no, una pieza pedida con el mismo importe; una pieza, un abono', () => {
+  const piezas = piezasEj().concat([{ id: 3, albaran: '1', ref: 'ABC', sinIva: 10, solicitada: true }, { id: 4, albaran: '1', ref: 'OTRA', sinIva: 10, solicitada: false }]);
+  const abonos = abonosEj().concat([
+    { idPieza: '', fecha: '2026-09-02', albaranOrigen: '1', ref: 'XYZ', importe: -10 },
+    { idPieza: '', fecha: '2026-09-03', albaranOrigen: '1', ref: 'XYZ2', importe: -10 },
+  ]);
+  assert.deepEqual(L.emparejarAbonos(piezas, abonos), [{ i: 2, id: 3 }, { i: 0, id: 1 }], 'por importe sólo con piezas pedidas, y la pieza 3 ya está cogida');
+  // Una pieza sin pedir, con la misma referencia: se empareja (así, si luego se marca, el abono ya es suyo)
+  assert.deepEqual(L.emparejarAbonos([{ id: 9, albaran: '439139', ref: 'WALKE80477', solicitada: false }], abonosEj()), [{ i: 1, id: 9 }]);
 });
 
-test('sincronizarAbonos: no toca lo que ya hay; sólo rellena huecos de la fila de la pieza al llegar su abono', () => {
-  const piezas = piezasEj();
-  const existentes = [
-    { clave: piezas[0].clave, estado: 'Sin abonar', albaran: '443645', ref: 'VARTAA8', sinIva: 130.10, fechaAbono: '', factura: '', nota: 'mi nota' },
-    { clave: piezas[1].clave, estado: 'Abonada', albaran: '462446', ref: 'DAYCO6PK1090EE', sinIva: 11.31, fechaAbono: '', factura: '', nota: '' },  // cambiado a mano
-    { clave: 'A|446877|439139|WALKE80477|1', estado: 'Abonada', albaran: '439139', ref: 'WALKE80477', factura: 'FCR 00001' },  // "Sin solicitar" cambiado a mano
-  ];
-  const r = L.sincronizarAbonos(existentes, piezas, piezas, abonosEj(), new Set(['A|446877|439139|WALKE80477|1']));
-  assert.equal(r.nuevas.length, 0);
-  assert.deepEqual(r.cambios, [{ i: 0, v: { clave: 'P|443645|VARTAA8|1;A|446334|443645|VARTAA8|1', estado: 'Abonada', fechaAbono: '2026-09-04', factura: 'FCR 00001' } }]);
-  // Una segunda sincronización no cambia nada más
-  Object.assign(existentes[0], r.cambios[0].v);
-  const r2 = L.sincronizarAbonos(existentes, piezas, piezas, abonosEj(), new Set(r.registrar.concat('A|446877|439139|WALKE80477|1')));
-  assert.deepEqual([r2.nuevas.length, r2.cambios.length, r2.borrar.length], [0, 0, 0]);
+test('emparejarAbonos: un ID ya puesto no se cambia nunca, ni "NO" (sin pieza)', () => {
+  const abonos = abonosEj();
+  abonos[0].idPieza = 'no';
+  assert.deepEqual(L.emparejarAbonos(piezasEj(), abonos), []);
+  abonos[0].idPieza = 77;  // la pieza ya no existe: no se busca otra
+  assert.deepEqual(L.emparejarAbonos(piezasEj(), abonos), []);
+  abonos[0].idPieza = 2;  // puesto a mano a otra pieza: se respeta, y esa pieza ya no está libre
+  assert.deepEqual(L.emparejarAbonos([{ id: 2, albaran: '443645', ref: 'VARTAA8', solicitada: true }], [abonos[0], Object.assign({}, abonos[0], { idPieza: '' })]), []);
 });
 
-test('sincronizarAbonos: una fila de abono borrada no vuelve; una pieza desmarcada borra su fila', () => {
-  const piezas = piezasEj();
-  const r = L.sincronizarAbonos([], [], piezas, abonosEj(), new Set(['A|446877|439139|WALKE80477|1', 'A|446334|443645|VARTAA8|1']));
-  assert.equal(r.nuevas.length, 0);
-  const existentes = [{ clave: 'X' }, { clave: piezas[1].clave + ';A|F|1|X|1', estado: 'Abonada' }, { clave: '' }];
-  const r2 = L.sincronizarAbonos(existentes, [piezas[0]], piezas, [], new Set(), [piezas[1].clave]);
-  assert.deepEqual(r2.borrar, [1]);
-  assert.equal(r2.nuevas.length, 1, 'la otra pieza marcada, que faltaba, sí se añade');
+test('informeAbonos: Abonada, Sin abonar, Sin solicitar y Abonada (a mano); lo más reciente arriba', () => {
+  const piezas = piezasEj().concat([{ id: 5, albaran: '500', ref: 'M', desc: 'Manual', sinIva: 20, solicitada: true, fechaSolicitud: '2026-09-20', abonadaAMano: '2026-09-25' }]);
+  const filas = L.informeAbonos(piezas, emparejar(piezas, abonosEj()), { 439139: '9999ZZZ' });
+  assert.deepEqual(filas.map(f => [f.estado, f.referencia]), [
+    ['Abonada (a mano)', 'M'], ['Sin abonar', 'DAYCO6PK1090EE'], ['Sin solicitar', 'WALKE80477'], ['Abonada', 'VARTAA8']]);
+  const abonada = filas[3];
+  assert.deepEqual([abonada.idPieza, abonada.fechaAbono, abonada.fechaSolicitud, abonada.factura, abonada.descripcion, abonada.matricula, abonada.nota],
+    [1, '2026-09-04', '2026-09-04', 'FCR 00001', 'A8 AGM VARTA', '5678DEF', '']);
+  assert.equal(filas[2].matricula, '9999ZZZ', 'sin pieza: la matrícula de su albarán');
+  assert.equal(filas[0].fechaAbono, '2026-09-25');
 });
 
-test('sincronizarAbonos: marcar una pieza cuyo abono ya está como "Sin solicitar" completa esa fila (no añade otra)', () => {
-  const piezas = piezasEj();
-  const existentes = [{ clave: 'A|446334|443645|VARTAA8|1', estado: 'Sin solicitar', albaran: '443645', ref: 'VARTAA8', sinIva: 130.10,
-    fechaAbono: '2026-09-04', fechaSolicitud: '', factura: 'FCR 00001', nota: 'La pieza existe en Piezas pero no tiene Reembolso marcado' }];
-  const r = L.sincronizarAbonos(existentes, [piezas[0]], piezas, [], new Set(['A|446334|443645|VARTAA8|1']));
-  assert.equal(r.nuevas.length, 0, 'no se duplica');
-  assert.deepEqual(r.cambios, [{ i: 0, v: { clave: 'A|446334|443645|VARTAA8|1;' + piezas[0].clave, estado: 'Abonada', fechaSolicitud: '2026-09-04', nota: '' } }]);
-  // Sin referencia que coincida, vale el mismo albarán e importe
-  const sinRef = [Object.assign({}, existentes[0], { ref: 'OTRA', nota: '' })];
-  const r2 = L.sincronizarAbonos(sinRef, [piezas[0]], piezas, [], new Set());
-  assert.equal(r2.nuevas.length, 0);
-  assert.equal(r2.cambios[0].v.estado, 'Abonada');
-  // Una fila "Abonada" que ya tiene su pieza no se reutiliza para otra
-  const conPieza = [Object.assign({}, existentes[0], { clave: 'P|443645|VARTAA8|9;A|446334|443645|VARTAA8|1', estado: 'Abonada' })];
-  assert.equal(L.sincronizarAbonos(conPieza, [piezas[0]], piezas, [], new Set()).nuevas.length, 1);
+test('informeAbonos: editar la pieza (precio, referencia, albarán) cambia su fila, nunca añade otra', () => {
+  const piezas = piezasEj(), abonos = emparejar(piezas, abonosEj());
+  const antes = L.informeAbonos(piezas, abonos);
+  Object.assign(piezas[1], { ref: 'OTRAREF', albaran: '999999', sinIva: 12 });
+  Object.assign(piezas[0], { desc: 'BATERIA', sinIva: 131 });
+  const despues = L.informeAbonos(piezas, abonos);
+  assert.equal(despues.length, antes.length);
+  const sinAbonar = despues.find(f => f.idPieza === 2);
+  assert.deepEqual([sinAbonar.referencia, sinAbonar.albaran, sinAbonar.sinIva], ['OTRAREF', '999999', 12]);
+  const abonada = despues.find(f => f.idPieza === 1);
+  assert.deepEqual([abonada.estado, abonada.descripcion, abonada.sinIva], ['Abonada', 'BATERIA', 130.1], 'el importe es lo abonado');
+  assert.match(abonada.nota, /Importe abonado distinto: se pidió 131/);
 });
 
-test('sincronizarAbonos: una fila sin clave con la misma descripción e importe se adopta (no se duplica en cada sincronización)', () => {
-  const piezas = piezasEj();
-  const existentes = [{ clave: '', estado: 'Sin abonar', albaran: '', ref: '', descripcion: piezas[0].desc, sinIva: 130.1 },
-    { clave: '', estado: 'Sin abonar', albaran: '', ref: '', descripcion: piezas[0].desc, sinIva: 130.1 }];
-  const r = L.sincronizarAbonos(existentes, [piezas[0]], piezas, [], new Set());
-  assert.equal(r.nuevas.length, 0);
-  assert.deepEqual(r.cambios, [{ i: 0, v: { clave: piezas[0].clave, albaran: '443645', referencia: 'VARTAA8', fechaSolicitud: '2026-09-04' } }]);
+test('informeAbonos: desmarcar una pieza quita su fila; si ya tenía abono, éste pasa a "Sin solicitar"', () => {
+  const piezas = piezasEj(), abonos = emparejar(piezas, abonosEj());
+  piezas.forEach(p => { p.solicitada = false; });
+  const filas = L.informeAbonos(piezas, abonos);
+  assert.deepEqual(filas.map(f => f.estado), ['Sin solicitar', 'Sin solicitar']);
+  assert.match(filas.find(f => f.idPieza === 1).nota, /no tiene Reembolso marcado/);
+  // La pieza se borra de Piezas: su abono sigue, sin pieza
+  const sinPieza = L.informeAbonos([], abonos);
+  assert.match(sinPieza.find(f => f.referencia === 'VARTAA8').nota, /La pieza 1 ya no está en Piezas/);
+  assert.equal(L.informeAbonos([], [Object.assign(abonos[0], { idPieza: 'NO' })])[0].nota, '');
 });
 
-test('mapaMatriculas y sincronizarAbonos: rellena sólo las matrículas vacías', () => {
-  const m = L.mapaMatriculas([['100', ''], ['100', '1234 abc'], ['100', '9999ZZZ'], ['', 'X']]);
-  assert.deepEqual(m, { 100: '1234ABC' });
-  const existentes = [{ clave: 'x', albaran: '100', matricula: '' }, { clave: 'y', albaran: '100', matricula: 'A MANO' }, { clave: 'z', albaran: '200', matricula: '' }];
-  const r = L.sincronizarAbonos(existentes, [], [], [], new Set(), [], { matriculas: m });
-  assert.deepEqual(r.cambios, [{ i: 0, v: { matricula: '1234ABC' } }]);
-});
-
-test('sincronizarAbonos: albarán de abono escaneado (sin factura) y luego la factura con el mismo abono', () => {
-  const piezas = piezasEj();
-  const escaneado = L.clavesAbonos([{ factura: '', fecha: '2026-09-04', albaranAbono: '446334', albaranOrigen: '443645', ref: 'VARTAA8', desc: 'A8', importe: -130.10 }]);
-  const r = L.sincronizarAbonos([], piezas, piezas, escaneado, new Set());
-  const fila = r.nuevas.find(f => f.estado === 'Abonada');
-  assert.equal(fila.fechaAbono, '2026-09-04', 'fecha del albarán de abono');
-  assert.equal(fila.factura, '');
-  // Llega la factura (fecha de la factura 15/09): misma clave → sólo se rellena "Factura RM"
-  const existentes = r.nuevas.map(f => ({ clave: f.clave, estado: f.estado, albaran: f.albaran, ref: f.referencia, sinIva: f.sinIva, fechaAbono: f.fechaAbono, factura: f.factura }));
-  const deFactura = L.clavesAbonos([{ factura: 'FCR 1', fecha: '2026-09-15', albaranAbono: '446334', albaranOrigen: '443645', ref: 'VARTAA8', desc: 'A8', importe: -130.10 }]);
-  const r2 = L.sincronizarAbonos(existentes, piezas, piezas, deFactura, new Set(r.registrar));
-  assert.equal(r2.nuevas.length, 0, 'no se duplica');
-  assert.deepEqual(r2.cambios, [{ i: existentes.indexOf(existentes.find(f => f.estado === 'Abonada')), v: { factura: 'FCR 1' } }]);
-  // Escaneado y factura en la misma sincronización: cuenta la de la factura
-  const r3 = L.sincronizarAbonos([], piezas, piezas, escaneado.concat(deFactura), new Set());
-  assert.equal(r3.nuevas.filter(f => f.estado === 'Abonada').length, 1);
-  assert.equal(r3.nuevas.find(f => f.estado === 'Abonada').factura, 'FCR 1');
-});
-
-test('sincronizarAbonos empareja por importe si la referencia no coincide', () => {
-  const p = L.clavesPiezas([{ albaran: '1', ref: 'ABC', desc: 'd', sinIva: 10, fechaReembolso: '2026-09-01' }]);
-  const r = L.sincronizarAbonos([], p, p, L.clavesAbonos([{ factura: 'F', fecha: '2026-09-02', albaranOrigen: '1', ref: 'XYZ', desc: 'd', importe: -10 }]), new Set());
-  assert.equal(r.nuevas.length, 1);
-  assert.equal(r.nuevas[0].estado, 'Abonada');
+test('esMarcaReembolso: sólo una R sola', () => {
+  assert.deepEqual(['R', '—R', ' - R ', 'r', 'CHEMA', 'MV821', 'R10', 'RR', ''].map(L.esMarcaReembolso), [true, true, true, true, false, false, false, false, false]);
 });
 
 test('versiones: comparar y saber si cambia el diseño', () => {
