@@ -2,6 +2,7 @@
  * Mini simulador de Apps Script para pruebas de humo en Node: carga TODOS los archivos de src/ en un único
  * ámbito global (como hace Apps Script) y simula Sheets/Drive/UrlFetch en memoria.
  * No evalúa fórmulas (las celdas de fórmula valen '' salvo HYPERLINK): sirve para ejecutar los flujos y detectar errores.
+ * Filtros como en Sheets: una fila que el filtro oculta (también las vacías de debajo) no guarda fechas ni fórmulas.
  */
 const fs = require('fs');
 const path = require('path');
@@ -34,6 +35,23 @@ class Rango {
   getFormulas() { this._r('getFormulas'); const o = []; for (let i = 0; i < this.nr; i++) { o.push([]); for (let j = 0; j < this.nc; j++) { const x = this.sh.cell(this.r + i, this.c + j); o[i].push(x ? x.f : ''); } } return o; }
   getValue() { this._r('getValue'); const x = this.sh.cell(this.r, this.c); return x ? x.v : ''; }
   getFormula() { this._r('getFormula'); const x = this.sh.cell(this.r, this.c); return x ? x.f : ''; }
+  getRichTextValues() {
+    this._r('getRichTextValues');
+    const o = [];
+    for (let i = 0; i < this.nr; i++) {
+      o.push([]);
+      for (let j = 0; j < this.nc; j++) {
+        const x = this.sh.cell(this.r + i, this.c + j);
+        o[i].push({ getText: () => (x ? String(x.v) : ''), getLinkUrl: () => (x && x.url) || null });
+      }
+    }
+    return o;
+  }
+  setRichTextValues(a) {
+    this._each((r, c, i, j) => { this.sh.put(r, c, a[i][j].texto); const x = this.sh.cell(r, c); if (x && a[i][j].url) x.url = a[i][j].url; });
+    return this._w();
+  }
+  createFilter() { this.sh.filtro = new Filtro(this.sh, this.r, this.c, this.nr, this.nc); return this.sh.filtro; }
   getRow() { return this.r; } getColumn() { return this.c; } getNumRows() { return this.nr; } getNumColumns() { return this.nc; }
   getSheet() { return this.sh; } getA1Notation() { return `R${this.r}C${this.c}`; }
   setValues(a) { this._each((r, c, i, j) => this.sh.put(r, c, a[i][j])); return this._w(); }
@@ -63,14 +81,34 @@ class Rango {
   breakApart() { this._cortadas(); return this; }
 }
 
+class Filtro {
+  constructor(sh, r, c, nr, nc) { Object.assign(this, { sh, r, c, nr, nc, criterios: {} }); }
+  getRange() { return new Rango(this.sh, this.r, this.c, this.nr, this.nc); }
+  getColumnFilterCriteria(col) { return this.criterios[col] || null; }
+  removeColumnFilterCriteria(col) { delete this.criterios[col]; return this; }
+  setColumnFilterCriteria(col, k) { this.criterios[col] = k; return this; }
+  remove() { this.sh.filtro = null; }
+  /** Criterio de prueba: sólo se ven las filas cuyo valor en esa columna está en la lista. */
+  static visibles(lista) { return { visibles: lista }; }
+}
+
 class Hoja {
   constructor(ss, name, id) {
     this.ss = ss; this.name = name; this.id = id; this.grid = new Map(); this.maxRows = 1000; this.validacionesLimpiadas = []; this.validaciones = new Map(); this.combinadas = []; this.reglas = [];
+    this.filtro = null;
     return new Proxy(this, { get: (t, k, rcv) => (k in t || typeof k === 'symbol' ? Reflect.get(t, k, t) : chain()) });
   }
   cell(r, c) { return this.grid.get(r + ',' + c); }
+  getFilter() { this.ss.io.leer(`${this.name}.getFilter`); return this.filtro; }
+  oculta(r) {
+    const f = this.filtro;
+    if (!f || r <= f.r || r >= f.r + f.nr) return false;
+    return Object.keys(f.criterios).some(c => { const x = this.cell(r, Number(c)); return f.criterios[c].visibles.indexOf(x ? x.v : '') < 0; });
+  }
   put(r, c, v) {
     if (r > this.maxRows) this.maxRows = r;
+    const esFecha = Object.prototype.toString.call(v) === '[object Date]';
+    if (this.oculta(r) && (esFecha || (typeof v === 'string' && v.startsWith('=')))) return;
     if (typeof v === 'string' && v.startsWith('=')) {
       const h = /^=HYPERLINK\("([^"]*)"[,;]"([^"]*)"\)$/.exec(v);
       this.grid.set(r + ',' + c, { v: h ? h[2] : '', f: v });
@@ -205,6 +243,7 @@ function crearEntorno(opts = {}) {
     console: { log: m => log.console.push(String(m)), warn: m => log.console.push(String(m)), error: m => log.console.push(String(m)) },
     Logger: { log: m => log.logger.push(m) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, flush() { io.escrito = false; }, newDataValidation: validacion, newConditionalFormatRule: reglaCF,
+      newRichTextValue: () => { const v = { texto: '', url: null, setText(t) { v.texto = t; return v; }, setLinkUrl(u) { v.url = u; return v; }, build() { return v; } }; return v; },
       ProtectionType: { RANGE: 'RANGE' }, CopyPasteType: { PASTE_FORMAT: 'F', PASTE_DATA_VALIDATION: 'V' }, Dimension: { ROWS: 'ROWS', COLUMNS: 'COLUMNS' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
     DriveApp: { getFolderById: id => { if (!carpetas[id]) throw new Error('carpeta inexistente ' + id); return carpetas[id]; },
       getFileById: id => archivos[id], getRootFolder: () => carpetas.PADRE },
@@ -226,4 +265,4 @@ function crearEntorno(opts = {}) {
   return { ctx, ss, log, run, props, mkFolder, mkFile, carpetas, archivos };
 }
 
-module.exports = { crearEntorno };
+module.exports = { crearEntorno, Filtro };

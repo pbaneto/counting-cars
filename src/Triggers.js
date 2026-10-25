@@ -93,7 +93,7 @@ function editarAlbaranes_(r0, n, c0, nc) {
   for (let r = Math.max(r0, 2); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
     const g = h => vals[tab.map[h] - 1];
-    const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
+    const set = (h, v) => { sinFiltro_(tab.sh); tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
 
     const escrita = normPlate(g('Matrícula'));
     if (String(g('Matrícula')) !== escrita) set('Matrícula', escrita);
@@ -148,7 +148,7 @@ function editarTrabajos_(r0, n, c0, nc) {
   for (let r = Math.max(r0, tab.fc + 1); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
     const g = h => vals[tab.map[h] - 1];
-    const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
+    const set = (h, v) => { sinFiltro_(tab.sh); tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
     const plate = normPlate(g('Matrícula'));
     if (String(g('Matrícula')) !== plate) set('Matrícula', plate);
     if (filaConDatos_(vals)) avisarColumnaAutomatica_(tab, asegurarFila_(tab, r), c0, nc);
@@ -192,7 +192,7 @@ function editarPiezas_(r0, n, c0, nc) {
   editadas.forEach(({ r, vals, formulas: formulasFila }) => {
     const fila = tab.filas.find(f => f.fila === r);
     const g = h => vals[tab.map[h] - 1];
-    const set = (h, v) => { tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; if (fila) fila.v[h] = v; };
+    const set = (h, v) => { sinFiltro_(tab.sh); tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; if (fila) fila.v[h] = v; };
     if (filaConDatos_(vals)) avisarColumnaAutomatica_(tab, asegurarFila_(tab, r, formulasFila), c0, nc);
     const num = normAlbaran(g('Nº albarán'));
     if (String(g('Nº albarán')) !== num) { tab.sh.getRange(r, tab.map['Nº albarán']).setNumberFormat('@'); set('Nº albarán', num); }

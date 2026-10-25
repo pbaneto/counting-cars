@@ -13,10 +13,10 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '6.0.0';
+const VERSION = '7.0.0';
 
 const HOJA = {
-  ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', COCHES: 'Coches', RESUMEN: 'Resumen',
+  ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', CUADRE: 'Cuadre RM', COCHES: 'Coches', RESUMEN: 'Resumen',
   FACT: 'Facturas RM', LINEAS: 'Líneas RM', CONFIG: 'Config', REG: 'Registro', DIAG: 'Diagnóstico',
 };
 
@@ -95,17 +95,22 @@ const CONFIG_DEFECTO = [
 ];
 
 /**
- * Posiciones fijas de la pestaña Abonos. La tabla grande va arriba del todo (cabecera en la fila 1, que queda fija) en
- * las columnas A-M; el resumen por quincena y el panel de pendientes van a su derecha (columnas O en adelante).
- * La tabla es un informe: el script la rehace entera desde Piezas y Líneas RM (ver Abonos.js).
+ * Pestaña Abonos: sólo la tabla, un informe que el script rehace entero desde Piezas y Líneas RM (ver Abonos.js).
+ * Cabecera en la fila 1 (fija).
  */
 const ABONOS = {
   filaCabTabla: 1, filaTabla: 2, maxTabla: 3000,
-  colResumen: 15, celdaAnio: 'P1', filaCabResumen: 3, filaIni: 4, filas: 24,  // O: Mes, P: Quincena … T: Diferencia
-  panelCol: 22, // V (etiqueta) / W (valor): panel "Pendientes de RM", no depende de la quincena en que se pidió el reembolso
-  cabResumen: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso abonado', 'Total factura RM', 'Diferencia'],
   cabTabla: ['Fecha abono', 'Descripción pieza', 'Precio sin IVA', 'Precio con IVA', 'Estado', 'Nº albarán', 'Referencia', 'Matrícula',
     'Fecha solicitud', 'Factura RM', 'Nota', 'Días pendiente', 'ID pieza'],  // ID pieza: columna oculta
+};
+
+/**
+ * Pestaña Cuadre RM: resumen por quincena (filas 4-27; el año, en B1) y, a su derecha, el panel "Pendientes de RM", que
+ * no depende de la quincena en que se pidió el reembolso. Todo son fórmulas sobre Abonos, Albaranes y Facturas RM.
+ */
+const CUADRE = {
+  celdaAnio: 'B1', filaCab: 3, filaIni: 4, filas: 24, panelCol: 8,  // H (etiqueta) / I (valor)
+  cab: ['Mes', 'Quincena', 'Recambios totales RM', 'Reembolso abonado', 'Total factura RM', 'Diferencia'],
 };
 
 const ESTADOS_ABONO = ['Abonada', 'Abonada (a mano)', 'Sin abonar', 'Sin solicitar'];

@@ -33,6 +33,7 @@ function moverAErrores_(archivo) {
 }
 
 function enlacePdf_(archivo) { return enlacePdfId_(archivo.getId()); }
-function enlacePdfId_(id) { return loc_(`=HYPERLINK("https://drive.google.com/file/d/${id}/view","Ver PDF")`); }
+function urlPdf_(id) { return `https://drive.google.com/file/d/${id}/view`; }
+function enlacePdfId_(id) { return loc_(`=HYPERLINK("${urlPdf_(id)}","Ver PDF")`); }
 
 function idDeEnlace_(texto) { const m = /\/d\/([\w-]+)/.exec(String(texto || '')); return m ? m[1] : ''; }

@@ -101,7 +101,8 @@ function limpiarLinea_(l) {
   const n = v => { const x = parseNumber(v); return Number.isFinite(x) ? x : null; };
   return {
     referencia: String(l.referencia || '').replace(/\s+/g, '').toUpperCase(),
-    descripcion: String(l.descripcion || '').replace(/\s+/g, ' ').trim(),
+    // A veces se cuela el texto de debajo de la línea en un abono ("ABONO CORRESP. AL ALB. Nº …").
+    descripcion: String(l.descripcion || '').replace(/\s*ABONO CORRESP.*$/i, '').replace(/\s+/g, ' ').trim(),
     marca: String(l.marca || '').trim(),
     cantidad: n(l.cantidad), precio_unitario: n(l.precio_unitario), descuento_pct: n(l.descuento_pct), importe: n(l.importe),
     // Doble comprobación: Gemini tiende a marcar como reembolso cualquier cosa escrita a mano en la línea.

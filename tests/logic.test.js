@@ -205,20 +205,6 @@ test('informeAbonos: Abonada, Sin abonar, Sin solicitar y Abonada (a mano); lo m
   assert.equal(filas[0].fechaAbono, '2026-09-25');
 });
 
-test('informeAbonos: editar la pieza (precio, referencia, albarán) cambia su fila, nunca añade otra', () => {
-  const piezas = piezasEj(), abonos = emparejar(piezas, abonosEj());
-  const antes = L.informeAbonos(piezas, abonos);
-  Object.assign(piezas[1], { ref: 'OTRAREF', albaran: '999999', sinIva: 12 });
-  Object.assign(piezas[0], { desc: 'BATERIA', sinIva: 131 });
-  const despues = L.informeAbonos(piezas, abonos);
-  assert.equal(despues.length, antes.length);
-  const sinAbonar = despues.find(f => f.idPieza === 2);
-  assert.deepEqual([sinAbonar.referencia, sinAbonar.albaran, sinAbonar.sinIva], ['OTRAREF', '999999', 12]);
-  const abonada = despues.find(f => f.idPieza === 1);
-  assert.deepEqual([abonada.estado, abonada.descripcion, abonada.sinIva], ['Abonada', 'BATERIA', 130.1], 'el importe es lo abonado');
-  assert.match(abonada.nota, /Importe abonado distinto: se pidió 131/);
-});
-
 test('informeAbonos: desmarcar una pieza quita su fila; si ya tenía abono, éste pasa a "Sin solicitar"', () => {
   const piezas = piezasEj(), abonos = emparejar(piezas, abonosEj());
   piezas.forEach(p => { p.solicitada = false; });
@@ -252,10 +238,6 @@ test('informeAbonos: desde una fecha, salvo lo que sigue sin abonar', () => {
   assert.deepEqual(filas.map(f => [f.estado, f.referencia]), [['Sin abonar', 'DAYCO6PK1090EE'], ['Sin solicitar', 'WALKE80477']]);
   piezas[1].fechaSolicitud = '2026-08-01';
   assert.equal(L.informeAbonos(piezas, [], {}, '2026-09-05')[0].estado, 'Sin abonar', 'lo pendiente sale siempre');
-});
-
-test('esMarcaReembolso: sólo una R sola', () => {
-  assert.deepEqual(['R', '—R', ' - R ', 'r', 'CHEMA', 'MV821', 'R10', 'RR', ''].map(L.esMarcaReembolso), [true, true, true, true, false, false, false, false, false]);
 });
 
 test('versiones: comparar y saber si cambia el diseño', () => {

@@ -9,6 +9,7 @@ function procesarFacturasRM() {
     const resultados = leerConGemini_(archivos, false);
     const cfgErr = resultados.find(r => !r.ok && r.config);
     if (cfgErr) throw new Error(cfgErr.error);
+    releerFacturasDescuadradas_(archivos, resultados);
     const lineas = [];
     archivos.forEach((f, i) => {
       const r = resultados[i], nombre = f.getName();
@@ -25,6 +26,25 @@ function procesarFacturasRM() {
   }));
 }
 
+/** Bloques cuyas líneas no suman el importe del bloque (suele ser un bloque partido entre dos hojas). */
+function bloquesDescuadrados_(doc) { return validarFactura(doc, cfgNum_('IVA')).warnings.filter(w => /^Albarán .*: líneas/.test(w)); }
+
+/** Segunda lectura de las facturas con bloques descuadrados; se queda la lectura con menos bloques descuadrados. */
+function releerFacturasDescuadradas_(archivos, resultados) {
+  const repetir = resultados.map((r, i) => (r.ok && bloquesDescuadrados_(r.doc).length ? i : -1)).filter(i => i >= 0);
+  if (!repetir.length) return;
+  toast_(`Releyendo ${repetir.length} factura(s) con bloques que no cuadran…`, 'Facturas RM', 60);
+  const pistas = repetir.map(i => 'ATENCIÓN: en una primera lectura no cuadraban estos bloques (' + bloquesDescuadrados_(resultados[i].doc).join('; ') +
+    '). Seguramente faltan líneas que siguen en la hoja siguiente, debajo de la cabecera de columnas y sin fila de ALBARAN: son del mismo bloque.');
+  leerConGemini_(repetir.map(i => archivos[i]), false, pistas).forEach((s, k) => {
+    const i = repetir[k];
+    if (s.ok && bloquesDescuadrados_(s.doc).length < bloquesDescuadrados_(resultados[i].doc).length) {
+      resultados[i] = s;
+      log_('INFO', 'procesarFacturasRM', archivos[i].getName(), 'Bloques corregidos en la segunda lectura');
+    }
+  });
+}
+
 /** Guarda (o reemplaza) una factura. Devuelve {fatal, estado, numero, periodo}. */
 function registrarFactura_(archivo, doc, truncado) {
   const ref = archivo.getName(), iva = cfgNum_('IVA');
@@ -35,7 +55,7 @@ function registrarFactura_(archivo, doc, truncado) {
   const per = periodoFactura(doc);
   const estado = v.warnings.length ? '⚠ ' + v.warnings.join('; ') : 'OK';
 
-  const tabL = leerTabla_(HOJA.LINEAS);
+  let tabL = leerTabla_(HOJA.LINEAS);
   // Lo que ya se sabía de cada línea de abono (su pieza y su fecha de abono) pasa a la línea nueva con la misma clave: de
   // esta misma factura si se procesa otra vez, o de su albarán de abono escaneado antes, que deja de estar suelto.
   const sabido = {}, sustituidas = new Set();
@@ -72,14 +92,8 @@ function registrarFactura_(archivo, doc, truncado) {
   });
   // Reemplazo idempotente: fuera las líneas anteriores de esta misma factura y los abonos escaneados que ya trae.
   if (sustituidas.size) {
-    // Sin las columnas de fórmula: agregarFilas_ las vuelve a poner (con su valor leído quedarían fijas).
-    const resto = tabL.filas.filter(f => !sustituidas.has(f)).map(f => {
-      const v = Object.assign({}, f.v);
-      Object.keys(FORMULAS[HOJA.LINEAS]).forEach(h => delete v[h]);
-      return v;
-    });
-    vaciarTabla_(tabL);
-    agregarFilas_(tabL, resto);
+    borrarFilas_(tabL.sh, [...sustituidas].map(f => f.fila));
+    tabL = leerTabla_(HOJA.LINEAS);
   }
   agregarFilas_(tabL, filas);
 
@@ -91,12 +105,4 @@ function registrarFactura_(archivo, doc, truncado) {
   if (prev) actualizarFila_(tabF, prev.fila, fila); else agregarFilas_(tabF, [fila]);
   log_('INFO', 'registrarFactura', doc.numero_factura, `${doc.albaranes.length} albaranes, total ${doc.total}: ${estado}`);
   return { fatal: false, estado, numero: doc.numero_factura, periodo: per };
-}
-
-/** Borra el contenido de las columnas de entrada (deja fórmulas y formato). */
-function vaciarTabla_(tabla) {
-  const ult = tabla.sh.getLastRow();
-  if (ult > 1) tabla.esq.entradas.forEach(h => tabla.sh.getRange(2, tabla.map[h], ult - 1, 1).clearContent());
-  tabla.filas = [];
-  tabla.libre = 2;
 }

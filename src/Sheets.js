@@ -1,6 +1,6 @@
 /** Acceso a hojas: todo por nombre de cabecera. Errores con mensajes que dicen qué hacer. */
 
-let _ss = null, _cfg = null, _letras = {}, _pyc = null, _filaCab = {};
+let _ss = null, _cfg = null, _letras = {}, _pyc = null, _filaCab = {}, _filtros = null;
 
 function ss_() {
   if (_ss) return _ss;
@@ -21,6 +21,42 @@ function hoja_(nombre) {
   const sh = ss_().getSheetByName(nombre);
   if (!sh) throw new Error(`No existe la pestaña "${nombre}". Ejecuta Counting Cars ▸ Preparar hoja (setup).`);
   return sh;
+}
+
+/**
+ * Un filtro de pestaña (Datos ▸ Crear filtro) con algún criterio oculta filas, también las vacías de debajo, y Sheets NO
+ * guarda las fechas ni las fórmulas que un script escribe en filas ocultas (oct 2026: Líneas RM filtrada por una factura
+ * perdió las fechas del resto; Albaranes filtrada por Mes perdió fechas, enlaces y fórmulas de los albaranes nuevos).
+ * Antes de escribir en una pestaña se le quitan los criterios; ejecutar_ los vuelve a poner al terminar (restaurarFiltros_).
+ */
+function sinFiltro_(sh) {
+  _filtros = _filtros || {};
+  const nombre = sh.getName();
+  if (nombre in _filtros) return;
+  const f = sh.getFilter(), criterios = [];
+  if (f) {
+    const r = f.getRange();
+    for (let c = r.getColumn(); c < r.getColumn() + r.getNumColumns(); c++) {
+      const k = f.getColumnFilterCriteria(c);
+      if (k) criterios.push([c, k]);
+    }
+    criterios.forEach(([c]) => f.removeColumnFilterCriteria(c));
+  }
+  _filtros[nombre] = { sh, criterios };
+}
+
+function restaurarFiltros_() {
+  const pend = Object.keys(_filtros || {}).map(n => _filtros[n]).filter(x => x.criterios.length);
+  _filtros = null;
+  if (!pend.length) return;
+  SpreadsheetApp.flush();
+  pend.forEach(({ sh, criterios }) => { const f = sh.getFilter(); if (f) criterios.forEach(([c, k]) => f.setColumnFilterCriteria(c, k)); });
+}
+
+/** Texto de celda con enlace (sin enlace si no hay URL o el texto está vacío). */
+function textoConEnlace_(texto, url) {
+  const t = String(texto == null ? '' : texto), b = SpreadsheetApp.newRichTextValue().setText(t);
+  return (url && t ? b.setLinkUrl(url) : b).build();
 }
 
 function colLetra_(n) {
@@ -119,6 +155,7 @@ function anchoTabla_(tabla) { return Math.max.apply(null, Object.keys(tabla.map)
 /** Añade filas (objetos {cabecera: valor}) al final de la tabla con UNA sola escritura. Las columnas de fórmula se rellenan solas. */
 function agregarFilas_(tabla, objs) {
   if (!objs.length) return [];
+  sinFiltro_(tabla.sh);
   const ancho = anchoTabla_(tabla), inicio = tabla.libre;
   const formulas = typeof FORMULAS !== 'undefined' ? FORMULAS[tabla.nombre] : null;
   const data = objs.map((o, k) => {
@@ -141,8 +178,22 @@ function agregarFilas_(tabla, objs) {
   return filas;
 }
 
+/** Borra filas enteras (nº de fila), de abajo arriba y por tramos seguidos. */
+function borrarFilas_(sh, filas) {
+  if (!filas.length) return;
+  sinFiltro_(sh);
+  const orden = [...new Set(filas)].sort((a, b) => b - a);
+  let fin = orden[0], ini = fin;
+  orden.slice(1).concat([null]).forEach(r => {
+    if (r === ini - 1) { ini = r; return; }
+    sh.deleteRows(ini, fin - ini + 1);
+    fin = ini = r;
+  });
+}
+
 /** Cambia celdas concretas de una fila existente y mantiene el modelo en memoria al día. */
 function actualizarFila_(tabla, fila, cambios) {
+  sinFiltro_(tabla.sh);
   for (const h in cambios) {
     if (!tabla.map[h]) throw new Error(`Columna "${h}" inexistente en "${tabla.nombre}"`);
     tabla.sh.getRange(fila, tabla.map[h]).setValue(cambios[h]);
@@ -157,6 +208,7 @@ function actualizarFila_(tabla, fila, cambios) {
  */
 function asegurarFila_(tabla, fila, actuales) {
   const formulas = FORMULAS[tabla.nombre], puestas = [];
+  sinFiltro_(tabla.sh);
   if (formulas) {
     actuales = actuales || tabla.sh.getRange(fila, 1, 1, anchoTabla_(tabla)).getFormulas()[0];
     for (const h in formulas) if (tabla.map[h] && !actuales[tabla.map[h] - 1]) {

@@ -41,6 +41,7 @@ function ejecutar_(nombre, fn, silencioso) {
     if (silencioso) toast_(`${msg} (detalle en la pestaña Registro)`, '⚠ Error', 10);
     else avisar_(`Ha fallado "${nombre}":\n${msg}\n\nDetalle en la pestaña Registro.`, 'Error');
   } finally {
+    try { restaurarFiltros_(); } catch (e) { log_('AVISO', nombre, '', `No se ha podido volver a poner el filtro: ${e.message}`); }
     const t1 = Date.now();
     volcarLog_();
     console.log(`■ ${nombre}: ${Date.now() - t0}ms (escribir en Registro ${Date.now() - t1}ms)`);

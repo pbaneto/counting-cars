@@ -45,6 +45,7 @@ function asegurarIdsPiezas_(tabP) {
     if (!id || vistos.has(id)) faltan.push(f); else vistos.add(id);
   });
   if (!faltan.length) return 0;
+  sinFiltro_(tabP.sh);
   const ids = reservarIdsPieza_(tabP, faltan.length), c = tabP.map['ID'];
   faltan.forEach((f, k) => { f.v['ID'] = ids[k]; });
   const desde = faltan[0].fila, hasta = faltan[faltan.length - 1].fila, porFila = {};

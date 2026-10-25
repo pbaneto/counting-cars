@@ -22,6 +22,8 @@ test('normalizarAlbaran: sólo una R escrita a mano es reembolso (albaranes 5129
   assert.equal(linea('', true).reembolso, false, 'sin nada escrito no hay reembolso');
   assert.equal(linea('R', false).reembolso, false, 'si Gemini duda, no');
   assert.equal(linea(' R ', true).reembolso, true);
+  assert.equal(linea('—R', true).reembolso, true);
+  assert.equal(linea('RR', true).reembolso, false);
   assert.equal(linea('CHEMA', true).manuscrito, 'CHEMA');
   assert.ok(P.SCHEMA_ALBARAN.properties.lineas.items.required.includes('manuscrito'));
 });

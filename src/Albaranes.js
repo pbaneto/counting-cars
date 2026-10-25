@@ -139,7 +139,11 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
     if (trabajo.num) ponerDesplegableTrabajo_(ctx.alb, filaAlb, ctx.trab, doc.matricula);
   }
   ctx.idsPdf.add(archivo.getId());
-  if (num) {
+  // Albarán que no se reconoció como ya registrado (oct 2026: los que perdieron su número o su PDF y se reescanearon)
+  // pero cuyas piezas ya están: no se duplican.
+  if (num && piezasDeAlbaran_(ctx.piezas, num).length) {
+    log_('AVISO', 'procesarAlbaranes', `${HOJA.ALB}!${filaAlb}`, `El albarán ${num} ya tenía sus piezas en Piezas: no se vuelven a añadir`);
+  } else if (num) {
     agregarFilas_(ctx.piezas, filasPiezas_(ctx.piezas, lineasPiezas, num, hoy, 'Escaneo'));
     if (lineasPiezas.some(l => l.reembolso)) ctx.tocaAbonos = true;
   } else if (lineasPiezas.length) {

@@ -6,7 +6,8 @@
  *    puede corregir a mano.
  *  - Estado, precio, descripción… se calculan (informeAbonos en Logic.js). Lo que se escriba a mano en la tabla se pierde.
  * Las columnas de la tabla se buscan por el nombre de su cabecera: se pueden reordenar a mano (colsAbonos_).
- * A la derecha van el resumen por quincena y el panel de pendientes (Setup.js ▸ montarResumenAbonos_).
+ * El "Nº albarán" de Abonos y de Piezas es un enlace al PDF del albarán: se pone al día cada vez que se rehace Abonos.
+ * El cuadre por quincena va en su propia pestaña (Setup.js ▸ montarCuadre_).
  */
 
 const CAMPOS_ABONOS_ = {
@@ -50,21 +51,38 @@ function actualizarInformeAbonos_(tabP) {
  * tabP: la tabla de Piezas si quien llama ya la ha leído (y la mantiene al día con lo que escriba después).
  */
 function leerParaAbonos_(tabP, crono) {
-  if (recolocarTablaAbonos_()) { montarAbonos_(); crono.paso('recolocar tabla de Abonos'); }
+  if (recolocarTablaAbonos_()) { montarTablaAbonos_(); crono.paso('recolocar tabla de Abonos'); }
   const leida = tabla => `${tabla.filas.length} de ${tabla.leidas} filas`;
   if (!tabP) { tabP = leerTabla_(HOJA.PIEZAS); crono.paso(`leer Piezas (${leida(tabP)})`); }
   const tabL = leerTabla_(HOJA.LINEAS); crono.paso(`leer Líneas RM (${leida(tabL)})`);
   const tabA = leerTabla_(HOJA.ALB); crono.paso(`leer Albaranes (${leida(tabA)})`);
+  const fechaFactura = {};
+  leerTabla_(HOJA.FACT).filas.forEach(f => { fechaFactura[String(f.v['Nº factura']).trim()] = aISO_(f.v['Fecha factura']); });
+  const pdfDe = pdfsDeAlbaranes_(tabA);
+  const enlacesPiezas = tabP.filas.length ? tabP.sh.getRange(tabP.fc + 1, tabP.map['Nº albarán'], tabP.libre - tabP.fc - 1, 1).getRichTextValues().map(r => r[0].getLinkUrl()) : [];
   const sh = hoja_(HOJA.ABONOS), tb = ABONOS.filaTabla, ncol = ABONOS.cabTabla.length, ultFila = sh.getLastRow(), maxFilas = sh.getMaxRows();
-  // getLastRow cuenta también el resumen de la derecha: se quitan las filas vacías del final de la tabla.
   const leido = sh.getRange(ABONOS.filaCabTabla, 1, Math.max(ultFila, tb) - ABONOS.filaCabTabla + 1, ncol).getValues();
-  colsAbonos_(leido[0]);
+  const c = colsAbonos_(leido[0]);
   const tabla = leido.slice(tb - ABONOS.filaCabTabla);
   while (tabla.length && tabla[tabla.length - 1].every(x => x === '' || x == null)) tabla.pop();
+  const enlacesTabla = tabla.length ? sh.getRange(tb, c.albaran, tabla.length, 1).getRichTextValues().map(r => r[0].getLinkUrl()) : [];
   loc_('');  // la configuración regional también es una lectura: se guarda ya para escribir las fórmulas luego
   const desde = aISO_(cfg_('ABONOS_DESDE'));
+  [sh, tabP.sh, tabL.sh].forEach(sinFiltro_);
   crono.paso(`leer Abonos (${tabla.length} filas)`);
-  return { tabP, tabL, tabA, sh, tabla, maxFilas, desde };
+  return { tabP, tabL, tabA, sh, tabla, enlacesTabla, enlacesPiezas, pdfDe, fechaFactura, maxFilas, desde };
+}
+
+/** {nº albarán: URL de su PDF} según la columna "Ver PDF" de Albaranes. */
+function pdfsDeAlbaranes_(tabA) {
+  const pdfDe = {};
+  if (!tabA.filas.length) return pdfDe;
+  const desde = tabA.fc + 1, formulas = tabA.sh.getRange(desde, tabA.map['Ver PDF'], tabA.libre - desde, 1).getFormulas();
+  tabA.filas.forEach(f => {
+    const n = normAlbaran(f.v['Nº albarán']), id = idDeEnlace_(formulas[f.fila - desde][0]);
+    if (n && id && !pdfDe[n]) pdfDe[n] = urlPdf_(id);
+  });
+  return pdfDe;
 }
 
 /** Piezas de RM (las de proveedor "Otros" no se reclaman), en el formato de informeAbonos. */
@@ -111,27 +129,44 @@ function escribirAbonos_(d) {
   sinFecha.forEach(p => { p.fechaSolicitud = hoy; actualizarFila_(tabP, p.fila, { 'Fecha reembolso': aFecha_(hoy) }); });
   crono.paso(`preparar piezas (${piezas.filter(p => p.solicitada).length} pedidas, ${ids} IDs nuevos, ${sinFecha.length} fechas escritas)`);
 
-  const lineas = lineasAbono_(tabL);
-  const abonos = lineas.map(({ f, albaranAbono, albaranOrigen: orig, ref, desc }) => ({
-    idPieza: f.v['ID pieza'], fecha: aISO_(f.v['Fecha abono']) || aISO_(f.v['Fecha albarán']), factura: String(f.v['Nº factura'] || '').trim(),
-    albaranAbono, albaranOrigen: orig, ref, desc, importe: parseNumber(f.v['Importe sin IVA']), matricula: plateDe[orig] || f.v['Matrícula'],
-  }));
+  // Sin las líneas de residuos (SIGAUS): son céntimos, no piezas. Fecha de abono: la apuntada en la línea; si falta, la
+  // de su factura (Facturas RM) o, si aún no tiene factura, la de su albarán de abono.
+  const lineas = lineasAbono_(tabL).filter(x => !esResiduo({ descripcion: x.desc }));
+  const abonos = lineas.map(({ f, albaranAbono, albaranOrigen: orig, ref, desc }) => {
+    const factura = String(f.v['Nº factura'] || '').trim();
+    return { idPieza: f.v['ID pieza'], fecha: aISO_(f.v['Fecha abono']) || d.fechaFactura[factura] || aISO_(f.v['Fecha albarán']), factura,
+      albaranAbono, albaranOrigen: orig, ref, desc, importe: parseNumber(f.v['Importe sin IVA']), matricula: plateDe[orig] || f.v['Matrícula'] };
+  });
   const nuevos = emparejarAbonos(piezas, abonos);
   nuevos.forEach(({ i, id }) => { abonos[i].idPieza = id; actualizarFila_(tabL, lineas[i].f.fila, { 'ID pieza': id }); });
   const filas = informeAbonos(piezas, abonos, plateDe, d.desde);
   crono.paso(`cruce (${abonos.length} abonos, ${nuevos.length} emparejados ahora)`);
 
-  const valores = filas.map((f, j) => filaAbono_(f, tb + j));
-  const escrito = !mismaTablaAbonos_(d.tabla, valores);
+  const valores = filas.map((f, j) => filaAbono_(f, tb + j)), enlaces = filas.map(f => d.pdfDe[f.albaran] || null);
+  const escrito = !mismaTablaAbonos_(d.tabla, valores) || enlaces.some((u, i) => u !== d.enlacesTabla[i]);
   if (escrito) {
     if (tb + valores.length - 1 > d.maxFilas) sh.insertRowsAfter(d.maxFilas, tb + valores.length - 1 - d.maxFilas + 100);  // al final: no mueve nada
-    if (valores.length) sh.getRange(tb, 1, valores.length, ncol).setValues(valores);
-    // Sólo las celdas de la tabla (A-M): a la derecha, en las mismas filas, está el resumen.
+    if (valores.length) {
+      sh.getRange(tb, 1, valores.length, ncol).setValues(valores);
+      sh.getRange(tb, colsAbonos_().albaran, valores.length, 1).setRichTextValues(filas.map((f, i) => [textoConEnlace_(f.albaran, enlaces[i])]));
+    }
     if (d.tabla.length > valores.length) sh.getRange(tb + valores.length, 1, d.tabla.length - valores.length, ncol).clearContent();
   }
+  enlazarAlbaranesPiezas_(tabP, d.pdfDe, d.enlacesPiezas);
   // Sólo a Ejecuciones: escribirlo en Registro en cada edición costaba ~300 ms y llenaba Registro de filas INFO.
   crono.fin(`${escrito ? 'tabla rehecha' : 'tabla ya al día'} | ` + ESTADOS_ABONO.map(e => e + ' ' + filas.filter(f => f.estado === e).length).join(', '));
   return { filas, escrito };
+}
+
+/** "Nº albarán" de Piezas: enlace al PDF del albarán. Sólo se escribe si alguno ha cambiado. actuales: enlaces leídos. */
+function enlazarAlbaranesPiezas_(tabP, pdfDe, actuales) {
+  if (!tabP.filas.length) return;
+  const desde = tabP.fc + 1, porFila = {};
+  tabP.filas.forEach(f => { porFila[f.fila] = normAlbaran(f.v['Nº albarán']); });
+  const n = tabP.filas[tabP.filas.length - 1].fila - desde + 1;
+  const textos = Array.from({ length: n }, (_, i) => porFila[desde + i] || '');
+  if (textos.every((t, i) => (pdfDe[t] || null) === (actuales[i] || null))) return;
+  tabP.sh.getRange(desde, tabP.map['Nº albarán'], n, 1).setRichTextValues(textos.map(t => [textoConEnlace_(t, pdfDe[t])]));
 }
 
 function filaAbono_(f, r) {
@@ -181,8 +216,7 @@ function editarAbonos_(r0, n, c0) {
 
 /**
  * La tabla de Abonos va arriba del todo (cabecera en la fila 1). Si alguien inserta filas enteras encima, se quitan
- * (sólo si están vacías en la tabla) y devuelve true: quien llama debe volver a montar la pestaña (montarAbonos_),
- * porque el resumen de la derecha también se ha movido. Nunca borra datos de la tabla.
+ * (sólo si están vacías) y devuelve true: quien llama debe volver a dar formato a la tabla. Nunca borra datos.
  */
 function recolocarTablaAbonos_() {
   const sh = hoja_(HOJA.ABONOS), ct = ABONOS.cabTabla;
@@ -205,10 +239,9 @@ function recolocarTablaAbonos_() {
   return true;
 }
 
-/** Filas enteras insertadas o borradas a mano en Abonos: el resumen vuelve a su sitio y la tabla se rehace. */
+/** Filas enteras insertadas o borradas a mano en Abonos: la tabla se rehace (y vuelve a la fila 1 si se ha movido). */
 function revisarAbonosTrasCambioDeFilas_() {
-  if (recolocarTablaAbonos_()) montarAbonos_();
-  else if (!resumenAbonosEnSuSitio_(hoja_(HOJA.ABONOS))) montarResumenAbonos_();
+  if (recolocarTablaAbonos_()) montarTablaAbonos_();
   actualizarInformeAbonos_();
 }
 

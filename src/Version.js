@@ -18,36 +18,81 @@ const PROP_DISENO_PENDIENTE_ = 'DISENO_PENDIENTE';
  * versión guardada en la hoja impide que vuelva a hacer falta.
  */
 const MIGRACIONES = {
-  // Abonos y Piezas empiezan en octubre de 2026: lo de antes era el piloto.
-  //  - Abonos sólo enseña lo de octubre en adelante (Config ▸ ABONOS_DESDE) y lo que siga sin abonar. Las líneas de las
-  //    facturas de antes se quedan en Líneas RM: son las que cuadran con Facturas RM.
-  //  - Fuera de Piezas las de albaranes anteriores, salvo las pedidas: restan en el precio de su albarán (y de su trabajo)
-  //    y su abono puede llegar en una factura de octubre.
-  //  - El albarán 497296 se leyó con fecha 10/02/26 en vez de 02/10/26 (así viene en la factura FCR 26422).
-  '6.0.0': () => {
-    const desde = '2026-10-01';
+  // Arreglos de lo que estropearon los filtros puestos en Albaranes, Trabajos y Líneas RM (ver sinFiltro_ en Sheets.js):
+  //  - Líneas RM: fechas de albarán y de abono que se perdieron (datos en src/private.js);
+  //  - el albarán 497296, cuya fecha corregida en la 6.0.0 no se guardó;
+  //  - Piezas: las piezas de los albaranes reescaneados el 19/10 están dos veces. Si TODAS las líneas de un albarán están
+  //    exactamente dos veces, se queda una de cada par: la enlazada a un abono, si no la pedida, si no la que tiene marca.
+  // Y además: fuera las claves de Config que ya no se usan y el resumen que había a la derecha de Abonos (ahora en Cuadre RM).
+  '7.0.0': () => {
+    const rec = typeof RECUPERAR_FECHAS_7_0_0 === 'undefined' ? {} : RECUPERAR_FECHAS_7_0_0;
+    const escaneados = new Set(typeof ABONOS_ESCANEADOS_7_0_0 === 'undefined' ? [] : ABONOS_ESCANEADOS_7_0_0);
+    const fechaFactura = {};
+    leerTabla_(HOJA.FACT).filas.forEach(f => { fechaFactura[String(f.v['Nº factura']).trim()] = aISO_(f.v['Fecha factura']); });
+    const tabL = leerTabla_(HOJA.LINEAS);
+    let fechas = 0;
+    tabL.filas.forEach(f => {
+      const fra = String(f.v['Nº factura'] || '').trim(), alb = normAlbaran(f.v['Nº albarán']);
+      let fa = aISO_(f.v['Fecha albarán']);
+      if (!fa && rec[`${fra}|${alb}`]) { fa = rec[`${fra}|${alb}`]; f.v['Fecha albarán'] = aFecha_(fa); fechas++; }
+      if (f.v['Tipo'] === 'Abono' && !aISO_(f.v['Fecha abono'])) {
+        const v = !fra || escaneados.has(alb) ? fa : fechaFactura[fra] || fa;
+        if (v) f.v['Fecha abono'] = aFecha_(v);
+      }
+    });
+    ['Fecha albarán', 'Fecha abono'].forEach(h => escribirColumna_(tabL, h));
+
     const alb = leerTabla_(HOJA.ALB);
     const mal = alb.filas.find(f => normAlbaran(f.v['Nº albarán']) === '497296' && aISO_(f.v['Fecha albarán']) === '2026-02-10');
     if (mal) actualizarFila_(alb, mal.fila, { 'Fecha albarán': aFecha_('2026-10-02') });
-    if (!aISO_(cfg_('ABONOS_DESDE'))) guardarCfg_('ABONOS_DESDE', aFecha_(desde));
-    const fechaDe = {};
-    alb.filas.forEach(f => { const n = normAlbaran(f.v['Nº albarán']); if (n) fechaDe[n] = aISO_(f.v['Fecha albarán']); });
-    const tabP = leerTabla_(HOJA.PIEZAS);
-    const fuera = tabP.filas.filter(p => {
-      const fa = fechaDe[normAlbaran(p.v['Nº albarán'])];
-      return fa && fa < desde && p.v['Reembolso'] !== true && !p.v['Abonada a mano'];
+
+    const tabP = leerTabla_(HOJA.PIEZAS), enlazadas = new Set(tabL.filas.map(f => idPiezaDe(f.v['ID pieza'])).filter(Boolean));
+    const porAlbaran = {};
+    tabP.filas.forEach(p => { const n = normAlbaran(p.v['Nº albarán']); if (n) (porAlbaran[n] = porAlbaran[n] || []).push(p); });
+    const firma = p => [refKey(p.v['Referencia pieza']), refKey(p.v['Descripción']), p.v['Cantidad'], round2(parseNumber(p.v['Precio descontado sin IVA']))].join('|');
+    const valor = p => (enlazadas.has(String(p.v['ID'])) ? 4 : 0) + (p.v['Reembolso'] === true ? 2 : 0) + (p.v['Marca'] ? 1 : 0);
+    const borrar = [];
+    Object.keys(porAlbaran).forEach(n => {
+      const pares = {};
+      porAlbaran[n].forEach(p => (pares[firma(p)] = pares[firma(p)] || []).push(p));
+      if (!Object.keys(pares).every(k => pares[k].length === 2)) return;
+      Object.keys(pares).forEach(k => {
+        const [queda, sobra] = pares[k].slice().sort((x, y) => valor(y) - valor(x));
+        const fechas = [queda, sobra].map(p => aISO_(p.v['Fecha reembolso'])).filter(Boolean).sort();
+        const cambios = {};
+        if (sobra.v['Reembolso'] === true && queda.v['Reembolso'] !== true) cambios['Reembolso'] = true;
+        if (fechas.length && fechas[0] !== aISO_(queda.v['Fecha reembolso'])) cambios['Fecha reembolso'] = aFecha_(fechas[0]);
+        if (!queda.v['Marca'] && sobra.v['Marca']) cambios['Marca'] = sobra.v['Marca'];
+        if (!queda.v['Abonada a mano'] && sobra.v['Abonada a mano']) cambios['Abonada a mano'] = sobra.v['Abonada a mano'];
+        if (Object.keys(cambios).length) actualizarFila_(tabP, queda.fila, cambios);
+        borrar.push(sobra.fila);
+      });
     });
-    const ids = new Set(fuera.map(p => String(p.v['ID'])));
-    fuera.map(p => p.fila).sort((a, b) => b - a).forEach(r => tabP.sh.deleteRow(r));
-    const tabL = leerTabla_(HOJA.LINEAS);
-    const sueltas = tabL.filas.filter(f => ids.has(String(f.v['ID pieza'])));
-    // "NO" y no vacío: vacío, se emparejaría solo (p. ej. por importe) con otra pieza del mismo albarán.
-    sueltas.forEach(f => actualizarFila_(tabL, f.fila, { 'ID pieza': SIN_PIEZA }));
-    log_('INFO', 'migración 6.0.0', '', `${fuera.length} piezas anteriores a octubre borradas (${sueltas.length} abonos que apuntaban a ellas, sin pieza)` +
-      (mal ? '; albarán 497296: fecha corregida a 02/10/2026' : ''));
+    borrarFilas_(tabP.sh, borrar);
+
+    const conocidas = new Set(CONFIG_DEFECTO.map(c => c[0]));
+    const tabC = leerTabla_(HOJA.CONFIG);
+    borrarFilas_(tabC.sh, tabC.filas.filter(f => !conocidas.has(String(f.v['Clave']).trim())).map(f => f.fila));
+
+    const shAb = hoja_(HOJA.ABONOS), resto = shAb.getMaxColumns() - ABONOS.cabTabla.length;
+    if (resto > 0) shAb.getRange(1, ABONOS.cabTabla.length + 1, shAb.getMaxRows(), resto).breakApart().clearContent().clearFormat().clearDataValidations();
+    shAb.setConditionalFormatRules((shAb.getConditionalFormatRules() || []).filter(r => {
+      try { return r.getRanges().some(g => g.getColumn() <= ABONOS.cabTabla.length); } catch (e) { return true; }
+    }));
+    log_('INFO', 'migración 7.0.0', '', `${fechas} fechas recuperadas en Líneas RM; ${borrar.length} piezas duplicadas borradas` + (mal ? '; albarán 497296: fecha corregida' : ''));
     actualizarInformeAbonos_();
   },
 };
+
+/** Escribe una columna entera de la tabla (de la primera a la última fila con datos) con los valores de tabla.filas. */
+function escribirColumna_(tabla, h) {
+  if (!tabla.filas.length) return;
+  const desde = tabla.filas[0].fila, hasta = tabla.filas[tabla.filas.length - 1].fila, porFila = {};
+  tabla.filas.forEach(f => { porFila[f.fila] = f.v[h]; });
+  sinFiltro_(tabla.sh);
+  tabla.sh.getRange(desde, tabla.map[h], hasta - desde + 1, 1)
+    .setValues(Array.from({ length: hasta - desde + 1 }, (_, k) => [porFila[desde + k] == null ? '' : porFila[desde + k]]));
+}
 
 /** Pone la hoja al día con el código. forzarDiseno: aplicar el diseño aunque la versión no haya cambiado (menú). */
 function actualizarHoja_(forzarDiseno) {
