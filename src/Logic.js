@@ -63,6 +63,21 @@ function nextJobNumber(prefix, existingNumbers) {
   return prefix + '-' + (max + 1);
 }
 
+/**
+ * Un albarán deja su trabajo porque se ha corregido la matrícula: qué se hace con el trabajo viejo.
+ *  - 'dejar': aún tiene albaranes, o tiene una factura o un pagado que no tienen adónde ir.
+ *  - 'renombrar': la matrícula no tiene trabajo abierto: el viejo pasa a serlo, con su factura, pagado y mes.
+ *  - 'borrar': no tiene nada que conservar.
+ *  - 'mover': su factura y pagado pasan al trabajo abierto de la matrícula, y se borra.
+ */
+function destinoTrabajoViejo({ quedan, conCobro, hayMatricula, hayAbierto, abiertoConFactura }) {
+  if (quedan > 0) return 'dejar';
+  if (!hayMatricula) return conCobro ? 'dejar' : 'borrar';
+  if (!hayAbierto) return 'renombrar';
+  if (!conCobro) return 'borrar';
+  return abiertoConFactura ? 'dejar' : 'mover';
+}
+
 /** Trabajo sin pagar más reciente (mayor contador) de esa matrícula, o null. jobs: [{num, plate, pagado}] */
 function pickOpenJob(plate, jobs) {
   const p = normPlate(plate);
@@ -426,6 +441,6 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
-    pickOpenJob, isoValid, daysBetween, quincenaDe, mesDe, MATRICULA_LARGO_MIN_COCHE, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, AVISO_SIN_TOTAL, completarTotal, hojaQueFalta, quitarAvisoSinTotal, cuadreAlbaran,
+    pickOpenJob, destinoTrabajoViejo, isoValid, daysBetween, quincenaDe, mesDe, MATRICULA_LARGO_MIN_COCHE, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, AVISO_SIN_TOTAL, completarTotal, hojaQueFalta, quitarAvisoSinTotal, cuadreAlbaran,
     validarFactura, periodoFactura, clavesAbonos, SIN_PIEZA, idPiezaDe, emparejarAbonos, informeAbonos, esMarcaReembolso, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
 }

@@ -66,7 +66,7 @@ const FORMULAS = {
         `IF(${C}="","⚠ Falta la matrícula",` +
         `IF(COUNTIF(Coches!$${c['Matrícula']}:$${c['Matrícula']},${C})=0,"⚠ La matrícula no está en Coches",` +
         `IF(COUNTIF($${t['Nº trabajo']}:$${t['Nº trabajo']},${N})>1,"⚠ Nº de trabajo duplicado",` +
-        `IF(COUNTIF(Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${N})=0,"ℹ Sin albaranes",` +
+        `IF(COUNTIF(Albaranes!$${a['Nº trabajo']}:$${a['Nº trabajo']},${N})=0,IF(${H}<>"","⚠ Factura en un trabajo sin albaranes","ℹ Sin albaranes"),` +
         `IF(AND(${H}<>"",${H}<${G}),"ℹ Factura menor que los recambios (pérdida)",""))))))`;
     },
   },

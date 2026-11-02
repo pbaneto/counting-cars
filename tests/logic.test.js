@@ -2,6 +2,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('../src/Logic.js');
 
+test('destinoTrabajoViejo: al corregir la matrícula, el dinero nunca se pierde ni se mezcla', () => {
+  const casos = [
+    [{ quedan: 1, conCobro: true, hayMatricula: true, hayAbierto: true, abiertoConFactura: false }, 'dejar'],
+    [{ quedan: 0, conCobro: true, hayMatricula: false }, 'dejar'],
+    [{ quedan: 0, conCobro: false, hayMatricula: false }, 'borrar'],
+    [{ quedan: 0, conCobro: true, hayMatricula: true, hayAbierto: false }, 'renombrar'],
+    [{ quedan: 0, conCobro: false, hayMatricula: true, hayAbierto: false }, 'renombrar'],
+    [{ quedan: 0, conCobro: false, hayMatricula: true, hayAbierto: true, abiertoConFactura: true }, 'borrar'],
+    [{ quedan: 0, conCobro: true, hayMatricula: true, hayAbierto: true, abiertoConFactura: false }, 'mover'],
+    [{ quedan: 0, conCobro: true, hayMatricula: true, hayAbierto: true, abiertoConFactura: true }, 'dejar'],
+  ];
+  for (const [caso, esperado] of casos) assert.equal(L.destinoTrabajoViejo(caso), esperado, JSON.stringify(caso));
+});
+
 test('normPlate y jobPrefix', () => {
   assert.equal(L.normPlate(' 1233-kcc '), '1233KCC');
   assert.equal(L.jobPrefix('1233KCC'), '3KCC');

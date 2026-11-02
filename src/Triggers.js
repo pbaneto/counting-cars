@@ -119,23 +119,33 @@ function editarAlbaranes_(r0, n, c0, nc) {
     if (filaConDatos_(vals)) avisarColumnaAutomatica_(tab, asegurarFila_(tab, r), c0, nc);
 
     if (jobVal === 'NUEVO' && !plate) { set('Nº trabajo', ''); toast_('Escribe primero la matrícula para abrir un trabajo nuevo.', '⚠ Falta matrícula'); continue; }
-    if (!(plate && precio > 0)) continue;
+    if (ambigua) continue;  // sin saber aún qué coche es, no se abre ni se cambia ningún trabajo
 
-    if (!g('Fecha escaneo')) set('Fecha escaneo', aFecha_(hoy));
-    if (!g('Fecha albarán')) set('Fecha albarán', g('Fecha escaneo') || aFecha_(hoy));
-    if (!g('Proveedor')) set('Proveedor', 'RM');
+    const corregida = tocada_(tab, 'Matrícula', c0, nc) && jobVal !== '' && jobVal !== 'NUEVO';
+    if (corregida || (plate && precio > 0)) trab = trab || leerTabla_(HOJA.TRAB);
+    const actual = corregida ? trab.filas.find(f => mismoTrabajo_(f.v['Nº trabajo'], jobVal)) : null;
+    const cambiaTrabajo = corregida && (!plate || plate.length >= MATRICULA_LARGO_MIN_COCHE) && (!actual || normPlate(actual.v['Matrícula']) !== plate);
+    if (!cambiaTrabajo && !(plate && precio > 0)) continue;
 
-    trab = trab || leerTabla_(HOJA.TRAB);
-    const actual = trab.filas.find(f => String(f.v['Nº trabajo']).trim().toUpperCase() === jobVal);
-    const cambioPlaca = tocada_(tab, 'Matrícula', c0, nc) && actual && normPlate(actual.v['Matrícula']) !== plate;
-    if (jobVal === '' || jobVal === 'NUEVO' || cambioPlaca) {
-      const fecha = aISO_(g('Fecha albarán')) || hoy;
-      const num2 = jobVal === 'NUEVO' ? crearTrabajo_(trab, plate, fecha) : asignarTrabajo_(trab, plate, fecha).num;
-      set('Nº trabajo', num2);
-      ponerDesplegableTrabajo_(tab, r, trab, plate);
-      log_('INFO', 'alEditar', `${HOJA.ALB}!${r}`, `Trabajo ${num2} asignado a ${plate}`);
+    if (plate) {
+      if (!g('Fecha escaneo')) set('Fecha escaneo', aFecha_(hoy));
+      if (!g('Fecha albarán')) set('Fecha albarán', g('Fecha escaneo') || aFecha_(hoy));
+      if (!g('Proveedor')) set('Proveedor', 'RM');
     }
-    if (!ambigua && anadirCoche_(tabCoches_(), plate)) toast_(`${plate} añadida a la pestaña Coches: rellena allí el cliente y el coche.`, '🚗 Coche nuevo', 8);
+
+    if (jobVal === '' || jobVal === 'NUEVO' || cambiaTrabajo) {
+      const fecha = aISO_(g('Fecha albarán')) || hoy;
+      const antigua = actual ? normPlate(actual.v['Matrícula']) : '';
+      const num2 = cambiaTrabajo ? reasignarAlbaran_(r, trab, actual, plate, fecha)
+        : jobVal === 'NUEVO' ? crearTrabajo_(trab, plate, fecha) : asignarTrabajo_(trab, plate, fecha).num;
+      set('Nº trabajo', num2);
+      if (cambiaTrabajo) trab = leerTabla_(HOJA.TRAB);
+      if (plate) ponerDesplegableTrabajo_(tab, r, trab, plate);
+      log_('INFO', 'alEditar', `${HOJA.ALB}!${r}`, plate ? `Trabajo ${num2} asignado a ${plate}` : `Sin matrícula: sale del trabajo ${jobVal}`);
+      if (antigua && antigua !== plate) { quitarCocheSinUso_(antigua); cochesTab = null; }
+    }
+    if (!plate) continue;
+    if (anadirCoche_(tabCoches_(), plate)) toast_(`${plate} añadida a la pestaña Coches: rellena allí el cliente y el coche.`, '🚗 Coche nuevo', 8);
     else if (!tabCoches_().filas.some(f => normPlate(f.v['Matrícula']) === plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
   }
   if (tocaAbonos) { SpreadsheetApp.flush(); actualizarInformeAbonos_(); }
@@ -143,20 +153,35 @@ function editarAlbaranes_(r0, n, c0, nc) {
 
 function editarTrabajos_(r0, n, c0, nc) {
   const tab = leerTabla_(HOJA.TRAB), hoy = hoyISO_(), ancho = anchoTabla_(tab);
-  let coches = null;
+  let coches = null, tocaAbonos = false;
   // El panel "Resumen (según filtro)" vive por encima de la cabecera real: una edición ahí no es una fila de datos.
   for (let r = Math.max(r0, tab.fc + 1); r < r0 + n; r++) {
     const vals = tab.sh.getRange(r, 1, 1, ancho).getValues()[0];
     const g = h => vals[tab.map[h] - 1];
-    const set = (h, v) => { sinFiltro_(tab.sh); tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v; };
+    const set = (h, v) => {
+      sinFiltro_(tab.sh); tab.sh.getRange(r, tab.map[h]).setValue(v); vals[tab.map[h] - 1] = v;
+      const fila = tab.filas.find(f => f.fila === r);
+      if (fila) fila.v[h] = v;
+    };
     const plate = normPlate(g('Matrícula'));
     if (String(g('Matrícula')) !== plate) set('Matrícula', plate);
     if (filaConDatos_(vals)) avisarColumnaAutomatica_(tab, asegurarFila_(tab, r), c0, nc);
     if (!plate) continue;
-    if (String(g('Nº trabajo')).trim() === '') {
-      const otros = tab.filas.filter(f => f.fila !== r).map(f => f.v['Nº trabajo']);
-      set('Nº trabajo', nextJobNumber(jobPrefix(plate), otros));
+    const numAntes = String(g('Nº trabajo')).trim();
+    const otros = () => tab.filas.filter(f => f.fila !== r).map(f => f.v['Nº trabajo']);
+    if (numAntes === '') {
+      set('Nº trabajo', nextJobNumber(jobPrefix(plate), otros()));
       log_('INFO', 'alEditar', `${HOJA.TRAB}!${r}`, `Trabajo ${g('Nº trabajo')} creado a mano para ${plate}`);
+    } else if (tocada_(tab, 'Matrícula', c0, nc) && plate.length >= MATRICULA_LARGO_MIN_COCHE) {
+      // Se compara con el prefijo del nº: 5646GCB -> 5546GCB es el mismo prefijo y el trabajo conserva su número.
+      if (numAntes.replace(/-\d+$/, '') !== jobPrefix(plate)) {
+        set('Nº trabajo', nextJobNumber(jobPrefix(plate), otros()));
+        log_('INFO', 'alEditar', `${HOJA.TRAB}!${r}`, `Trabajo ${numAntes} corregido: ahora es ${g('Nº trabajo')} (${plate})`);
+      }
+      const antes = cambiarCocheDeAlbaranes_(numAntes, g('Nº trabajo'), tab, plate);
+      tocaAbonos = tocaAbonos || antes.length > 0;
+      antes.filter(p => p !== plate).forEach(quitarCocheSinUso_);
+      coches = null;
     }
     // Mes y Quincena: se rellenan solos con la fecha de hoy sólo si están vacíos (después se pueden cambiar a mano).
     if (g('Mes') === '') set('Mes', mesDe(hoy));
@@ -165,6 +190,7 @@ function editarTrabajos_(r0, n, c0, nc) {
     if (anadirCoche_(coches, plate)) toast_(`${plate} añadida a la pestaña Coches: rellena allí el cliente y el coche.`, '🚗 Coche nuevo', 8);
     else if (!coches.filas.some(f => normPlate(f.v['Matrícula']) === plate)) toast_(`La matrícula ${plate} no está en la pestaña Coches.`, '⚠ Matrícula desconocida', 8);
   }
+  if (tocaAbonos) { SpreadsheetApp.flush(); actualizarInformeAbonos_(); }
 }
 
 /**
