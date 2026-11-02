@@ -116,6 +116,7 @@ function validarAlbaran(doc, iva) {
   const errors = [], warnings = [];
   const total = parseNumber(doc.total), base = parseNumber(doc.base_imponible);
   if (!Number.isFinite(total) || total === 0 || (total < 0 && !doc.es_abono)) errors.push('No se ha podido leer el total del albarán');
+  if (doc.totalCalculado) warnings.push(AVISO_SIN_TOTAL);
   if (!doc.numero_albaran) warnings.push('Sin nº de albarán');
   if (!isoValid(doc.fecha)) warnings.push('Fecha ilegible: se usa la fecha de hoy');
   if (!normPlate(doc.matricula)) warnings.push('Sin matrícula');
@@ -130,6 +131,38 @@ function validarAlbaran(doc, iva) {
     }
   });
   return { errors, warnings };
+}
+
+const AVISO_SIN_TOTAL = '⚠ Sin total en el albarán: importe calculado sumando las líneas + IVA (puede faltar una 2ª hoja)';
+
+/**
+ * Albarán con líneas pero sin total impreso (casillas de abajo en blanco): base = suma de las líneas, total = base + IVA,
+ * con totalCalculado para avisar. Si alguna línea no tiene importe no se calcula: la suma saldría corta sin saberlo.
+ */
+function completarTotal(doc, iva) {
+  iva = iva == null ? IVA_DEFECTO : iva;
+  const lineas = doc.lineas || [];
+  if (doc.es_abono || parseNumber(doc.total) || !lineas.length || !lineas.every(l => Number.isFinite(parseNumber(l.importe)))) return doc;
+  const base = round2(lineas.reduce((a, l) => a + parseNumber(l.importe), 0));
+  if (base <= 0) return doc;
+  return Object.assign({}, doc, { base_imponible: base, total: round2(base * (1 + iva)), totalCalculado: true });
+}
+
+/**
+ * ¿Este escaneo de un albarán ya registrado es la hoja que le faltaba? Devuelve:
+ *  - 'completa': la fila lleva el aviso de sin total, el escaneo trae total impreso y precio guardado + sus líneas con IVA = ese total;
+ *  - 'no cuadra': igual, pero las cuentas no dan;
+ *  - '': no es una 2ª hoja (reescaneo de una 1ª hoja o de un albarán normal): se trata como siempre.
+ */
+function hojaQueFalta(precioGuardado, nota, doc, iva) {
+  iva = iva == null ? IVA_DEFECTO : iva;
+  if (String(nota || '').indexOf(AVISO_SIN_TOTAL) < 0 || doc.totalCalculado || !parseNumber(doc.total)) return '';
+  const nuevas = (doc.lineas || []).reduce((a, l) => a + (Number.isFinite(parseNumber(l.importe)) ? parseNumber(l.importe) : 0), 0);
+  return Math.abs(parseNumber(precioGuardado) + nuevas * (1 + iva) - parseNumber(doc.total)) <= 0.05 ? 'completa' : 'no cuadra';
+}
+
+function quitarAvisoSinTotal(nota) {
+  return String(nota || '').replace(AVISO_SIN_TOTAL, '').replace(/^[\s;|]+/, '').replace(/[\s;|]+$/, '').replace(/;\s*;/, ';');
 }
 
 /**
@@ -393,6 +426,6 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
-    pickOpenJob, isoValid, daysBetween, quincenaDe, mesDe, MATRICULA_LARGO_MIN_COCHE, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, cuadreAlbaran,
+    pickOpenJob, isoValid, daysBetween, quincenaDe, mesDe, MATRICULA_LARGO_MIN_COCHE, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, AVISO_SIN_TOTAL, completarTotal, hojaQueFalta, quitarAvisoSinTotal, cuadreAlbaran,
     validarFactura, periodoFactura, clavesAbonos, SIN_PIEZA, idPiezaDe, emparejarAbonos, informeAbonos, esMarcaReembolso, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
 }

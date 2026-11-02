@@ -67,6 +67,42 @@ test('validarAlbaran: total ilegible; un total negativo sólo vale en un albará
   assert.equal(L.validarAlbaran(Object.assign({}, albaranReal, { total: -10, es_abono: true })).errors.length, 0);
 });
 
+test('completarTotal: sin total se suman las líneas + IVA y se avisa; con total, abono o línea sin importe no se toca', () => {
+  const sinTotal = Object.assign({}, albaranReal, { total: null, base_imponible: null, iva_importe: null });
+  const c = L.completarTotal(sinTotal);
+  assert.equal(c.base_imponible, 36.81);
+  assert.equal(c.total, 44.54);
+  assert.deepEqual(L.cuadreAlbaran(c), []);
+  const v = L.validarAlbaran(c);
+  assert.equal(v.errors.length, 0);
+  assert.match(v.warnings[0], /Sin total en el albarán/);
+
+  assert.equal(L.completarTotal(Object.assign({}, sinTotal, { total: 0 })).total, 44.54);
+  assert.equal(L.completarTotal(albaranReal), albaranReal);
+  const abono = Object.assign({}, sinTotal, { es_abono: true });
+  assert.equal(L.completarTotal(abono), abono);
+  const sinImporte = Object.assign({}, sinTotal, { lineas: [{ importe: 10 }, { importe: null }] });
+  assert.equal(L.completarTotal(sinImporte), sinImporte);
+  const sinLineas = { total: null, lineas: [] };
+  assert.equal(L.validarAlbaran(L.completarTotal(sinLineas)).errors.length, 1);
+});
+
+test('hojaQueFalta: sólo completa con el aviso de sin total, total impreso y cuentas exactas', () => {
+  const hoja2 = { total: 257.65, lineas: [{ importe: 26 }] };
+  const casos = [
+    [226.19, L.AVISO_SIN_TOTAL, hoja2, 'completa'],
+    [226.19, 'Sin matrícula; ' + L.AVISO_SIN_TOTAL, hoja2, 'completa'],
+    [226.19, L.AVISO_SIN_TOTAL, { total: 300, lineas: [{ importe: 26 }] }, 'no cuadra'],
+    [226.19, L.AVISO_SIN_TOTAL, { total: 226.19, totalCalculado: true, lineas: [{ importe: 186.93 }] }, ''],  // reescaneo de la 1ª hoja
+    [257.65, '', hoja2, ''],  // ya completado, o albarán normal
+    [257.65, 'Reembolso 19/10: 1 pieza(s)', hoja2, ''],
+  ];
+  casos.forEach(([precio, nota, doc, esperado]) => assert.equal(L.hojaQueFalta(precio, nota, doc), esperado, `${precio} | ${nota}`));
+  assert.equal(L.quitarAvisoSinTotal(L.AVISO_SIN_TOTAL), '');
+  assert.equal(L.quitarAvisoSinTotal(L.AVISO_SIN_TOTAL + '; Sin matrícula'), 'Sin matrícula');
+  assert.equal(L.quitarAvisoSinTotal(L.AVISO_SIN_TOTAL + ' | Reembolso 19/10: 1 pieza(s)'), 'Reembolso 19/10: 1 pieza(s)');
+});
+
 test('cuadreAlbaran: base + IVA = total y suma de líneas = base', () => {
   assert.deepEqual(L.cuadreAlbaran(albaranReal), []);
   const p = L.cuadreAlbaran(Object.assign({}, albaranReal, { total: 50, base_imponible: 40 }));

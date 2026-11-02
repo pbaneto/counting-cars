@@ -13,11 +13,13 @@ function procesarAlbaranes() {
     if (cfgErr) throw new Error(cfgErr.error);
     releerDescuadrados_(archivos, resultados, ctx.iva);
 
-    const cuenta = { creado: 0, reembolso: 0, duplicado: 0, abono: 0, descuadre: 0, error: 0, pendiente: 0 };
+    const cuenta = { creado: 0, completado: 0, reembolso: 0, duplicado: 0, abono: 0, descuadre: 0, error: 0, pendiente: 0 };
     const descuadres = [], mover = [];
     let fallo = null;
-    archivos.forEach((f, i) => {
-      const r = resultados[i], nombre = f.getName();
+    // Las hojas sin total, primero: así la 2ª hoja de un albarán encuentra la 1ª aunque se haya escaneado antes.
+    const conTotal = i => (resultados[i].ok && !parseNumber(resultados[i].doc.total) ? 0 : 1);
+    archivos.map((_, i) => i).sort((a, b) => conTotal(a) - conTotal(b) || a - b).forEach(i => {
+      const f = archivos[i], r = resultados[i], nombre = f.getName();
       if (fallo) { cuenta.pendiente++; return; }
       if (!r.ok) { cuenta.pendiente++; log_('ERROR', 'procesarAlbaranes', nombre, `${r.error} (el PDF sigue en Entrada; vuelve a intentarlo)`); return; }
       try {
@@ -48,7 +50,7 @@ function procesarAlbaranes() {
       });
     }
     const linea = (n, txt) => (n ? `${txt}: ${n}\n` : '');
-    let msg = linea(cuenta.creado, 'Albaranes nuevos') + linea(cuenta.reembolso, 'Reembolsos marcados') + linea(cuenta.duplicado, 'Duplicados ignorados') +
+    let msg = linea(cuenta.creado, 'Albaranes nuevos') + linea(cuenta.completado, 'Albaranes completados con su 2ª hoja') + linea(cuenta.reembolso, 'Reembolsos marcados') + linea(cuenta.duplicado, 'Duplicados ignorados') +
       linea(cuenta.abono, 'Albaranes de abono (a Líneas RM y Abonos)') + linea(cuenta.error, 'No legibles (carpeta Errores)') +
       linea(cuenta.pendiente, 'Sin procesar, siguen en Entrada');
     if (descuadres.length) msg += `\nNo cuadran los importes, siguen en Entrada (${descuadres.length}):\n` + descuadres.map(d => '• ' + d).join('\n') + '\n';
@@ -90,7 +92,7 @@ function contextoAlbaranes_() {
   return { alb, trab, piezas, idsPdf, iva: cfgNum_('IVA'), hoy: hoyISO_(), tocaAbonos: false, lineas: null, coches };
 }
 
-/** Devuelve { estado: 'creado' | 'reembolso' | 'duplicado' | 'abono' | 'descuadre' | 'error', motivo }. */
+/** Devuelve { estado: 'creado' | 'completado' | 'reembolso' | 'duplicado' | 'abono' | 'descuadre' | 'error', motivo }. */
 function procesarDocAlbaran_(ctx, archivo, doc) {
   const ref = archivo.getName(), num = doc.numero_albaran, hoy = ctx.hoy;
   if (ctx.idsPdf.has(archivo.getId())) { log_('AVISO', 'procesarAlbaranes', ref, 'Este PDF ya estaba registrado: se archiva sin cambios'); return { estado: 'duplicado' }; }
@@ -106,12 +108,22 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
     log_('INFO', 'procesarAlbaranes', ref, `Albarán de abono ${num} (${doc.total} €): ${n} línea(s) nueva(s) en Líneas RM`);
     return { estado: 'abono' };
   }
+  doc = completarTotal(doc, ctx.iva);
   const v = validarAlbaran(doc, ctx.iva);
   if (v.errors.length) { log_('ERROR', 'procesarAlbaranes', ref, v.errors.join('; ') + ': se mueve a Errores'); return { estado: 'error' }; }
   const lineasPiezas = lineasParaPiezas(doc.lineas);
 
   const existente = num ? ctx.alb.filas.find(f => normAlbaran(f.v['Nº albarán']) === num) : null;
-  if (existente) return procesarSegundoEscaneo_(ctx, archivo, doc, existente, lineasPiezas);
+  if (existente) {
+    const hoja = hojaQueFalta(existente.v['Precio con IVA'], existente.v['Nota escaneo'], doc, ctx.iva);
+    if (hoja === 'completa') return completarConSegundaHoja_(ctx, archivo, doc, existente, lineasPiezas);
+    if (hoja === 'no cuadra') {
+      const motivo = `parece la 2ª hoja del albarán ${num}, pero ${existente.v['Precio con IVA']} € más sus líneas no dan el total de ${doc.total} €`;
+      log_('AVISO', 'procesarAlbaranes', ref, `${motivo}: no se añade y el PDF se queda en Entrada`);
+      return { estado: 'descuadre', motivo };
+    }
+    return procesarSegundoEscaneo_(ctx, archivo, doc, existente, lineasPiezas);
+  }
 
   const problemas = cuadreAlbaran(doc, ctx.iva);
   if (problemas.length) {
@@ -150,6 +162,17 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
     log_('AVISO', 'procesarAlbaranes', `${HOJA.ALB}!${filaAlb}`, 'Albarán sin número: no se guardan sus piezas (no se podrían reembolsar). Escribe el número y vuelve a escanearlo si hace falta');
   }
   return { estado: 'creado' };
+}
+
+/** La hoja que le faltaba a un albarán guardado sin total: pone el total impreso, añade sus piezas y quita el aviso. */
+function completarConSegundaHoja_(ctx, archivo, doc, existente, lineasPiezas) {
+  const num = doc.numero_albaran;
+  actualizarFila_(ctx.alb, existente.fila, { 'Precio con IVA': doc.total, 'Nota escaneo': quitarAvisoSinTotal(existente.v['Nota escaneo']) });
+  agregarFilas_(ctx.piezas, filasPiezas_(ctx.piezas, lineasPiezas, num, ctx.hoy, 'Escaneo'));
+  if (lineasPiezas.some(l => l.reembolso)) ctx.tocaAbonos = true;
+  ctx.idsPdf.add(archivo.getId());
+  log_('INFO', 'procesarAlbaranes', `${HOJA.ALB}!${existente.fila}`, `Albarán ${num} completado con su 2ª hoja (${archivo.getName()}): total ${doc.total} €, ${lineasPiezas.length} pieza(s) nueva(s)`);
+  return { estado: 'completado' };
 }
 
 /** El albarán ya existe: con R -> marca esas piezas; sin R -> escaneo duplicado, no se añade nada. */

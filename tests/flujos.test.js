@@ -223,6 +223,47 @@ test('procesarAlbaranes: nuevo, segundo escaneo con R, duplicado sin R y no-alba
   assert.match(reg, /no parece un albarán/);
 });
 
+test('procesarAlbaranes: albarán sin total se añade con la suma de las líneas y un aviso; escanearlo otra vez no lo duplica', () => {
+  const sinTotal = albaranRaw({ total: null, base_imponible: null, iva_importe: null });
+  const e = entorno({ 'a1.pdf': sinTotal, 'a2.pdf': sinTotal });
+  ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['a1.pdf', 'a2.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+
+  const alb = tabla(e, 'Albaranes').filter(a => a['Nº albarán'] === '462446');
+  assert.equal(alb.length, 1);
+  assert.equal(alb[0]['Precio con IVA'], 44.54);
+  assert.match(alb[0]['Nota escaneo'], /Sin total en el albarán/);
+  assert.equal(tabla(e, 'Piezas').filter(p => p['Nº albarán'] === '462446').length, 2);
+  assert.equal(e.carpetas.PROC.ficheros.length, 2);
+  assert.equal(e.carpetas.ENT.ficheros.length, 0);
+});
+
+test('procesarAlbaranes: la 2ª hoja completa el albarán aunque llegue antes y repetida; si no cuadra se queda en Entrada', () => {
+  const [correa, aceite, sigaus] = albaranRaw().lineas;
+  const hoja1 = extra => albaranRaw(Object.assign({ total: null, base_imponible: null, iva_importe: null, lineas: [correa] }, extra));
+  const hoja2 = extra => albaranRaw(Object.assign({ lineas: [aceite, sigaus] }, extra));
+  const e = entorno({
+    'h2.pdf': hoja2(), 'h1.pdf': hoja1(), 'h1-otra.pdf': hoja1(), 'h2-otra.pdf': hoja2(),
+    'mal1.pdf': hoja1({ numero_albaran: '999999' }), 'mal2.pdf': hoja2({ numero_albaran: '999999', total: 500, base_imponible: null }),
+  });
+  ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['h2.pdf', 'h1.pdf', 'h1-otra.pdf', 'h2-otra.pdf', 'mal1.pdf', 'mal2.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+
+  const alb = tabla(e, 'Albaranes').filter(a => a['Nº albarán'] === '462446');
+  assert.equal(alb.length, 1);
+  assert.equal(alb[0]['Precio con IVA'], 44.54);
+  assert.equal(alb[0]['Nota escaneo'], '');
+  assert.equal(tabla(e, 'Piezas').filter(p => p['Nº albarán'] === '462446').map(p => p['Referencia pieza']).join(), 'DAYCO6PK1090EE,KRAFF47054');
+
+  const mal = tabla(e, 'Albaranes').find(a => a['Nº albarán'] === '999999');
+  assert.match(mal['Nota escaneo'], /Sin total en el albarán/);
+  assert.equal(mal['Precio con IVA'], 13.69);
+  assert.equal(e.carpetas.ENT.ficheros.map(f => f.getName()).join(), 'mal2.pdf');
+  assert.equal(e.carpetas.PROC.ficheros.length, 5);
+});
+
 test('un filtro puesto (filas ocultas) no hace perder fechas ni fórmulas al escribir, y se deja como estaba', () => {
   const e = entorno({ 'a1.pdf': albaranRaw(), 'fra.pdf': facturaRaw() });
   ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));
@@ -813,7 +854,7 @@ test('migración 7.0.0: recupera fechas de Líneas RM, borra las piezas duplicad
   e.ss.deleteSheet(e.ss.getSheetByName('Cuadre RM'));  // pestaña nueva de esta versión
   e.props.VERSION_HOJA = '6.0.0';
   e.run('actualizarHoja_(false)');
-  assert.equal(e.props.VERSION_HOJA, '7.0.0');
+  assert.equal(e.props.VERSION_HOJA, e.run('VERSION'));
   assert.deepEqual([2, 3, 4, 5].map(r => l.valor(r, 3) ? iso(l.valor(r, 3)) : ''), ['2026-09-03', '', '2026-10-07', '2026-10-02']);
   assert.deepEqual([3, 4, 5].map(r => iso(l.valor(r, 15))), ['2026-09-15', '2026-10-07', '2026-10-02'], 'abono: fecha de la factura, o la del albarán de abono si se escaneó antes');
   assert.deepEqual(plano(tabla(e, 'Piezas')).map(x => [x['Nº albarán'], x['Referencia pieza'], x['ID'], x['Reembolso']]),
