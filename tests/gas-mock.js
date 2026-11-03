@@ -42,7 +42,9 @@ class Rango {
       o.push([]);
       for (let j = 0; j < this.nc; j++) {
         const x = this.sh.cell(this.r + i, this.c + j);
-        o[i].push({ getText: () => (x ? String(x.v) : ''), getLinkUrl: () => (x && x.url) || null });
+        const url = (x && x.url) || null;
+        o[i].push({ getText: () => (x ? String(x.v) : ''), getLinkUrl: () => url,
+          getRuns: () => (x && x.enlaces ? x.enlaces.map(e => ({ getLinkUrl: () => e.url })) : [{ getLinkUrl: () => url }]) });
       }
     }
     return o;
@@ -51,6 +53,7 @@ class Rango {
     this._each((r, c, i, j) => { this.sh.put(r, c, a[i][j].texto); const x = this.sh.cell(r, c); if (x && a[i][j].url) x.url = a[i][j].url; });
     return this._w();
   }
+  setRichTextValue(v) { this.sh.put(this.r, this.c, v.texto); const x = this.sh.cell(this.r, this.c); if (x) x.enlaces = v.enlaces; return this._w(); }
   createFilter() { this.sh.filtro = new Filtro(this.sh, this.r, this.c, this.nr, this.nc); return this.sh.filtro; }
   getRow() { return this.r; } getColumn() { return this.c; } getNumRows() { return this.nr; } getNumColumns() { return this.nc; }
   getSheet() { return this.sh; } getA1Notation() { return `R${this.r}C${this.c}`; }
@@ -226,6 +229,7 @@ function crearEntorno(opts = {}) {
   const mkFolder = (id, nombre) => {
     const f = { id, nombre, ficheros: [], getId: () => id, getName: () => nombre,
       getFiles() { let i = 0; const l = f.ficheros; return { hasNext: () => i < l.length, next: () => l[i++] }; },
+      getFilesByName(n) { let i = 0; const l = f.ficheros.filter(x => x.nombre === n); return { hasNext: () => i < l.length, next: () => l[i++] }; },
       getParents() { return { hasNext: () => true, next: () => carpetas.PADRE }; },
       createFolder(n) { const nf = mkFolder('F' + idSeq++, n); return nf; } };
     carpetas[id] = f; return f;
@@ -243,7 +247,8 @@ function crearEntorno(opts = {}) {
     console: { log: m => log.console.push(String(m)), warn: m => log.console.push(String(m)), error: m => log.console.push(String(m)) },
     Logger: { log: m => log.logger.push(m) },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => ss, flush() { io.escrito = false; }, newDataValidation: validacion, newConditionalFormatRule: reglaCF,
-      newRichTextValue: () => { const v = { texto: '', url: null, setText(t) { v.texto = t; return v; }, setLinkUrl(u) { v.url = u; return v; }, build() { return v; } }; return v; },
+      newRichTextValue: () => { const v = { texto: '', url: null, enlaces: [], setText(t) { v.texto = t; return v; },
+        setLinkUrl(a, b, c) { if (c === undefined) v.url = a; else v.enlaces.push({ texto: v.texto.slice(a, b), url: c }); return v; }, build() { return v; } }; return v; },
       ProtectionType: { RANGE: 'RANGE' }, CopyPasteType: { PASTE_FORMAT: 'F', PASTE_DATA_VALIDATION: 'V' }, Dimension: { ROWS: 'ROWS', COLUMNS: 'COLUMNS' }, getUi: () => ({ alert: (a, b) => log.alerts.push([a, b]), createMenu: chain, prompt: () => ({ getSelectedButton: () => 'CANCEL' }), ButtonSet: { OK: 1, OK_CANCEL: 2 }, Button: { OK: 'OK' } }) },
     DriveApp: { getFolderById: id => { if (!carpetas[id]) throw new Error('carpeta inexistente ' + id); return carpetas[id]; },
       getFileById: id => archivos[id], getRootFolder: () => carpetas.PADRE },

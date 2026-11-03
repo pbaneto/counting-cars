@@ -88,10 +88,8 @@ function releerDescuadrados_(archivos, resultados, iva) {
 
 function contextoAlbaranes_() {
   const alb = leerTabla_(HOJA.ALB), trab = leerTabla_(HOJA.TRAB), piezas = leerTabla_(HOJA.PIEZAS), coches = leerTabla_(HOJA.COCHES);
-  const idsPdf = new Set();
-  const ult = alb.sh.getLastRow();
-  if (ult > 1) alb.sh.getRange(2, alb.map['Ver PDF'], ult - 1, 1).getFormulas().forEach(r => { const id = idDeEnlace_(r[0]); if (id) idsPdf.add(id); });
-  return { alb, trab, piezas, idsPdf, iva: cfgNum_('IVA'), hoy: hoyISO_(), tocaAbonos: false, lineas: null, coches };
+  const pdfs = pdfsPorFila_(alb), idsPdf = new Set(Object.keys(pdfs).reduce((a, k) => a.concat(pdfs[k]), []));
+  return { alb, trab, piezas, pdfs, idsPdf, iva: cfgNum_('IVA'), hoy: hoyISO_(), tocaAbonos: false, lineas: null, coches };
 }
 
 /** Devuelve { estado: 'creado' | 'completado' | 'reembolso' | 'duplicado' | 'abono' | 'descuadre' | 'error', motivo }. */
@@ -161,6 +159,7 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
     if (trabajo.num) ponerDesplegableTrabajo_(ctx.alb, filaAlb, ctx.trab, doc.matricula);
   }
   ctx.idsPdf.add(archivo.getId());
+  ctx.pdfs[filaAlb] = [archivo.getId()];
   // Albarán que no se reconoció como ya registrado (oct 2026: los que perdieron su número o su PDF y se reescanearon)
   // pero cuyas piezas ya están: no se duplican.
   if (num && piezasDeAlbaran_(ctx.piezas, num).length) {
@@ -180,6 +179,8 @@ function completarConSegundaHoja_(ctx, archivo, doc, existente, lineasPiezas) {
   actualizarFila_(ctx.alb, existente.fila, { 'Precio con IVA': doc.total, 'Nota escaneo': quitarAvisoSinTotal(existente.v['Nota escaneo']) });
   agregarFilas_(ctx.piezas, filasPiezas_(ctx.piezas, lineasPiezas, num, ctx.hoy, 'Escaneo'));
   if (lineasPiezas.some(l => l.reembolso)) ctx.tocaAbonos = true;
+  ctx.pdfs[existente.fila] = (ctx.pdfs[existente.fila] || []).concat(archivo.getId());
+  ponerPdfs_(ctx.alb, existente.fila, ctx.pdfs[existente.fila]);
   ctx.idsPdf.add(archivo.getId());
   log_('INFO', 'procesarAlbaranes', `${HOJA.ALB}!${existente.fila}`, `Albarán ${num} completado con su 2ª hoja (${archivo.getName()}): total ${doc.total} €, ${lineasPiezas.length} pieza(s) nueva(s)`);
   return { estado: 'completado' };

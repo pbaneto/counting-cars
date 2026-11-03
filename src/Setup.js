@@ -290,7 +290,7 @@ function formatoAlbaranes_() {
   colFmt_(sh, 'Precio - abonos', n, { fmt: FMT.euro, gris: true, ancho: 120 });
   colFmt_(sh, 'Coche', n, { gris: true, ancho: 190 });
   colFmt_(sh, 'Cliente', n, { gris: true, ancho: 150 });
-  colFmt_(sh, 'Ver PDF', n, { ancho: 80 });
+  colFmt_(sh, 'Ver PDF', n, { ancho: 110 });
   colFmt_(sh, 'Avisos', n, { gris: true, ancho: 380 });
   colFmt_(sh, 'Nota escaneo', n, { ancho: 320 });
   const R = h => `${l[h]}2:${l[h]}${n + 1}`;

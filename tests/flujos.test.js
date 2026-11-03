@@ -280,6 +280,51 @@ test('procesarAlbaranes: la 2ª hoja completa el albarán aunque llegue antes y 
   assert.equal(e.carpetas.PROC.ficheros.length, 5);
 });
 
+test('albarán de dos hojas: «Ver PDF» enlaza las dos, en el mismo lote o en otro, y un reescaneo de cualquiera se reconoce', () => {
+  const [correa, aceite, sigaus] = albaranRaw().lineas;
+  const hoja1 = albaranRaw({ total: null, base_imponible: null, iva_importe: null, lineas: [correa] });
+  const hoja2 = albaranRaw({ lineas: [aceite, sigaus] });
+  const e = entorno({ 'h1.pdf': hoja1, 'h2.pdf': hoja2, 'n.pdf': albaranRaw({ numero_albaran: '777777', matricula: '5678DEF' }) });
+  ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['h1.pdf', 'n.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+  subir(e, ['h2.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+
+  const id = n => e.carpetas.PROC.ficheros.find(f => f.nombre === n).getId(), url = n => `https://drive.google.com/file/d/${id(n)}/view`;
+  const sh = e.ss.getSheetByName('Albaranes'), fila = 2 + tabla(e, 'Albaranes').findIndex(a => a['Nº albarán'] === '462446');
+  const celda = sh.cell(fila, 13);
+  assert.equal(celda.v, 'Hoja 1 · Hoja 2');
+  assert.equal(celda.f, '', 'la fórmula de la 1ª hoja desaparece');
+  assert.deepEqual(plano(celda.enlaces), [{ texto: 'Hoja 1', url: url('h1.pdf') }, { texto: 'Hoja 2', url: url('h2.pdf') }]);
+  assert.match(sh.cell(2 + tabla(e, 'Albaranes').findIndex(a => a['Nº albarán'] === '777777'), 13).f, /HYPERLINK/, 'el de una hoja sigue igual');
+  assert.ok(e.run('contextoAlbaranes_().idsPdf').has(id('h2.pdf')));
+  assert.ok(e.run('contextoAlbaranes_().idsPdf').has(id('h1.pdf')));
+
+  e.run('actualizarAbonos()');
+  assert.equal(e.ss.getSheetByName('Piezas').cell(2 + tabla(e, 'Piezas').findIndex(p => p['Nº albarán'] === '462446'), 3).url, url('h1.pdf'), 'Piezas enlaza la 1ª hoja');
+});
+
+test('migración 8.0.0: junta en «Ver PDF» la 2ª hoja de los albaranes que dice el Registro, una sola vez y sin parar si falta alguna', () => {
+  const e = entorno({ 'a.pdf': albaranRaw() });
+  ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['a.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+  const hoja2 = e.mkFile('idH2', 'hoja2.pdf', 'application/pdf', 'PROC');
+  const reg = e.ss.getSheetByName('Registro'), libre = reg.getLastRow() + 1;
+  ['Albarán 462446 completado con su 2ª hoja (hoja2.pdf): total 44.54 €, 1 pieza(s) nueva(s)',
+    'Albarán 000000 completado con su 2ª hoja (no-esta.pdf): total 1 €, 0 pieza(s) nueva(s)'].forEach((m, i) => reg.put(libre + i, 5, m));
+  e.run("MIGRACIONES['8.0.0']()");
+  e.run("MIGRACIONES['8.0.0']()");
+  e.run('volcarLog_()');
+
+  const celda = e.ss.getSheetByName('Albaranes').cell(2 + tabla(e, 'Albaranes').findIndex(a => a['Nº albarán'] === '462446'), 13);
+  assert.equal(celda.v, 'Hoja 1 · Hoja 2');
+  assert.equal(celda.enlaces.length, 2);
+  assert.match(celda.enlaces[1].url, new RegExp(hoja2.getId()));
+  assert.match(tabla(e, 'Registro').map(r => r['Mensaje']).join('\n'), /No encuentro el albarán 000000/);
+});
+
 test('un filtro puesto (filas ocultas) no hace perder fechas ni fórmulas al escribir, y se deja como estaba', () => {
   const e = entorno({ 'a1.pdf': albaranRaw(), 'fra.pdf': facturaRaw() });
   ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));

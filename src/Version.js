@@ -17,7 +17,21 @@ const PROP_DISENO_PENDIENTE_ = 'DISENO_PENDIENTE';
  * escritura (oct 2026: la 3.0.0 escribió fórmulas donde había quedado el desplegable de Estado y cortó el diseño). Cuando una ya se ha ejecutado en la hoja real, se borra de aquí en el siguiente cambio: la
  * versión guardada en la hoja impide que vuelva a hacer falta.
  */
-const MIGRACIONES = {};
+const MIGRACIONES = {
+  // Albaranes ya completados con su 2ª hoja: el Registro dice qué PDF es, y está en Procesados.
+  '8.0.0': () => {
+    const alb = leerTabla_(HOJA.ALB), pdfs = pdfsPorFila_(alb), col = alb.map['Ver PDF'];
+    if (alb.sh.getColumnWidth(col) < 110) alb.sh.setColumnWidth(col, 110);
+    leerTabla_(HOJA.REG).filas.forEach(r => {
+      const m = /^Albarán (\S+) completado con su 2ª hoja \((.+)\): total/.exec(String(r.v['Mensaje']));
+      if (!m) return;
+      const f = alb.filas.find(x => normAlbaran(x.v['Nº albarán']) === m[1]), archivos = carpeta_('CARPETA_PROCESADOS').getFilesByName(m[2]);
+      if (!f || !archivos.hasNext()) { log_('AVISO', 'migración 8.0.0', m[2], `No encuentro el albarán ${m[1]} o su 2ª hoja en Procesados: el enlace se queda como estaba`); return; }
+      const ids = pdfs[f.fila] || [], id = archivos.next().getId();
+      if (ids.indexOf(id) < 0) { pdfs[f.fila] = ids.concat(id); ponerPdfs_(alb, f.fila, pdfs[f.fila]); }
+    });
+  },
+};
 
 /** Pone la hoja al día con el código. forzarDiseno: aplicar el diseño aunque la versión no haya cambiado (menú). */
 function actualizarHoja_(forzarDiseno) {

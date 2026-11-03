@@ -37,3 +37,31 @@ function urlPdf_(id) { return `https://drive.google.com/file/d/${id}/view`; }
 function enlacePdfId_(id) { return loc_(`=HYPERLINK("${urlPdf_(id)}","Ver PDF")`); }
 
 function idDeEnlace_(texto) { const m = /\/d\/([\w-]+)/.exec(String(texto || '')); return m ? m[1] : ''; }
+
+/** Celda con un enlace por hoja: "Hoja 1 · Hoja 2". */
+function textoHojasPdf_(ids) {
+  const trozos = ids.map((_, i) => `Hoja ${i + 1}`), sep = ' · ', b = SpreadsheetApp.newRichTextValue().setText(trozos.join(sep));
+  let pos = 0;
+  ids.forEach((id, i) => { b.setLinkUrl(pos, pos + trozos[i].length, urlPdf_(id)); pos += trozos[i].length + sep.length; });
+  return b.build();
+}
+
+/** Pone en "Ver PDF" los PDF del albarán: un HYPERLINK si es una hoja, un enlace por hoja si son más. */
+function ponerPdfs_(tabla, fila, ids) {
+  if (ids.length < 2) { actualizarFila_(tabla, fila, { 'Ver PDF': enlacePdfId_(ids[0]) }); return; }
+  sinFiltro_(tabla.sh);
+  tabla.sh.getRange(fila, tabla.map['Ver PDF']).clearContent().setRichTextValue(textoHojasPdf_(ids));
+}
+
+/** {nº de fila: [IDs de sus PDF]} de la columna "Ver PDF": sale de la fórmula o, si la celda tiene varias hojas, de sus enlaces. */
+function pdfsPorFila_(tabla) {
+  const desde = tabla.fc + 1, n = tabla.libre - desde, out = {};
+  if (n < 1) return out;
+  const rango = tabla.sh.getRange(desde, tabla.map['Ver PDF'], n, 1), formulas = rango.getFormulas(), ricos = rango.getRichTextValues();
+  formulas.forEach((r, i) => {
+    const una = idDeEnlace_(r[0]), rico = ricos[i][0];
+    const ids = una ? [una] : rico ? rico.getRuns().map(x => idDeEnlace_(x.getLinkUrl())).filter(Boolean) : [];
+    if (ids.length) out[desde + i] = ids;
+  });
+  return out;
+}

@@ -73,14 +73,12 @@ function leerParaAbonos_(tabP, crono) {
   return { tabP, tabL, tabA, sh, tabla, enlacesTabla, enlacesPiezas, pdfDe, fechaFactura, maxFilas, desde };
 }
 
-/** {nº albarán: URL de su PDF} según la columna "Ver PDF" de Albaranes. */
+/** {nº albarán: URL de su PDF} según la columna "Ver PDF" de Albaranes; con varias hojas, la primera. */
 function pdfsDeAlbaranes_(tabA) {
-  const pdfDe = {};
-  if (!tabA.filas.length) return pdfDe;
-  const desde = tabA.fc + 1, formulas = tabA.sh.getRange(desde, tabA.map['Ver PDF'], tabA.libre - desde, 1).getFormulas();
+  const pdfDe = {}, pdfs = pdfsPorFila_(tabA);
   tabA.filas.forEach(f => {
-    const n = normAlbaran(f.v['Nº albarán']), id = idDeEnlace_(formulas[f.fila - desde][0]);
-    if (n && id && !pdfDe[n]) pdfDe[n] = urlPdf_(id);
+    const n = normAlbaran(f.v['Nº albarán']), ids = pdfs[f.fila];
+    if (n && ids && !pdfDe[n]) pdfDe[n] = urlPdf_(ids[0]);
   });
   return pdfDe;
 }
