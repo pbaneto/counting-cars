@@ -340,27 +340,47 @@ function informeAbonos(piezas, abonos, matriculas, desde) {
  */
 function esMarcaReembolso(texto) { return /^[-—–\s.]*R[\s.]*$/i.test(String(texto == null ? '' : texto)); }
 
+/** Nº de letras que hay que cambiar, añadir o quitar para pasar de un texto a otro (Levenshtein). */
+function distanciaTexto(a, b) {
+  let fila = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const nueva = [i];
+    for (let j = 1; j <= b.length; j++) nueva[j] = Math.min(fila[j] + 1, nueva[j - 1] + 1, fila[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    fila = nueva;
+  }
+  return fila[b.length];
+}
+
 /**
- * Segundo escaneo de un albarán que ya existe: decide qué piezas marcar como reembolso.
- * existentes: [{ref, desc, reembolso}]  lineas: líneas de Gemini (con .reembolso)
- * Devuelve { marcar: [índices en existentes], añadir: [líneas nuevas], yaMarcadas: n }
+ * Segundo escaneo de un albarán que ya existe: decide qué piezas marcar como reembolso. Todas son de ese albarán.
+ * Una línea con R es la pieza de su misma referencia. Si no la hay (la referencia se ha podido leer mal), la de su mismo
+ * importe; entre varias con ese importe, la de referencia más parecida. Si empatan no se elige: mejor preguntar que marcar otra.
+ * existentes: [{ref, desc, importe, reembolso}]  lineas: líneas de Gemini (con .reembolso)
+ * Devuelve { marcar: [índices en existentes], anadir: [líneas nuevas], dudosas: [líneas sin pieza clara], yaMarcadas: n }
  */
 function aplicarReembolsos(existentes, lineas) {
-  const usadas = new Set(), marcar = [], anadir = [];
+  const usadas = new Set(), marcar = [], anadir = [], dudosas = [];
   let yaMarcadas = 0;
-  lineasParaPiezas(lineas).filter(l => l.reembolso).forEach(l => {
-    const k = refKey(l.referencia), kd = refKey(l.descripcion);
-    let idx = -1;
-    for (let i = 0; i < existentes.length; i++) {
-      if (usadas.has(i)) continue;
-      const e = existentes[i];
-      if ((k && refKey(e.ref) === k) || (!k && kd && refKey(e.desc) === kd)) { idx = i; break; }
-    }
-    if (idx < 0) { anadir.push(l); return; }
+  const libres = cumple => existentes.map((_, i) => i).filter(i => !usadas.has(i) && cumple(existentes[i]));
+  const asignar = idx => {
     usadas.add(idx);
     if (existentes[idx].reembolso) yaMarcadas++; else marcar.push(idx);
+  };
+  // Primero las referencias exactas, para que una línea mal leída no se quede la pieza de otra.
+  lineasParaPiezas(lineas).filter(l => l.reembolso).filter(l => {
+    const k = refKey(l.referencia), exacta = k ? libres(e => refKey(e.ref) === k) : [];
+    if (exacta.length) asignar(exacta[0]);
+    return !exacta.length;
+  }).forEach(l => {
+    const k = refKey(l.referencia), kd = refKey(l.descripcion), imp = parseNumber(l.importe);
+    let cand = libres(e => Math.abs(parseNumber(e.importe) - imp) < 0.01);
+    if (!cand.length && !k && kd) cand = libres(e => refKey(e.desc) === kd);
+    if (!cand.length) { anadir.push(l); return; }
+    const dist = cand.map(i => distanciaTexto(k || kd, k ? refKey(existentes[i].ref) : refKey(existentes[i].desc)));
+    const mejores = cand.filter((_, n) => dist[n] === Math.min.apply(null, dist));
+    if (mejores.length > 1) dudosas.push(l); else asignar(mejores[0]);
   });
-  return { marcar, anadir, yaMarcadas };
+  return { marcar, anadir, dudosas, yaMarcadas };
 }
 
 /** Busca una fila manual (sin nº de albarán ni PDF) que corresponda al albarán escaneado. rows: [{row, plate, total, albaran, pdf}] */

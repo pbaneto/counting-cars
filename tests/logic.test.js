@@ -152,6 +152,24 @@ test('aplicarReembolsos: marca, no duplica y añade lo que falta', () => {
   assert.equal(r.anadir[0].referencia, 'NUEVA1');
 });
 
+test('aplicarReembolsos: con la referencia mal leída busca por importe dentro del albarán', () => {
+  const marcar = (existentes, lineas) => L.aplicarReembolsos(existentes, lineas.map(l => Object.assign({ reembolso: true, descripcion: 'x' }, l)));
+  const lampara = { ref: 'OSRAM66240CLC', desc: 'LAMPARA', importe: 35.1, reembolso: false };
+  assert.deepEqual([...marcar([lampara], [{ referencia: 'OSRAM6624OCLC', importe: 35.1 }]).marcar], [0], 'importe único: da igual cuánto se parezca');
+  const yaMarcada = marcar([Object.assign({}, lampara, { reembolso: true })], [{ referencia: 'OSRAM6624OCLC', importe: 35.1 }]);
+  assert.equal(yaMarcada.yaMarcadas, 1, 'marcada antes: ni se repite ni se añade');
+  assert.equal(yaMarcada.anadir.length, 0);
+  assert.equal(marcar([lampara], [{ referencia: 'OTRA', importe: 9 }]).anadir.length, 1, 'otro importe y otra referencia: es otra pieza');
+
+  const pareja = [{ ref: 'GOOMSM0518', importe: 56.07 }, { ref: 'GOOMSM0519', importe: 56.07 }];
+  assert.deepEqual([...marcar(pareja, [{ referencia: 'GOOMSMO519', importe: 56.07 }]).marcar], [1], 'mismo importe: la más parecida');
+  const empate = marcar(pareja, [{ referencia: 'GOOMSM051X', importe: 56.07 }]);
+  assert.equal(empate.dudosas.length, 1, 'igual de parecidas: no se elige');
+  assert.equal(empate.marcar.length + empate.anadir.length, 0);
+  assert.deepEqual([...marcar(pareja, [{ referencia: 'GOOMSMO518', importe: 56.07 }, { referencia: 'GOOMSM0518', importe: 56.07 }]).marcar].sort(), [0, 1], 'la exacta primero, aunque venga después');
+  assert.deepEqual([...marcar([{ desc: 'ACEITE' }], [{ referencia: '', descripcion: 'ACEITE', importe: 3 }]).marcar], [0], 'sin referencia: por descripción');
+});
+
 test('buscarFilaManual adopta sólo filas manuales con misma matrícula e importe', () => {
   const rows = [
     { row: 5, plate: '1234ABC', total: 44.54, albaran: '', pdf: '' },

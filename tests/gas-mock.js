@@ -229,7 +229,6 @@ function crearEntorno(opts = {}) {
   const mkFolder = (id, nombre) => {
     const f = { id, nombre, ficheros: [], getId: () => id, getName: () => nombre,
       getFiles() { let i = 0; const l = f.ficheros; return { hasNext: () => i < l.length, next: () => l[i++] }; },
-      getFilesByName(n) { let i = 0; const l = f.ficheros.filter(x => x.nombre === n); return { hasNext: () => i < l.length, next: () => l[i++] }; },
       getParents() { return { hasNext: () => true, next: () => carpetas.PADRE }; },
       createFolder(n) { const nf = mkFolder('F' + idSeq++, n); return nf; } };
     carpetas[id] = f; return f;

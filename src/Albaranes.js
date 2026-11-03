@@ -14,7 +14,7 @@ function procesarAlbaranes() {
     releerDescuadrados_(archivos, resultados, ctx.iva);
 
     const cuenta = { creado: 0, completado: 0, reembolso: 0, duplicado: 0, abono: 0, descuadre: 0, error: 0, pendiente: 0 };
-    const descuadres = [], parecidos = [], mover = [];
+    const descuadres = [], parecidos = [], dudas = [], mover = [];
     let fallo = null;
     // Las hojas sin total, primero: así la 2ª hoja de un albarán encuentra la 1ª aunque se haya escaneado antes.
     const conTotal = i => (resultados[i].ok && !parseNumber(resultados[i].doc.total) ? 0 : 1);
@@ -26,6 +26,7 @@ function procesarAlbaranes() {
         const res = procesarDocAlbaran_(ctx, f, r.doc);
         cuenta[res.estado]++;
         if (res.parecido) parecidos.push(res.parecido);
+        if (res.duda) dudas.push(res.duda);
         if (res.estado === 'descuadre') descuadres.push(`${nombre}: ${res.motivo}`);  // se queda en Entrada
         else mover.push({ f, errores: res.estado === 'error' });
       } catch (e) {
@@ -56,6 +57,7 @@ function procesarAlbaranes() {
       linea(cuenta.pendiente, 'Sin procesar, siguen en Entrada');
     if (descuadres.length) msg += `\nNo cuadran los importes, siguen en Entrada (${descuadres.length}):\n` + descuadres.map(d => '• ' + d).join('\n') + '\n';
     if (parecidos.length) msg += `\nParecen el mismo albarán con el nº mal leído (${parecidos.length}):\n` + parecidos.map(p => '• ' + p).join('\n') + '\n';
+    if (dudas.length) msg += `\nR sin marcar, no se sabe qué pieza es: márcala a mano en Piezas (${dudas.length}):\n` + dudas.map(d => '• ' + d).join('\n') + '\n';
     if (fallo) msg = '⚠ No se ha podido guardar en la hoja: no se ha movido ningún PDF, siguen todos en Entrada. Detalle en Registro.';
     else if (cuenta.error + cuenta.pendiente) msg += '\nDetalle en la pestaña Registro.';
     log_('INFO', 'procesarAlbaranes', '', msg.trim().replace(/\n+/g, ' | '));
@@ -198,8 +200,13 @@ function procesarSegundoEscaneo_(ctx, archivo, doc, existente, lineasPiezas) {
     return { estado: hayR ? 'reembolso' : 'duplicado' };
   }
   if (!hayR) { log_('AVISO', 'procesarAlbaranes', ref, `Albarán ${num} ya existe y no lleva R: escaneo duplicado, se ignora`); return { estado: 'duplicado' }; }
-  const plan = aplicarReembolsos(piezasAlb.map(p => ({ ref: p.v['Referencia pieza'], desc: p.v['Descripción'], reembolso: p.v['Reembolso'] === true })), doc.lineas);
-  if (!plan.marcar.length && !plan.anadir.length) { log_('AVISO', 'procesarAlbaranes', ref, `Albarán ${num}: las piezas con R ya estaban marcadas`); return { estado: 'duplicado' }; }
+  const plan = aplicarReembolsos(piezasAlb.map(p => ({ ref: p.v['Referencia pieza'], desc: p.v['Descripción'], importe: p.v['Precio descontado sin IVA'], reembolso: p.v['Reembolso'] === true })), doc.lineas);
+  const duda = plan.dudosas.length ? `${ref}: albarán ${num}, R en ${plan.dudosas.map(l => l.referencia || l.descripcion).join(', ')}` : '';
+  if (duda) log_('AVISO', 'procesarAlbaranes', ref, `Albarán ${num}: hay R en ${plan.dudosas.map(l => l.referencia || l.descripcion).join(', ')}, pero varias piezas tienen ese importe y referencias igual de parecidas. No se marca ninguna: márcala a mano en Piezas`);
+  if (!plan.marcar.length && !plan.anadir.length) {
+    if (!duda) log_('AVISO', 'procesarAlbaranes', ref, `Albarán ${num}: las piezas con R ya estaban marcadas`);
+    return { estado: 'duplicado', duda };
+  }
   plan.marcar.forEach(i => actualizarFila_(ctx.piezas, piezasAlb[i].fila, { 'Reembolso': true, 'Fecha reembolso': aFecha_(hoy) }));
   if (plan.anadir.length) agregarFilas_(ctx.piezas, filasPiezas_(ctx.piezas, plan.anadir, num, hoy, 'Escaneo'));
   const resumen = `Reembolso ${hoy.slice(8)}/${hoy.slice(5, 7)}: ${plan.marcar.length + plan.anadir.length} pieza(s)`;
@@ -207,5 +214,5 @@ function procesarSegundoEscaneo_(ctx, archivo, doc, existente, lineasPiezas) {
   actualizarFila_(ctx.alb, existente.fila, { 'Nota escaneo': previa ? previa + ' | ' + resumen : resumen });
   log_('INFO', 'procesarAlbaranes', `${HOJA.ALB}!${existente.fila}`, `${resumen} (albarán ${num})`);
   ctx.tocaAbonos = true;
-  return { estado: 'reembolso' };
+  return { estado: 'reembolso', duda };
 }

@@ -305,24 +305,30 @@ test('albarán de dos hojas: «Ver PDF» enlaza las dos, en el mismo lote o en o
   assert.equal(e.ss.getSheetByName('Piezas').cell(2 + tabla(e, 'Piezas').findIndex(p => p['Nº albarán'] === '462446'), 3).url, url('h1.pdf'), 'Piezas enlaza la 1ª hoja');
 });
 
-test('migración 8.0.0: junta en «Ver PDF» la 2ª hoja de los albaranes que dice el Registro, una sola vez y sin parar si falta alguna', () => {
-  const e = entorno({ 'a.pdf': albaranRaw() });
+test('procesarAlbaranes: R con la referencia mal leída marca la pieza del albarán en vez de crear otra; si hay duda, no marca ninguna', () => {
+  const [correa, aceite, sigaus] = albaranRaw().lineas;
+  const dos = { lineas: [correa, Object.assign({}, correa, { referencia: 'DAYCO6PK1090FF' }), aceite, sigaus], base_imponible: 48.12, iva_importe: 10.11, total: 58.23 };
+  const conR = (referencia, numero_albaran) => albaranRaw(Object.assign({}, dos, { numero_albaran, lineas: [Object.assign({}, correa, { referencia, reembolso: true, manuscrito: 'R' }), dos.lineas[1], aceite, sigaus] }));
+  const e = entorno({
+    'a1.pdf': albaranRaw({ numero_albaran: '100001', lineas: [correa, aceite, sigaus] }),
+    'a2.pdf': albaranRaw({ numero_albaran: '100001', lineas: [Object.assign({}, aceite, { referencia: 'KRAFFO7054', reembolso: true, manuscrito: 'R' }), correa, sigaus] }),
+    'b1.pdf': albaranRaw(Object.assign({ numero_albaran: '200002', matricula: '5678DEF' }, dos)),
+    'b2.pdf': conR('DAYCO6PK1O90EE', '200002'),
+    'c1.pdf': albaranRaw(Object.assign({ numero_albaran: '300003', matricula: '4321GHJ' }, dos)),
+    'c2.pdf': conR('XXXXXXXXXXXXXX', '300003'),
+  });
   ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));
-  subir(e, ['a.pdf'], 'ENT');
+  subir(e, ['a1.pdf', 'a2.pdf', 'b1.pdf', 'b2.pdf', 'c1.pdf', 'c2.pdf'], 'ENT');
   e.run('procesarAlbaranes()');
-  const hoja2 = e.mkFile('idH2', 'hoja2.pdf', 'application/pdf', 'PROC');
-  const reg = e.ss.getSheetByName('Registro'), libre = reg.getLastRow() + 1;
-  ['Albarán 462446 completado con su 2ª hoja (hoja2.pdf): total 44.54 €, 1 pieza(s) nueva(s)',
-    'Albarán 000000 completado con su 2ª hoja (no-esta.pdf): total 1 €, 0 pieza(s) nueva(s)'].forEach((m, i) => reg.put(libre + i, 5, m));
-  e.run("MIGRACIONES['8.0.0']()");
-  e.run("MIGRACIONES['8.0.0']()");
-  e.run('volcarLog_()');
 
-  const celda = e.ss.getSheetByName('Albaranes').cell(2 + tabla(e, 'Albaranes').findIndex(a => a['Nº albarán'] === '462446'), 13);
-  assert.equal(celda.v, 'Hoja 1 · Hoja 2');
-  assert.equal(celda.enlaces.length, 2);
-  assert.match(celda.enlaces[1].url, new RegExp(hoja2.getId()));
-  assert.match(tabla(e, 'Registro').map(r => r['Mensaje']).join('\n'), /No encuentro el albarán 000000/);
+  const de = n => tabla(e, 'Piezas').filter(p => p['Nº albarán'] === n);
+  assert.equal(de('100001').length, 2, 'un importe único: no se crea otra pieza');
+  assert.equal(de('100001').find(p => p['Reembolso'] === true)['Referencia pieza'], 'KRAFF47054');
+  assert.equal(de('200002').length, 3);
+  assert.equal(de('200002').find(p => p['Reembolso'] === true)['Referencia pieza'], 'DAYCO6PK1090EE', 'mismo importe: la referencia más parecida');
+  assert.equal(de('300003').length, 3);
+  assert.equal(de('300003').filter(p => p['Reembolso'] === true).length, 0, 'empate: no se marca ninguna');
+  assert.match(e.log.alerts[e.log.alerts.length - 1][1], /R sin marcar, no se sabe qué pieza es: márcala a mano en Piezas \(1\):\n• c2\.pdf: albarán 300003/);
 });
 
 test('un filtro puesto (filas ocultas) no hace perder fechas ni fórmulas al escribir, y se deja como estaba', () => {
