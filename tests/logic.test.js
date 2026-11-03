@@ -162,6 +162,19 @@ test('buscarFilaManual adopta sólo filas manuales con misma matrícula e import
   assert.equal(L.buscarFilaManual(rows, '', 44.54), null);
 });
 
+test('buscarNumeroMalLeido: mismo coche, fecha e importe con un solo dígito distinto', () => {
+  const rows = [{ albaran: '496127', plate: '1234ABC', fecha: '2026-10-02', total: 96.93 }];
+  const buscar = (num, plate, fecha, total) => L.buscarNumeroMalLeido(rows, num, plate, fecha, total);
+  assert.equal(buscar('498127', '1234 abc', '2026-10-02', 96.93).albaran, '496127');
+  assert.equal(buscar('498127', '1234ABC', '2026-10-02', 11.3), null, 'albarán seguido con otro importe');
+  assert.equal(buscar('498127', '9999ZZZ', '2026-10-02', 96.93), null, 'otro coche');
+  assert.equal(buscar('498127', '1234ABC', '2026-10-03', 96.93), null, 'otra fecha');
+  assert.equal(buscar('496178', '1234ABC', '2026-10-02', 96.93), null, 'dos dígitos distintos: compra repetida');
+  assert.equal(buscar('496127', '1234ABC', '2026-10-02', 96.93), null, 'mismo nº: lo trata el segundo escaneo');
+  assert.equal(buscar('498127', '', '2026-10-02', 96.93), null);
+  assert.equal(buscar('498127', '1234ABC', '', 96.93), null);
+});
+
 test('resolverMatricula: busca la combinación en cualquier posición, no sólo al principio', () => {
   const coches = [{ plate: '7853KCC', cliente: 'Jonthan', coche: 'Range Rover' }, { plate: '1233KCC', cliente: 'Ana', coche: 'Golf' },
     { plate: '6605HVB', cliente: 'Tomas', coche: 'Mini Cooper' }];

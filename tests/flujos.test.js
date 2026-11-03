@@ -223,6 +223,22 @@ test('procesarAlbaranes: nuevo, segundo escaneo con R, duplicado sin R y no-alba
   assert.match(reg, /no parece un albarán/);
 });
 
+test('procesarAlbaranes: el mismo albarán con el nº mal leído no se duplica y su R marca la pieza del correcto', () => {
+  const conR = albaranRaw({ numero_albaran: '462846', lineas: albaranRaw().lineas.map((l, i) => Object.assign({}, l, { reembolso: i === 0, manuscrito: i === 0 ? 'R' : '' })) });
+  const e = entorno({ 'a1.pdf': albaranRaw(), 'a2.pdf': albaranRaw({ numero_albaran: '462846' }), 'a3.pdf': conR, 'a4.pdf': albaranRaw({ numero_albaran: '462999' }) });
+  ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['a1.pdf', 'a2.pdf', 'a3.pdf', 'a4.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+
+  const nums = tabla(e, 'Albaranes').map(a => a['Nº albarán']).filter(n => /^462/.test(n));
+  assert.deepEqual([...nums], ['462446', '462999'], 'con dos dígitos distintos es otro albarán');
+  const piezas = tabla(e, 'Piezas');
+  assert.equal(piezas.filter(p => p['Nº albarán'] === '462846').length, 0);
+  assert.equal(piezas.filter(p => p['Nº albarán'] === '462446' && p['Reembolso'] === true).length, 1);
+  assert.equal(e.carpetas.ENT.ficheros.length, 0);
+  assert.match(tabla(e, 'Registro').map(r => r['Mensaje']).join('\n'), /Parece el albarán 462446 con el nº mal leído \(462846\)/);
+});
+
 test('procesarAlbaranes: albarán sin total se añade con la suma de las líneas y un aviso; escanearlo otra vez no lo duplica', () => {
   const sinTotal = albaranRaw({ total: null, base_imponible: null, iva_importe: null });
   const e = entorno({ 'a1.pdf': sinTotal, 'a2.pdf': sinTotal });
@@ -301,7 +317,7 @@ test('procesarAlbaranes vincula una fila manual con el mismo importe y matrícul
 
 test('procesarAlbaranes: si los importes no cuadran se relee; si siguen sin cuadrar se queda en Entrada con un aviso', () => {
   const malo = albaranRaw({ numero_albaran: '700001', total: 50 });                      // base 36,81 + IVA ≠ 50
-  const bien = albaranRaw({ numero_albaran: '700002' });
+  const bien = albaranRaw({ numero_albaran: '700012' });
   const malo3 = albaranRaw({ numero_albaran: '700003', total: 50 });
   const e = entorno({ 'c1.pdf': [malo, albaranRaw({ numero_albaran: '700001' })], 'c2.pdf': [malo3, malo3], 'c3.pdf': bien });
   ['ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
@@ -309,7 +325,7 @@ test('procesarAlbaranes: si los importes no cuadran se relee; si siguen sin cuad
   e.run('procesarAlbaranes()');
   const nums = tabla(e, 'Albaranes').map(a => a['Nº albarán']);
   assert.ok(nums.includes('700001'), 'c1: la segunda lectura cuadra y se usa');
-  assert.ok(nums.includes('700002'));
+  assert.ok(nums.includes('700012'));
   assert.ok(!nums.includes('700003'), 'c2 no se añade');
   assert.deepEqual(e.peticiones.filter(p => p.pista).map(p => p.nombre).sort(), ['c1.pdf', 'c2.pdf'], 'segunda lectura sólo de los que no cuadran');
   assert.match(e.peticiones.find(p => p.pista).pista, /no cuadraban/);

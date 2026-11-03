@@ -370,6 +370,18 @@ function buscarFilaManual(rows, plate, total) {
   return rows.find(r => !r.albaran && !r.pdf && normPlate(r.plate) === p && Math.abs(parseNumber(r.total) - total) < 0.02) || null;
 }
 
+/**
+ * Albarán ya registrado del que este parece el mismo con el nº mal leído: misma matrícula, fecha e importe, y un solo dígito distinto.
+ * El importe separa los albaranes seguidos de un mismo coche; con más dígitos distintos puede ser una compra repetida de verdad.
+ * rows: [{ fila, albaran, plate, fecha, total }]
+ */
+function buscarNumeroMalLeido(rows, num, plate, fecha, total) {
+  const n = normAlbaran(num), p = normPlate(plate);
+  if (!n || !p || !isoValid(fecha)) return null;
+  const unDigito = a => a.length === n.length && [...a].filter((c, i) => c !== n[i]).length === 1;
+  return rows.find(r => unDigito(normAlbaran(r.albaran)) && normPlate(r.plate) === p && r.fecha === fecha && Math.abs(parseNumber(r.total) - total) < 0.02) || null;
+}
+
 /** Bajo este nº de caracteres no se busca por coincidencia parcial: demasiado ambiguo para ser útil. */
 const MATRICULA_LARGO_MIN_BUSQUEDA = 3;
 // Para añadirla sola a Coches: más corta suele ser un trozo o un error de escritura ("4", "DARE").
@@ -442,5 +454,5 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, destinoTrabajoViejo, isoValid, daysBetween, quincenaDe, mesDe, MATRICULA_LARGO_MIN_COCHE, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, AVISO_SIN_TOTAL, completarTotal, hojaQueFalta, quitarAvisoSinTotal, cuadreAlbaran,
-    validarFactura, periodoFactura, clavesAbonos, SIN_PIEZA, idPiezaDe, emparejarAbonos, informeAbonos, esMarcaReembolso, aplicarReembolsos, buscarFilaManual, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
+    validarFactura, periodoFactura, clavesAbonos, SIN_PIEZA, idPiezaDe, emparejarAbonos, informeAbonos, esMarcaReembolso, aplicarReembolsos, buscarFilaManual, buscarNumeroMalLeido, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
 }

@@ -22,6 +22,7 @@ Reglas clave:
 
 - **Precio - abonos (Albaranes) = precio con IVA − piezas con Reembolso ✓ de ese albarán.** No se guarda: es una fórmula. En Trabajos, su suma es «Precio - abono». Un segundo escaneo con **R** manuscrita sólo marca la pieza. Sólo cuenta una R sola junto a la línea: nombres, matrículas o números escritos a mano no son reembolsos.
 - Albarán que ya existe **con R** → marca las piezas. **Sin R** → escaneo duplicado: se ignora.
+- Albarán con **misma matrícula, fecha e importe** que otro y un solo dígito distinto en el nº → es el mismo con el nº mal leído: se trata como segundo escaneo del que ya estaba.
 - Si una fila escrita a mano (sin nº de albarán) coincide en matrícula e importe con un albarán escaneado, se **vincula** en vez de duplicarse.
 - **Corregir una matrícula en Albaranes** pasa el albarán al trabajo abierto de esa matrícula o a uno nuevo. Si el trabajo viejo se queda vacío, se convierte en el nuevo (no hay trabajo abierto) o se borra; su factura y pagado pasan al trabajo abierto, salvo que este ya tenga factura: entonces se queda con un aviso. **Corregirla en Trabajos** cambia el trabajo entero: nº y matrícula de todos sus albaranes.
 - Un trabajo se imputa a su columna **Mes** (se rellena con la fecha del primer albarán y se puede cambiar a mano).

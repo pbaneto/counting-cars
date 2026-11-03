@@ -14,7 +14,7 @@ function procesarAlbaranes() {
     releerDescuadrados_(archivos, resultados, ctx.iva);
 
     const cuenta = { creado: 0, completado: 0, reembolso: 0, duplicado: 0, abono: 0, descuadre: 0, error: 0, pendiente: 0 };
-    const descuadres = [], mover = [];
+    const descuadres = [], parecidos = [], mover = [];
     let fallo = null;
     // Las hojas sin total, primero: así la 2ª hoja de un albarán encuentra la 1ª aunque se haya escaneado antes.
     const conTotal = i => (resultados[i].ok && !parseNumber(resultados[i].doc.total) ? 0 : 1);
@@ -25,6 +25,7 @@ function procesarAlbaranes() {
       try {
         const res = procesarDocAlbaran_(ctx, f, r.doc);
         cuenta[res.estado]++;
+        if (res.parecido) parecidos.push(res.parecido);
         if (res.estado === 'descuadre') descuadres.push(`${nombre}: ${res.motivo}`);  // se queda en Entrada
         else mover.push({ f, errores: res.estado === 'error' });
       } catch (e) {
@@ -54,6 +55,7 @@ function procesarAlbaranes() {
       linea(cuenta.abono, 'Albaranes de abono (a Líneas RM y Abonos)') + linea(cuenta.error, 'No legibles (carpeta Errores)') +
       linea(cuenta.pendiente, 'Sin procesar, siguen en Entrada');
     if (descuadres.length) msg += `\nNo cuadran los importes, siguen en Entrada (${descuadres.length}):\n` + descuadres.map(d => '• ' + d).join('\n') + '\n';
+    if (parecidos.length) msg += `\nParecen el mismo albarán con el nº mal leído (${parecidos.length}):\n` + parecidos.map(p => '• ' + p).join('\n') + '\n';
     if (fallo) msg = '⚠ No se ha podido guardar en la hoja: no se ha movido ningún PDF, siguen todos en Entrada. Detalle en Registro.';
     else if (cuenta.error + cuenta.pendiente) msg += '\nDetalle en la pestaña Registro.';
     log_('INFO', 'procesarAlbaranes', '', msg.trim().replace(/\n+/g, ' | '));
@@ -123,6 +125,14 @@ function procesarDocAlbaran_(ctx, archivo, doc) {
       return { estado: 'descuadre', motivo };
     }
     return procesarSegundoEscaneo_(ctx, archivo, doc, existente, lineasPiezas);
+  }
+
+  const igual = buscarNumeroMalLeido(ctx.alb.filas.map(f => ({ fila: f, albaran: f.v['Nº albarán'], plate: f.v['Matrícula'], fecha: aISO_(f.v['Fecha albarán']), total: f.v['Precio con IVA'] })),
+    num, doc.matricula, doc.fecha, parseNumber(doc.total));
+  if (igual) {
+    const registrado = normAlbaran(igual.albaran), parecido = `${ref}: leído como ${num}, igual que el ${registrado} (matrícula, fecha e importe)`;
+    log_('AVISO', 'procesarAlbaranes', ref, `Parece el albarán ${registrado} con el nº mal leído (${num}): misma matrícula, fecha e importe. Se trata como un segundo escaneo`);
+    return Object.assign(procesarSegundoEscaneo_(ctx, archivo, Object.assign({}, doc, { numero_albaran: registrado }), igual.fila, lineasPiezas), { parecido });
   }
 
   const problemas = cuadreAlbaran(doc, ctx.iva);
