@@ -830,6 +830,34 @@ function facturaRaw() {
   ] };
 }
 
+test('factura RM: las líneas de abono que la lectura se salta se quedan en la factura si cuadran con el bloque, también al reprocesarla', () => {
+  const l = (referencia, importe) => ({ referencia, descripcion: 'PIEZA ' + referencia, cantidad: -1, precio_unitario: -importe, descuento_pct: 0, importe, albaran_origen: '01000470000', reembolso: false });
+  const escaneado = (numero_albaran, lineas) => albaranRaw({ numero_albaran, es_abono: true, matricula: '', fecha: '2026-10-07', total: -100, base_imponible: -82.64, lineas });
+  const bloque = (numero_albaran, importe, lineas) => ({ numero_albaran, fecha: '2026-10-07', matricula: '', importe, es_abono: true, lineas });
+  const fra = () => Object.assign(facturaRaw(), { numero_factura: 'FCR 2', fecha_factura: '2026-10-15', base_imponible: -140, iva_importe: -29.4, total: 169.4, albaranes: [
+    bloque('600001', -140, [l('A', -54.81), l('B', -38.25)]),
+    bloque('600002', -50, [l('X', -30)]),
+    bloque('600003', -10, [l('N', -10)]),
+  ] });
+  const e = entorno({ 'ab1.pdf': escaneado('600001', [l('C', -9.14), l('D', -5.98), l('E', -31.82)]), 'ab2.pdf': escaneado('600002', [l('Y', -5)]), 'ab3.pdf': escaneado('600009', [l('Z', -7)]), 'f1.pdf': fra(), 'f2.pdf': fra() });
+  ['FRA', 'FRAP', 'ENT', 'PROC'].forEach(id => e.mkFolder(id, id));
+  subir(e, ['ab1.pdf', 'ab2.pdf', 'ab3.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+  subir(e, ['f1.pdf'], 'FRA');
+  e.run('procesarFacturasRM()');
+  subir(e, ['f2.pdf'], 'FRA');
+  e.run('procesarFacturasRM()');
+
+  const lineas = plano(tabla(e, 'Líneas RM')), facturaDe = r => lineas.filter(x => x['Referencia'] === r).map(x => x['Nº factura']).join();
+  assert.equal(lineas.filter(x => x['Nº albarán'] === '600001').length, 5, 'ni se pierden ni se duplican al reprocesar');
+  ['A', 'B', 'C', 'D', 'E'].forEach(r => assert.equal(facturaDe(r), 'FCR 2', r));
+  assert.equal(facturaDe('Y'), '', 'con ella el bloque no da su importe: se queda sin factura');
+  assert.equal(facturaDe('Z'), '', 'otro albarán de abono');
+  const estado = plano(tabla(e, 'Facturas RM')).find(x => x['Nº factura'] === 'FCR 2')['Estado'];
+  assert.doesNotMatch(estado, /600001/, 'bloque completo: sin aviso');
+  assert.match(estado, /600002/);
+});
+
 test('factura RM: guarda líneas, detecta abonos (Abonada / Sin solicitar) y avisa si el IVA no cuadra', () => {
   const e = entorno({ 'fra.pdf': facturaRaw() });
   ['FRA', 'FRAP', 'ENT', 'PROC'].forEach(id => e.mkFolder(id, id));

@@ -24,6 +24,7 @@ Reglas clave:
 - Albarán que ya existe **con R** → marca las piezas. **Sin R** → escaneo duplicado: se ignora. La pieza de la R se busca dentro del albarán: por referencia; si no la hay, por importe (entre varias con ese importe, la de referencia más parecida). Si empatan no se marca ninguna y se avisa.
 - Albarán con **misma matrícula, fecha e importe** que otro y un solo dígito distinto en el nº → es el mismo con el nº mal leído: se trata como segundo escaneo del que ya estaba.
 - Albarán de **dos hojas** (dos PDF): la 2ª completa la fila y «Ver PDF» pasa a tener un enlace por hoja (`Hoja 1 · Hoja 2`). El enlace del nº de albarán en Piezas y Abonos abre la 1ª.
+- **Factura que se salta líneas de un abono** (bloque partido entre dos hojas): si esas líneas ya estaban guardadas por el albarán de abono escaneado y con ellas el bloque da su importe impreso, pasan a esa factura.
 - Si una fila escrita a mano (sin nº de albarán) coincide en matrícula e importe con un albarán escaneado, se **vincula** en vez de duplicarse.
 - **Corregir una matrícula en Albaranes** pasa el albarán al trabajo abierto de esa matrícula o a uno nuevo. Si el trabajo viejo se queda vacío, se convierte en el nuevo (no hay trabajo abierto) o se borra; su factura y pagado pasan al trabajo abierto, salvo que este ya tenga factura: entonces se queda con un aviso. **Corregirla en Trabajos** cambia el trabajo entero: nº y matrícula de todos sus albaranes.
 - Un trabajo se imputa a su columna **Mes** (se rellena con la fecha del primer albarán y se puede cambiar a mano).

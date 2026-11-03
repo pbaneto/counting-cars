@@ -51,17 +51,15 @@ function registrarFactura_(archivo, doc, truncado) {
   const v = validarFactura(doc, iva);
   if (truncado) v.warnings.push('La respuesta de Gemini se cortó: puede faltar información');
   if (v.errors.length) { log_('ERROR', 'registrarFactura', ref, v.errors.join('; ')); return { fatal: true, estado: v.errors.join('; ') }; }
-  v.warnings.forEach(w => log_('AVISO', 'registrarFactura', `${doc.numero_factura}`, w));
   const per = periodoFactura(doc);
-  const estado = v.warnings.length ? '⚠ ' + v.warnings.join('; ') : 'OK';
 
   let tabL = leerTabla_(HOJA.LINEAS);
   // Lo que ya se sabía de cada línea de abono (su pieza y su fecha de abono) pasa a la línea nueva con la misma clave: de
   // esta misma factura si se procesa otra vez, o de su albarán de abono escaneado antes, que deja de estar suelto.
-  const sabido = {}, sustituidas = new Set();
-  lineasAbono_(tabL).forEach(({ f, clave }) => {
-    const fra = String(f.v['Nº factura']).trim();
-    if (fra === doc.numero_factura || fra === '') sabido[clave] = f;
+  const sabido = {}, sustituidas = new Set(), conocidas = [];
+  lineasAbono_(tabL).forEach(x => {
+    const fra = String(x.f.v['Nº factura']).trim();
+    if (fra === doc.numero_factura || fra === '') { sabido[x.clave] = x.f; conocidas.push({ f: x.f, clave: x.clave, albaranAbono: x.albaranAbono, importe: x.f.v['Importe sin IVA'] }); }
   });
   tabL.filas.forEach(f => { if (String(f.v['Nº factura']).trim() === doc.numero_factura) sustituidas.add(f); });
   // Los bloques de abono traen "MATRICULA:" vacía: se pone la del albarán original (de esta factura, de otra ya
@@ -82,8 +80,20 @@ function registrarFactura_(archivo, doc, truncado) {
     }));
   });
   const fechaFactura = aFecha_(doc.fecha_factura);
-  clavesAbonos(filas.filter(f => f['Tipo'] === 'Abono').map(f => ({ f, albaranAbono: normAlbaran(f['Nº albarán']), albaranOrigen: albaranOrigen(f['Albarán origen']),
-    ref: f['Referencia'], desc: f['Descripción'] }))).forEach(({ f, clave }) => {
+  const leidas = clavesAbonos(filas.filter(f => f['Tipo'] === 'Abono').map(f => ({ f, albaranAbono: normAlbaran(f['Nº albarán']), albaranOrigen: albaranOrigen(f['Albarán origen']),
+    ref: f['Referencia'], desc: f['Descripción'] })));
+  const delBloque = n => leidas.filter(x => x.albaranAbono === normAlbaran(n));
+  const omitidas = lineasOmitidasDeBloques(doc.albaranes.filter(a => a.es_abono).map(a => ({ numero: a.numero_albaran, importe: a.importe,
+    leidas: delBloque(a.numero_albaran).map(x => x.clave), suma: delBloque(a.numero_albaran).reduce((s, x) => s + (parseNumber(x.f['Importe sin IVA']) || 0), 0) })), conocidas);
+  const completados = Object.keys(omitidas);
+  completados.forEach(n => omitidas[n].forEach(({ f }) => {
+    const copia = { 'Nº factura': doc.numero_factura };
+    ['Nº albarán', 'Fecha albarán', 'Tipo', 'Matrícula', 'Albarán origen', 'Referencia', 'Descripción', 'Cantidad', 'Precio', 'Descuento', 'Importe sin IVA', 'ID pieza', 'Fecha abono'].forEach(h => { copia[h] = f.v[h]; });
+    filas.push(copia);
+    sustituidas.add(f);
+    log_('INFO', 'registrarFactura', doc.numero_factura, `Albarán ${n}: la lectura se ha saltado ${f.v['Referencia'] || f.v['Descripción']}; se conserva la línea ya guardada`);
+  }));
+  leidas.forEach(({ f, clave }) => {
     const antes = sabido[clave];
     if (antes) sustituidas.add(antes);
     f['ID pieza'] = antes ? antes.v['ID pieza'] : '';
@@ -97,6 +107,9 @@ function registrarFactura_(archivo, doc, truncado) {
   }
   agregarFilas_(tabL, filas);
 
+  const avisos = v.warnings.filter(w => !completados.some(n => w.indexOf(`Albarán ${n}: líneas`) === 0));
+  avisos.forEach(w => log_('AVISO', 'registrarFactura', `${doc.numero_factura}`, w));
+  const estado = avisos.length ? '⚠ ' + avisos.join('; ') : 'OK';
   const tabF = leerTabla_(HOJA.FACT);
   const fila = { 'Nº factura': doc.numero_factura, 'Fecha factura': aFecha_(doc.fecha_factura), 'Año': per.year, 'Mes': per.month, 'Quincena': per.quincena,
     'Base imponible': doc.base_imponible, 'IVA': doc.iva_importe, 'Total': doc.total, 'Estado': estado, 'Ver PDF': enlacePdf_(archivo),

@@ -256,6 +256,23 @@ function ponerClaves(items, prefijo, partes) {
 function refODesc_(ref, desc) { return refKey(ref) || 'D' + refKey(desc); }
 function clavesAbonos(abonos) { return ponerClaves(abonos, 'A', a => [normAlbaran(a.albaranAbono), refODesc_(a.ref, a.desc)]); }
 
+/**
+ * Líneas de abono ya guardadas que la lectura de una factura se ha saltado (Gemini pierde a veces las que siguen en la hoja
+ * siguiente). Son de la factura si su albarán de abono es un bloque de ella y con ellas el bloque da justo su importe impreso.
+ *  bloques: [{ numero, importe, leidas: [claves de las líneas leídas], suma: importe de las leídas }]
+ *  conocidas: [{ f, clave, albaranAbono, importe }]
+ * Devuelve { [nº del bloque]: [conocidas que le faltaban] }.
+ */
+function lineasOmitidasDeBloques(bloques, conocidas) {
+  const out = {};
+  bloques.forEach(b => {
+    const faltan = conocidas.filter(c => normAlbaran(c.albaranAbono) === normAlbaran(b.numero) && b.leidas.indexOf(c.clave) < 0);
+    const suma = faltan.reduce((a, c) => a + parseNumber(c.importe), b.suma);
+    if (faltan.length && Math.abs(suma - parseNumber(b.importe)) <= 0.03) out[normAlbaran(b.numero)] = faltan;
+  });
+  return out;
+}
+
 /** "ID pieza" de una línea de abono: "NO" = no corresponde a ninguna pieza (no se empareja sola). */
 const SIN_PIEZA = 'NO';
 function idPiezaDe(v) { const s = String(v == null ? '' : v).trim(); return s.toUpperCase() === SIN_PIEZA ? SIN_PIEZA : s; }
@@ -474,5 +491,5 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 if (typeof module !== 'undefined') {
   module.exports = { IVA_DEFECTO, MESES, round2, parseNumber, normPlate, normAlbaran, albaranOrigen, mapaMatriculas, refKey, jobPrefix, nextJobNumber,
     pickOpenJob, destinoTrabajoViejo, isoValid, daysBetween, quincenaDe, mesDe, MATRICULA_LARGO_MIN_COCHE, ultimoDiaMes, rangoQuincena, esResiduo, lineasParaPiezas, validarAlbaran, AVISO_SIN_TOTAL, completarTotal, hojaQueFalta, quitarAvisoSinTotal, cuadreAlbaran,
-    validarFactura, periodoFactura, clavesAbonos, SIN_PIEZA, idPiezaDe, emparejarAbonos, informeAbonos, esMarcaReembolso, aplicarReembolsos, buscarFilaManual, buscarNumeroMalLeido, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
+    validarFactura, periodoFactura, clavesAbonos, lineasOmitidasDeBloques, SIN_PIEZA, idPiezaDe, emparejarAbonos, informeAbonos, esMarcaReembolso, aplicarReembolsos, buscarFilaManual, buscarNumeroMalLeido, resolverMatricula, localizarFormula, usaPuntoYComa, compararVersiones, cambiaDiseno };
 }
