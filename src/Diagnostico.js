@@ -81,7 +81,7 @@ function escribirDiagnostico_(problemas, ss) {
       return [p[0], p[1], enlace, p[3]];
     });
     sh.getRange(2, 1, filas.length, 4).setValues(filas);
-    const col = { ERROR: COLORES.rojo, AVISO: COLORES.naranja, INFO: COLORES.azul };
+    const col = { ERROR: COLORES.error, AVISO: COLORES.aviso, INFO: COLORES.info };
     sh.getRange(2, 1, filas.length, 1).setBackgrounds(problemas.map(p => [col[p[0]]]));
   } else sh.getRange(2, 1).setValue('✔ Sin problemas');
   sh.setColumnWidth(1, 80); sh.setColumnWidth(2, 110); sh.setColumnWidth(3, 110); sh.setColumnWidth(4, 800);

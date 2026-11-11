@@ -338,9 +338,9 @@ function formatoAlbaranes_() {
   if (_hojaNueva) ocultarColumnas_(sh);
   const R = h => `${l[h]}2:${l[h]}${n + 1}`;
   ponerReglas_(sh, [
-    regla_(sh, R('Avisos'), `=$${l['Avisos']}2<>""`, COLORES.naranja),
-    regla_(sh, R('Nota escaneo'), `=$${l['Nota escaneo']}2<>""`, COLORES.naranja),
-    regla_(sh, R('Coche'), `=LEFT($${l['Coche']}2,1)="⚠"`, COLORES.naranja),
+    regla_(sh, R('Avisos'), `=$${l['Avisos']}2<>""`, COLORES.aviso),
+    regla_(sh, R('Nota escaneo'), `=$${l['Nota escaneo']}2<>""`, COLORES.aviso),
+    regla_(sh, R('Coche'), `=LEFT($${l['Coche']}2,1)="⚠"`, COLORES.aviso),
   ]);
 }
 
@@ -366,11 +366,11 @@ function formatoTrabajos_() {
   if (_hojaNueva) ocultarColumnas_(sh);
   const R = h => `${l[h]}${fc + 1}:${l[h]}${fc + n}`;
   ponerReglas_(sh, [
-    regla_(sh, R('Pagado'), `=AND($${l['Nº trabajo']}${fc + 1}<>"",$${l['Pagado']}${fc + 1}<>TRUE)`, COLORES.rojo),
-    regla_(sh, R('Pagado'), `=$${l['Pagado']}${fc + 1}=TRUE`, COLORES.verde),
-    regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}${fc + 1},1)="⚠"`, COLORES.naranja),
-    regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}${fc + 1},1)="ℹ"`, COLORES.azul),
-    regla_(sh, R('Coche'), `=LEFT($${l['Coche']}${fc + 1},1)="⚠"`, COLORES.naranja),
+    regla_(sh, R('Pagado'), `=AND($${l['Nº trabajo']}${fc + 1}<>"",$${l['Pagado']}${fc + 1}<>TRUE)`, COLORES.error),
+    regla_(sh, R('Pagado'), `=$${l['Pagado']}${fc + 1}=TRUE`, COLORES.ok),
+    regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}${fc + 1},1)="⚠"`, COLORES.aviso),
+    regla_(sh, R('Avisos'), `=LEFT($${l['Avisos']}${fc + 1},1)="ℹ"`, COLORES.info),
+    regla_(sh, R('Coche'), `=LEFT($${l['Coche']}${fc + 1},1)="⚠"`, COLORES.aviso),
   ]);
   panelResumenTrabajos_(sh, n, l, fc);
 }
@@ -427,8 +427,8 @@ function formatoPiezas_() {
   colFmt_(sh, 'ID', n, { gris: true, ancho: 60 });
   const ult = colLetra_(ESQUEMA['Piezas'].cabeceras.length);
   ponerReglas_(sh, [
-    regla_(sh, `A2:${ult}${n + 1}`, `=$${l['Reembolso']}2=TRUE`, COLORES.amarillo),
-    regla_(sh, `${l['Avisos']}2:${l['Avisos']}${n + 1}`, `=$${l['Avisos']}2<>""`, COLORES.naranja),
+    regla_(sh, `A2:${ult}${n + 1}`, `=$${l['Reembolso']}2=TRUE`, COLORES.resaltado),
+    regla_(sh, `${l['Avisos']}2:${l['Avisos']}${n + 1}`, `=$${l['Avisos']}2<>""`, COLORES.aviso),
   ]);
 }
 
@@ -446,7 +446,7 @@ function formatoFacturas_() {
   colFmt_(sh, 'Total', n, { fmt: FMT.euro, ancho: 110 });
   colFmt_(sh, 'Estado', n, { ancho: 480 });
   colFmt_(sh, 'Procesada el', n, { fmt: FMT.fechaHora, ancho: 130 });
-  ponerReglas_(sh, [regla_(sh, `${l['Estado']}2:${l['Estado']}${n + 1}`, `=LEFT($${l['Estado']}2,1)="⚠"`, COLORES.naranja)]);
+  ponerReglas_(sh, [regla_(sh, `${l['Estado']}2:${l['Estado']}${n + 1}`, `=LEFT($${l['Estado']}2,1)="⚠"`, COLORES.aviso)]);
 }
 
 function formatoLineas_() {
@@ -462,8 +462,8 @@ function formatoLineas_() {
   colFmt_(sh, 'Fecha abono', n, { fmt: FMT.fecha, ancho: 105 });
   const ultCol = colLetra_(ESQUEMA['Líneas RM'].cabeceras.length);
   ponerReglas_(sh, [
-    regla_(sh, `${l['Conciliación']}2:${l['Conciliación']}${n + 1}`, `=LEFT($${l['Conciliación']}2,1)="⚠"`, COLORES.naranja),
-    regla_(sh, `A2:${ultCol}${n + 1}`, `=$${l['Tipo']}2="Abono"`, COLORES.amarillo),  // fila entera de las líneas de abono
+    regla_(sh, `${l['Conciliación']}2:${l['Conciliación']}${n + 1}`, `=LEFT($${l['Conciliación']}2,1)="⚠"`, COLORES.aviso),
+    regla_(sh, `A2:${ultCol}${n + 1}`, `=$${l['Tipo']}2="Abono"`, COLORES.resaltado),  // fila entera de las líneas de abono
   ]);
 }
 
@@ -472,8 +472,8 @@ function formatoRegistro_() {
   ancho_(sh, 1, 140); ancho_(sh, 2, 70); ancho_(sh, 3, 170); ancho_(sh, 4, 200); ancho_(sh, 5, 800);
   sh.getRange(2, 1, 3000, 1).setNumberFormat('dd/mm/yyyy hh:mm:ss');
   ponerReglas_(sh, [
-    regla_(sh, 'A2:E3000', `=$${l['Nivel']}2="ERROR"`, COLORES.rojo),
-    regla_(sh, 'A2:E3000', `=$${l['Nivel']}2="AVISO"`, COLORES.naranja),
+    regla_(sh, 'A2:E3000', `=$${l['Nivel']}2="ERROR"`, COLORES.error),
+    regla_(sh, 'A2:E3000', `=$${l['Nivel']}2="AVISO"`, COLORES.aviso),
   ]);
 }
 
@@ -514,11 +514,11 @@ function montarTablaAbonos_() {
   // Las reglas por Estado son nuestras aunque apunten a otra columna (p. ej. tras mover columnas), y también la del plazo.
   const nuestra = f => ESTADOS_ABONO.some(e => f.indexOf(`="${e}"`) >= 0);
   ponerReglas_(sh, [
-    regla_(sh, T, `=AND($${E}${tb}="Sin abonar",$${D}${tb}>${plazo})`, COLORES_ABONOS.sinAbonarVencida),
-    regla_(sh, T, `=$${E}${tb}="Abonada"`, COLORES_ABONOS.abonada),
-    regla_(sh, T, `=$${E}${tb}="Abonada (a mano)"`, COLORES_ABONOS.abonadaMano),
-    regla_(sh, T, `=$${E}${tb}="Sin abonar"`, COLORES_ABONOS.sinAbonar),
-    regla_(sh, T, `=$${E}${tb}="Sin solicitar"`, COLORES_ABONOS.sinSolicitar),
+    regla_(sh, T, `=AND($${E}${tb}="Sin abonar",$${D}${tb}>${plazo})`, COLORES.error),
+    regla_(sh, T, `=$${E}${tb}="Abonada"`, COLORES.ok),
+    regla_(sh, T, `=$${E}${tb}="Abonada (a mano)"`, COLORES.info),
+    regla_(sh, T, `=$${E}${tb}="Sin abonar"`, COLORES.aviso),
+    regla_(sh, T, `=$${E}${tb}="Sin solicitar"`, COLORES.resaltado),
   ], nuestra);
 }
 
@@ -532,7 +532,7 @@ function montarCuadre_() {
   const anio = Number(sh.getRange(C.celdaAnio).getValue()) || Number(hoyISO_().slice(0, 4));
   sh.getRange(1, 1, sh.getMaxRows(), pv).breakApart().clearContent().clearFormat().clearDataValidations();
   sh.getRange(1, 1).setValue('Año').setFontWeight('bold').setHorizontalAlignment('right');
-  sh.getRange(C.celdaAnio).setValue(anio).setFontWeight('bold').setBackground(COLORES.amarillo).setNumberFormat('0');
+  sh.getRange(C.celdaAnio).setValue(anio).setFontWeight('bold').setBackground(COLORES.resaltado).setNumberFormat('0');
   const A = '$B$1';
   sh.getRange(C.filaCab, 1, 1, cab.length).setValues([cab]).setBackground(COLORES.cabecera).setFontColor('#ffffff').setFontWeight('bold').setWrap(true).setVerticalAlignment('middle');
   const col = k => `Abonos!$${letraAbonos_(k)}:$${letraAbonos_(k)}`, ESTADO_ = col('estado'), CONIVA_ = col('conIva'), DIAS_ = col('dias'), FECHA_ = col('fechaAbono');
@@ -567,7 +567,7 @@ function montarCuadre_() {
   sh.getRange(2, pc, 5, 1).setFontWeight('bold');
   sh.getRange(2, pv, 5, 1).setHorizontalAlignment('center');
   fijarFilas_(sh, C.filaCab);
-  ponerReglas_(sh, [regla_(sh, `${colLetra_(pc)}5:${colLetra_(pv)}5`, `=${colLetra_(pv)}5>0`, COLORES.naranja)]);
+  ponerReglas_(sh, [regla_(sh, `${colLetra_(pc)}5:${colLetra_(pv)}5`, `=${colLetra_(pv)}5>0`, COLORES.aviso)]);
 }
 
 function instalarTriggers_() {

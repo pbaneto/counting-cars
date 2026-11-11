@@ -555,6 +555,17 @@ test('migración 9.0.0: Albaranes y Trabajos pasan al orden nuevo sin perder dat
   assert.deepEqual(plano(tabla(e, 'Albaranes')), antes.Albaranes, 'repetir la migración no cambia nada');
 });
 
+test('atajo de Coches: selecciona la Matrícula de la primera fila libre', () => {
+  const e = entorno({});
+  const coches = e.ss.getSheetByName('Coches');
+  const libre = tabla(e, 'Coches').length + 2;
+  e.run('irAFilaLibreCoches()');
+  assert.deepEqual(plano(coches.activa), [libre, 1]);
+  coches.put(libre, 1, '0000AAA');
+  e.run('irAFilaLibreCoches()');
+  assert.deepEqual(plano(coches.activa), [libre + 1, 1], 'tras añadir un coche, la siguiente');
+});
+
 test('escribir a mano en una columna automática vuelve a poner su fórmula y avisa', () => {
   const e = entorno({});
   const alb = e.ss.getSheetByName('Albaranes');

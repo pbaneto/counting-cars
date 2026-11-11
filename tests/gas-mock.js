@@ -82,6 +82,7 @@ class Rango {
   insertCells(dim) { if (dim !== 'ROWS') throw new Error('sólo ROWS'); this.sh.desplazarCeldas(this.r, this.c, this.nc, this.nr); return this; }
   deleteCells(dim) { if (dim !== 'ROWS') throw new Error('sólo ROWS'); this.sh.desplazarCeldas(this.r, this.c, this.nc, -this.nr); return this; }
   breakApart() { this._cortadas(); return this; }
+  activate() { this.sh.activa = [this.r, this.c]; return this; }
 }
 
 class Filtro {

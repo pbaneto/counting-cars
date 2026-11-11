@@ -5,6 +5,7 @@ function alAbrir() {
     .addItem('Procesar albaranes (carpeta Entrada)', 'procesarAlbaranes')
     .addItem('Procesar facturas RM', 'procesarFacturasRM')
     .addItem('Actualizar Abonos', 'actualizarAbonos')
+    .addItem('Coches: ir a la primera fila libre (Ctrl+Alt+Shift+1)', 'irAFilaLibreCoches')
     .addSeparator()
     .addItem('Diagnóstico (buscar problemas)', 'diagnostico')
     .addItem('Reparar fórmulas y formato', 'repararFormulas')
@@ -20,6 +21,16 @@ function alAbrir() {
     if (!lock.tryLock(1000)) return;
     try { if (actualizarHoja_(false)) toast_(`Hoja actualizada a la versión ${VERSION}.`); } finally { lock.releaseLock(); }
   }, true);
+}
+
+/** Atajo Ctrl+Alt+Shift+1 (macro de appsscript.json): en Coches, selecciona la Matrícula de la primera fila libre. */
+function irAFilaLibreCoches() {
+  ejecutar_('irAFilaLibreCoches', () => {
+    _ss = SpreadsheetApp.getActiveSpreadsheet();  // la abierta en pantalla: activar celdas de una abierta por ID no se ve
+    const t = leerTabla_(HOJA.COCHES);
+    t.sh.activate();
+    t.sh.getRange(t.libre, t.map['Matrícula']).activate();
+  });
 }
 
 function alEditar(e) {

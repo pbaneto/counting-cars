@@ -13,7 +13,7 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '9.0.0';
+const VERSION = '9.1.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', CUADRE: 'Cuadre RM', COCHES: 'Coches', RESUMEN: 'Resumen',
@@ -117,11 +117,9 @@ const CUADRE = {
 };
 
 const ESTADOS_ABONO = ['Abonada', 'Abonada (a mano)', 'Sin abonar', 'Sin solicitar'];
+// Colores de estado, los mismos en todas las pestañas: vivos, distinguibles también con daltonismo (protanopía,
+// deuteranopía y tritanopía) y legibles con texto negro. gris = columna calculada.
 const COLORES = {
-  cabecera: '#1f3a5f', gris: '#efefef', rojo: '#f4cccc', verde: '#d9ead3', amarillo: '#fff2cc', naranja: '#fce5cd', azul: '#cfe2f3',
-};
-// Estados de Abonos: colores vivos que se distinguen también con daltonismo (protanopía, deuteranopía y tritanopía)
-// y se leen con texto negro.
-const COLORES_ABONOS = {
-  abonada: '#00e5ff', abonadaMano: '#b388ff', sinSolicitar: '#ffff00', sinAbonar: '#ff9100', sinAbonarVencida: '#ff1744',
+  cabecera: '#1f3a5f', gris: '#efefef',
+  ok: '#00e5ff', info: '#b388ff', resaltado: '#ffff00', aviso: '#ff9100', error: '#ff1744',
 };

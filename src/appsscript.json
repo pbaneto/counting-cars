@@ -2,5 +2,14 @@
   "timeZone": "Europe/Madrid",
   "dependencies": {},
   "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8"
+  "runtimeVersion": "V8",
+  "sheets": {
+    "macros": [
+      {
+        "menuName": "Coches: ir a la primera fila libre",
+        "functionName": "irAFilaLibreCoches",
+        "defaultShortcut": "Ctrl+Alt+Shift+1"
+      }
+    ]
+  }
 }
