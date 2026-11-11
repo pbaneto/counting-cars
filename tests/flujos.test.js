@@ -491,6 +491,8 @@ test('el diseño respeta lo cambiado a mano: anchos de columna, filtros, filas f
   assert.deepEqual(anchos, [], 'no cambia anchos de columna');
   assert.deepEqual(fijas, [], 'no quita filas fijas de más');
   assert.ok(alb.reglas.includes(mia), 'conserva la regla de color propia');
+  const P = letra(A('Proveedor'));
+  ['RM', 'Otros'].forEach(v => assert.ok(alb.reglas.some(r => r.formula === `=$${P}2="${v}"`), `color para Proveedor ${v}`));
   const formulas = alb.reglas.map(r => r.formula);
   assert.equal(formulas.length, new Set(formulas).size, 'sin reglas nuestras duplicadas');
 });

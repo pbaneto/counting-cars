@@ -13,7 +13,7 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '9.1.0';
+const VERSION = '9.2.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', CUADRE: 'Cuadre RM', COCHES: 'Coches', RESUMEN: 'Resumen',
@@ -122,4 +122,5 @@ const ESTADOS_ABONO = ['Abonada', 'Abonada (a mano)', 'Sin abonar', 'Sin solicit
 const COLORES = {
   cabecera: '#1f3a5f', gris: '#efefef',
   ok: '#00e5ff', info: '#b388ff', resaltado: '#ffff00', aviso: '#ff9100', error: '#ff1744',
+  rm: '#00e5ff', otros: '#b388ff',  // Proveedor en Albaranes
 };

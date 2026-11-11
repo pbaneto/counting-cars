@@ -341,6 +341,8 @@ function formatoAlbaranes_() {
     regla_(sh, R('Avisos'), `=$${l['Avisos']}2<>""`, COLORES.aviso),
     regla_(sh, R('Nota escaneo'), `=$${l['Nota escaneo']}2<>""`, COLORES.aviso),
     regla_(sh, R('Coche'), `=LEFT($${l['Coche']}2,1)="⚠"`, COLORES.aviso),
+    regla_(sh, R('Proveedor'), `=$${l['Proveedor']}2="RM"`, COLORES.rm),
+    regla_(sh, R('Proveedor'), `=$${l['Proveedor']}2="Otros"`, COLORES.otros),
   ]);
 }
 
