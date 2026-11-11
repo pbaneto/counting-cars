@@ -17,7 +17,9 @@ const PROP_DISENO_PENDIENTE_ = 'DISENO_PENDIENTE';
  * escritura (oct 2026: la 3.0.0 escribió fórmulas donde había quedado el desplegable de Estado y cortó el diseño). Cuando una ya se ha ejecutado en la hoja real, se borra de aquí en el siguiente cambio: la
  * versión guardada en la hoja impide que vuelva a hacer falta.
  */
-const MIGRACIONES = {};
+const MIGRACIONES = {
+  '9.0.0': () => ['Albaranes', 'Trabajos'].forEach(reordenarColumnas_),
+};
 
 /** Pone la hoja al día con el código. forzarDiseno: aplicar el diseño aunque la versión no haya cambiado (menú). */
 function actualizarHoja_(forzarDiseno) {

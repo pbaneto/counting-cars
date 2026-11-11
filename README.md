@@ -59,6 +59,7 @@ tools/          probar-gemini.js (probar el prompt con un PDF real), generar-pri
 3. Copia `private.example.js` a `src/private.js` (ID de la hoja, IDs de carpetas de Drive, datos iniciales). **No se sube a git.**
 4. `clasp push -f`
 5. En el editor de Apps Script ejecuta `setup` una vez (pide permisos). Después, en la hoja: **Counting Cars ▸ Configurar API key de Gemini**.
+6. (Opcional) Para medir el gasto con un proxy LiteLLM: en Config pon `URL_GEMINI` = `https://<servidor-litellm>/gemini` y usa como API key una clave virtual de LiteLLM con acceso al modelo.
 
 ## Pruebas
 

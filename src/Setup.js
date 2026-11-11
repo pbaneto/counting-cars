@@ -243,6 +243,48 @@ function limpiarFormulasSobrantes_(t, h, desde, hasta, formulaEn) {
 function colDe_(sh, h) { return ESQUEMA[sh.getName()].cabeceras.indexOf(h) + 1; }
 
 /**
+ * Pone las columnas de una pestaña ya existente en el orden de ESQUEMA moviéndolas enteras (datos, colores, validaciones
+ * y referencias de otras fórmulas van con ellas) y oculta las no visibles. Idempotente. La cabecera se busca por su
+ * contenido porque antes de moverlas la columna A tiene otra (filaCabecera_ buscaría la nueva primera cabecera).
+ */
+function reordenarColumnas_(nombre) {
+  const sh = hoja_(nombre), esq = ESQUEMA[nombre], todo = sh.getDataRange().getValues();
+  const i = todo.findIndex(fila => esq.cabeceras.every(h => fila.some(x => String(x).trim() === h)));
+  if (i < 0) throw new Error(`"${nombre}": no encuentro una fila con todas sus cabeceras; no se reordenan las columnas.`);
+  // Una celda combinada (el título del panel de Trabajos) impide mover columnas; aplicarDiseno_ rehace el panel.
+  if (i > 0) sh.getRange(1, 1, i, sh.getMaxColumns()).breakApart();
+  const actual = todo[i].map(x => String(x).trim());
+  // El filtro se quita y se vuelve a poner con cada criterio bajo su cabecera, en vez de fiarse de cómo lo mueve Sheets.
+  const f = sh.getFilter();
+  let filtro = null;
+  if (f) {
+    const r = f.getRange(), criterios = [];
+    for (let c = r.getColumn(); c < r.getColumn() + r.getNumColumns(); c++) {
+      const k = f.getColumnFilterCriteria(c);
+      if (k && actual[c - 1]) criterios.push([actual[c - 1], k]);
+    }
+    filtro = { fila: r.getRow(), filas: r.getNumRows(), criterios };
+    f.remove();
+  }
+  esq.cabeceras.forEach((h, destino) => {
+    const c = actual.indexOf(h);
+    if (c === destino) return;
+    sh.moveColumns(sh.getRange(1, c + 1), destino + 1);
+    actual.splice(destino, 0, actual.splice(c, 1)[0]);
+  });
+  if (filtro) {
+    const nuevo = sh.getRange(filtro.fila, 1, filtro.filas, Math.max(sh.getLastColumn(), esq.cabeceras.length)).createFilter();
+    filtro.criterios.forEach(([h, k]) => nuevo.setColumnFilterCriteria(actual.indexOf(h) + 1, k));
+  }
+  ocultarColumnas_(sh);
+}
+
+function ocultarColumnas_(sh) {
+  const esq = ESQUEMA[sh.getName()];
+  if (esq.visibles) sh.hideColumns(esq.visibles + 1, esq.cabeceras.length - esq.visibles);
+}
+
+/**
  * Aplica formato a una columna por nombre: n filas desde la siguiente a la cabecera. Una columna gris
  * (calculada) nunca debe llevar una validación manual, así que si no se le pasa una, se quita cualquier resto
  * de una versión anterior (p. ej. de un bug de columnas desalineadas que dejó una validación de otra columna
@@ -293,6 +335,7 @@ function formatoAlbaranes_() {
   colFmt_(sh, 'Ver PDF', n, { ancho: 110 });
   colFmt_(sh, 'Avisos', n, { gris: true, ancho: 380 });
   colFmt_(sh, 'Nota escaneo', n, { ancho: 320 });
+  if (_hojaNueva) ocultarColumnas_(sh);
   const R = h => `${l[h]}2:${l[h]}${n + 1}`;
   ponerReglas_(sh, [
     regla_(sh, R('Avisos'), `=$${l['Avisos']}2<>""`, COLORES.naranja),
@@ -320,6 +363,7 @@ function formatoTrabajos_() {
   cf('Beneficio', { fmt: FMT.euro, gris: true, ancho: 110 });
   cf('Pagado', { ancho: 80 });
   cf('Avisos', { gris: true, ancho: 340 });
+  if (_hojaNueva) ocultarColumnas_(sh);
   const R = h => `${l[h]}${fc + 1}:${l[h]}${fc + n}`;
   ponerReglas_(sh, [
     regla_(sh, R('Pagado'), `=AND($${l['Nº trabajo']}${fc + 1}<>"",$${l['Pagado']}${fc + 1}<>TRUE)`, COLORES.rojo),
@@ -470,11 +514,11 @@ function montarTablaAbonos_() {
   // Las reglas por Estado son nuestras aunque apunten a otra columna (p. ej. tras mover columnas), y también la del plazo.
   const nuestra = f => ESTADOS_ABONO.some(e => f.indexOf(`="${e}"`) >= 0);
   ponerReglas_(sh, [
-    regla_(sh, T, `=AND($${E}${tb}="Sin abonar",$${D}${tb}>${plazo})`, COLORES.naranja),
-    regla_(sh, T, `=$${E}${tb}="Abonada"`, COLORES.verde),
-    regla_(sh, T, `=$${E}${tb}="Abonada (a mano)"`, COLORES.azul),
-    regla_(sh, T, `=$${E}${tb}="Sin abonar"`, COLORES.rojo),
-    regla_(sh, T, `=$${E}${tb}="Sin solicitar"`, COLORES.amarillo),
+    regla_(sh, T, `=AND($${E}${tb}="Sin abonar",$${D}${tb}>${plazo})`, COLORES_ABONOS.sinAbonarVencida),
+    regla_(sh, T, `=$${E}${tb}="Abonada"`, COLORES_ABONOS.abonada),
+    regla_(sh, T, `=$${E}${tb}="Abonada (a mano)"`, COLORES_ABONOS.abonadaMano),
+    regla_(sh, T, `=$${E}${tb}="Sin abonar"`, COLORES_ABONOS.sinAbonar),
+    regla_(sh, T, `=$${E}${tb}="Sin solicitar"`, COLORES_ABONOS.sinSolicitar),
   ], nuestra);
 }
 

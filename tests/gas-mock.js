@@ -171,6 +171,24 @@ class Hoja {
     this.grid = nuevo;
     this.ss.io.escrito = true;
   }
+  /** Mueve las columnas del rango delante de la columna destino (numerada antes de mover), con datos y validaciones. */
+  moveColumns(rango, destino) {
+    const c = rango.getColumn(), nc = rango.getNumColumns();
+    if (this.combinadas.some(m => m.nc > 1)) throw new Error('No se pueden mover columnas que cortan celdas combinadas.');
+    const total = Math.max(this.getMaxColumns(), destino);
+    const orden = [];
+    for (let x = 1; x <= total; x++) orden.push(x);
+    const movidas = orden.splice(c - 1, nc);
+    orden.splice(orden.indexOf(destino) < 0 ? orden.length : orden.indexOf(destino), 0, ...movidas);
+    const nueva = {};
+    orden.forEach((viejo, i) => { nueva[viejo] = i + 1; });
+    const mover = mapa => { const m = new Map(); mapa.forEach((v, k) => { const [r, col] = k.split(',').map(Number); m.set(r + ',' + nueva[col], v); }); return m; };
+    this.grid = mover(this.grid);
+    this.validaciones = mover(this.validaciones);
+    this.ocultas = (this.ocultas || []).map(x => nueva[x]);
+    this.ss.io.escrito = true;
+  }
+  hideColumns(c, n) { this.ocultas = this.ocultas || []; for (let x = c; x < c + (n || 1); x++) if (!this.ocultas.includes(x)) this.ocultas.push(x); }
   /** Borra la columna c y mueve a la izquierda todo lo que está a su derecha, como Sheets. */
   deleteColumn(c) {
     this.combinadas = this.combinadas.filter(m => !(m.c === c && m.nc === 1));

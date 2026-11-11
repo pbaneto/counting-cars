@@ -13,7 +13,7 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '8.0.2';
+const VERSION = '9.0.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', CUADRE: 'Cuadre RM', COCHES: 'Coches', RESUMEN: 'Resumen',
@@ -22,15 +22,17 @@ const HOJA = {
 
 const ESQUEMA = {
   'Albaranes': {
-    cabeceras: ['Fecha escaneo', 'Fecha albarán', 'Mes', 'Quincena', 'Proveedor', 'Nº albarán', 'Nº trabajo', 'Matrícula', 'Precio con IVA',
-      'Precio - abonos', 'Coche', 'Cliente', 'Ver PDF', 'Avisos', 'Nota escaneo'],
+    cabeceras: ['Mes', 'Quincena', 'Proveedor', 'Coche', 'Cliente', 'Matrícula', 'Nº trabajo', 'Precio con IVA', 'Precio - abonos',
+      'Fecha escaneo', 'Fecha albarán', 'Nº albarán', 'Ver PDF', 'Avisos', 'Nota escaneo'],
+    visibles: 9,  // las primeras n cabeceras; el resto se ocultan (ver ocultarColumnas_)
     entradas: ['Fecha escaneo', 'Fecha albarán', 'Proveedor', 'Nº albarán', 'Nº trabajo', 'Matrícula', 'Precio con IVA', 'Ver PDF', 'Nota escaneo'],
     filasFormato: 1500,
   },
   'Trabajos': {
     // Mes y Quincena: valores (no fórmulas) para poder cambiarlos a mano; se rellenan con la fecha del primer albarán.
-    cabeceras: ['Nº trabajo', 'Mes', 'Quincena', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Precio - abono', 'Recambios facturables RM',
-      'Recambios facturables Otros', 'Factura', 'Beneficio', 'Pagado', 'Avisos'],
+    cabeceras: ['Mes', 'Quincena', 'Coche', 'Cliente', 'Matrícula', 'Recambios', 'Precio - abono', 'Factura', 'Beneficio', 'Pagado',
+      'Nº trabajo', 'Recambios facturables RM', 'Recambios facturables Otros', 'Avisos'],
+    visibles: 10,
     entradas: ['Nº trabajo', 'Mes', 'Quincena', 'Matrícula', 'Factura', 'Pagado'],
     casillas: ['Pagado'],
     filasFormato: 800,
@@ -82,6 +84,7 @@ const ESQUEMA = {
 /** Valores por defecto de la pestaña Config: [clave, valor, descripción] */
 const CONFIG_DEFECTO = [
   ['MODELO_GEMINI', 'gemini-3.5-flash-lite', 'Modelo de Gemini que lee albaranes y facturas'],
+  ['URL_GEMINI', 'https://generativelanguage.googleapis.com', 'Base de la API de Gemini. Para medir el gasto con LiteLLM: https://<servidor-litellm>/gemini (y su clave virtual como API key)'],
   ['IVA', 0.21, 'IVA aplicado a las piezas (0,21 = 21 %)'],
   ['DIAS_AVISO_REEMBOLSO', 45, 'Avisar en Abonos si una pieza pedida lleva más de estos días sin que RM la abone'],
   ['ABONOS_DESDE', '', 'Abonos sólo enseña lo abonado o pedido desde esta fecha (vacía = todo). Lo pendiente de abonar sale siempre'],
@@ -116,4 +119,9 @@ const CUADRE = {
 const ESTADOS_ABONO = ['Abonada', 'Abonada (a mano)', 'Sin abonar', 'Sin solicitar'];
 const COLORES = {
   cabecera: '#1f3a5f', gris: '#efefef', rojo: '#f4cccc', verde: '#d9ead3', amarillo: '#fff2cc', naranja: '#fce5cd', azul: '#cfe2f3',
+};
+// Estados de Abonos: colores vivos que se distinguen también con daltonismo (protanopía, deuteranopía y tritanopía)
+// y se leen con texto negro.
+const COLORES_ABONOS = {
+  abonada: '#00e5ff', abonadaMano: '#b388ff', sinSolicitar: '#ffff00', sinAbonar: '#ff9100', sinAbonarVencida: '#ff1744',
 };

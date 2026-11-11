@@ -19,7 +19,7 @@ function construirPeticion_(archivo, esAlbaran, clave, pista) {
     generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: esAlbaran ? SCHEMA_ALBARAN : SCHEMA_FACTURA, maxOutputTokens: 32768 },
   };
   return {
-    url: `https://generativelanguage.googleapis.com/v1beta/models/${cfg_('MODELO_GEMINI')}:generateContent`,
+    url: `${String(cfg_('URL_GEMINI')).trim().replace(/\/+$/, '')}/v1beta/models/${cfg_('MODELO_GEMINI')}:generateContent`,
     method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': clave },
     payload: JSON.stringify(body), muteHttpExceptions: true,
   };
