@@ -13,7 +13,7 @@ const TZ = 'Europe/Madrid';
  *  - MENOR: sólo diseño (formato, colores, fórmulas, paneles): la hoja lo reaplica sola.
  *  - PARCHE: arreglo de código que no toca la hoja.
  */
-const VERSION = '9.2.0';
+const VERSION = '10.0.0';
 
 const HOJA = {
   ALB: 'Albaranes', TRAB: 'Trabajos', PIEZAS: 'Piezas', ABONOS: 'Abonos', CUADRE: 'Cuadre RM', COCHES: 'Coches', RESUMEN: 'Resumen',

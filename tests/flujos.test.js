@@ -228,6 +228,48 @@ test('procesarAlbaranes: nuevo, segundo escaneo con R, duplicado sin R y no-alba
   assert.match(reg, /no parece un albarán/);
 });
 
+test('procesarAlbaranes: Albaranes queda ordenada por fecha del albarán y cada fila conserva sus fórmulas, PDF y desplegable', () => {
+  const e = entorno({
+    'b1.pdf': albaranRaw({ numero_albaran: '500001', fecha: '2026-10-20' }),
+    'b2.pdf': albaranRaw({ numero_albaran: '500002', fecha: '2026-09-01', matricula: '5678DEF' }),
+    'b3.pdf': albaranRaw({ numero_albaran: '500003', fecha: '2026-10-05' }),
+  });
+  ['ENT', 'PROC', 'FRA', 'FRAP'].forEach(id => e.mkFolder(id, id));
+  const alb = e.ss.getSheetByName('Albaranes');
+  subir(e, ['b1.pdf', 'b2.pdf', 'b3.pdf'], 'ENT');
+  e.run('procesarAlbaranes()');
+  const filas = tabla(e, 'Albaranes');
+  const fechas = filas.map(f => f['Fecha albarán'].getTime());
+  assert.deepEqual(fechas, fechas.slice().sort((a, b) => a - b), 'por fecha del albarán');
+  assert.deepEqual(plano(filas.map(f => f['Nº albarán']).filter(Boolean)), ['500002', '500003', '500001']);
+  filas.forEach((f, i) => {
+    const r = 2 + i;
+    assert.match(alb.cell(r, A('Mes')).f, new RegExp(`${letra(A('Fecha albarán'))}${r}\\b`), `fila ${r}: el Mes mira su propia fila`);
+    assert.match(alb.cell(r, A('Avisos')).f, new RegExp(`${letra(A('Matrícula'))}${r}=`), `fila ${r}: Avisos mira su propia fila`);
+  });
+  const fila = n => 2 + filas.findIndex(f => f['Nº albarán'] === n);
+  const archivo = n => Object.values(e.carpetas.PROC.ficheros).find(f => f.getName() === n).getId();
+  ['500001', '500002', '500003'].forEach((n, i) => assert.ok(alb.cell(fila(n), A('Ver PDF')).f.includes(archivo(`b${i + 1}.pdf`)), `${n}: su PDF`));
+  const lista = r => plano((alb.validaciones.get(`${r},${A('Nº trabajo')}`) || {}).lista || []);
+  assert.ok(lista(fila('500002')).includes(filas[fila('500002') - 2]['Nº trabajo']), 'el desplegable de trabajos va con su fila');
+  assert.ok(lista(fila('500001')).includes(filas[fila('500001') - 2]['Nº trabajo']));
+  const n = alb.ordenada;
+  e.run('procesarAlbaranes()');
+  assert.equal(alb.ordenada, n, 'ya en orden: no se vuelve a ordenar');
+});
+
+test('migración 10.0.0: ordena por fecha del albarán lo que ya había en Albaranes', () => {
+  const e = entorno({});
+  e.run(`agregarFilas_(leerTabla_(HOJA.ALB), [
+    { 'Fecha escaneo': aFecha_('2026-10-02'), 'Fecha albarán': aFecha_('2026-10-01'), 'Proveedor': 'RM', 'Nº albarán': '600001', 'Matrícula': '1234ABC', 'Precio con IVA': 10 },
+    { 'Fecha escaneo': aFecha_('2026-10-03'), 'Fecha albarán': aFecha_('2026-08-30'), 'Proveedor': 'RM', 'Nº albarán': '600002', 'Matrícula': '1234ABC', 'Precio con IVA': 20 }])`);
+  e.run("PropertiesService.getScriptProperties().setProperty('VERSION_HOJA', '9.2.0')");
+  e.run('reiniciarCaches_(); actualizarHoja_(false)');
+  const nums = plano(tabla(e, 'Albaranes').map(f => f['Nº albarán']).filter(Boolean));
+  assert.deepEqual(nums, ['600002', '600001']);
+  assert.equal(e.run("PropertiesService.getScriptProperties().getProperty('VERSION_HOJA')"), e.run('VERSION'));
+});
+
 test('procesarAlbaranes: el mismo albarán con el nº mal leído no se duplica y su R marca la pieza del correcto', () => {
   const conR = albaranRaw({ numero_albaran: '462846', lineas: albaranRaw().lineas.map((l, i) => Object.assign({}, l, { reembolso: i === 0, manuscrito: i === 0 ? 'R' : '' })) });
   const e = entorno({ 'a1.pdf': albaranRaw(), 'a2.pdf': albaranRaw({ numero_albaran: '462846' }), 'a3.pdf': conR, 'a4.pdf': albaranRaw({ numero_albaran: '462999' }) });
@@ -517,44 +559,6 @@ test('versiones: al subir la versión se ejecutan las migraciones pendientes una
   hechas.length = 0;
   e.run('actualizarAbonos()');
   assert.deepEqual(hechas, [], 'una sola vez');
-});
-
-test('migración 9.0.0: Albaranes y Trabajos pasan al orden nuevo sin perder datos y ocultan las columnas sobrantes', () => {
-  const e = entorno({});
-  const alb = e.ss.getSheetByName('Albaranes'), trab = e.ss.getSheetByName('Trabajos');
-  const antes = { Albaranes: plano(tabla(e, 'Albaranes')), Trabajos: plano(tabla(e, 'Trabajos')) };
-  assert.ok(antes.Albaranes.length && antes.Trabajos.length, 'hay datos que mover');
-  // Hoja de la versión 8: columnas en el orden antiguo, nada oculto y el título del panel combinado
-  e.run(`(() => {
-    const viejo = { Albaranes: ['Fecha escaneo', 'Fecha albarán', 'Mes', 'Quincena', 'Proveedor', 'Nº albarán', 'Nº trabajo', 'Matrícula',
-        'Precio con IVA', 'Precio - abonos', 'Coche', 'Cliente', 'Ver PDF', 'Avisos', 'Nota escaneo'],
-      Trabajos: ['Nº trabajo', 'Mes', 'Quincena', 'Matrícula', 'Coche', 'Cliente', 'Recambios', 'Precio - abono', 'Recambios facturables RM',
-        'Recambios facturables Otros', 'Factura', 'Beneficio', 'Pagado', 'Avisos'] };
-    Object.keys(viejo).forEach(n => {
-      const nuevo = ESQUEMA[n].cabeceras, vis = ESQUEMA[n].visibles;
-      ESQUEMA[n].cabeceras = viejo[n]; ESQUEMA[n].visibles = 0;
-      try { reordenarColumnas_(n); } finally { ESQUEMA[n].cabeceras = nuevo; ESQUEMA[n].visibles = vis; }
-    });
-  })()`);
-  alb.ocultas = []; trab.ocultas = [];
-  alb.getRange(1, 1, 1500, 15).createFilter().setColumnFilterCriteria(3, Filtro.visibles(['sep']));  // Mes en la columna C antigua
-  trab.combinadas.push({ r: 1, c: 1, nr: 1, nc: 6 });
-  assert.equal(alb.valor(1, 1), 'Fecha escaneo'); assert.equal(trab.valor(4, 1), 'Nº trabajo');
-  e.props.VERSION_HOJA = '8.0.2';
-  e.run('actualizarAbonos()');
-  assert.deepEqual(e.log.alerts.filter(a => /Ha fallado/.test(String(a[0]) + String(a[1]))), []);
-  assert.equal(e.props.VERSION_HOJA, e.run('VERSION'));
-  ['Albaranes', 'Trabajos'].forEach(n => {
-    const sh = n === 'Albaranes' ? alb : trab, fc = n === 'Albaranes' ? 1 : 4, esq = ESQ[n];
-    assert.deepEqual(esq.cabeceras.map((h, i) => sh.valor(fc, i + 1)), esq.cabeceras, `${n}: cabeceras en el orden nuevo`);
-    assert.deepEqual(plano(tabla(e, n)), antes[n], `${n}: cada dato sigue bajo su cabecera`);
-    assert.deepEqual(plano(sh.ocultas).sort((a, b) => a - b), plano(esq.cabeceras.slice(esq.visibles).map((h, i) => esq.visibles + i + 1)), `${n}: columnas sobrantes ocultas`);
-  });
-  assert.equal(trab.valor(1, 1), 'Resumen (según filtro)', 'panel rehecho');
-  assert.deepEqual(plano(alb.getFilter().criterios), { [A('Mes')]: { visibles: ['sep'] } }, 'el criterio del filtro sigue en Mes');
-  e.props.VERSION_HOJA = '8.0.2';
-  e.run('actualizarAbonos()');
-  assert.deepEqual(plano(tabla(e, 'Albaranes')), antes.Albaranes, 'repetir la migración no cambia nada');
 });
 
 test('atajo de Coches: selecciona la Matrícula de la primera fila libre', () => {

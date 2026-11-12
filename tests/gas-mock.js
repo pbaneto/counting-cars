@@ -83,6 +83,33 @@ class Rango {
   deleteCells(dim) { if (dim !== 'ROWS') throw new Error('sólo ROWS'); this.sh.desplazarCeldas(this.r, this.c, this.nc, -this.nr); return this; }
   breakApart() { this._cortadas(); return this; }
   activate() { this.sh.activa = [this.r, this.c]; return this; }
+  /**
+   * Como Sheets: ascendente, estable, vacías al final; cada fila se mueve con sus validaciones y enlaces, y en sus
+   * fórmulas las referencias relativas a su propia fila pasan a la fila nueva.
+   */
+  sort(specs) {
+    const sh = this.sh, filas = [];
+    for (let i = 0; i < this.nr; i++) filas.push(this.r + i);
+    const val = (r, c) => { const x = sh.cell(r, c); return x ? x.v : ''; };
+    const k = v => (v === '' || v == null ? [3, 0] : Object.prototype.toString.call(v) === '[object Date]' ? [0, v.getTime()] : typeof v === 'number' ? [0, v] : [1, String(v)]);
+    const cmp = (a, b) => { for (const s of specs) { const x = k(val(a, s.column)), y = k(val(b, s.column)); const d = x[0] - y[0] || (x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0); if (d) return s.ascending === false && x[0] !== 3 && y[0] !== 3 ? -d : d; } return 0; };
+    const orden = filas.slice().sort(cmp);
+    const celdas = new Map(), vals = new Map();
+    orden.forEach((viejo, i) => {
+      const nuevo = this.r + i;
+      for (let c = this.c; c < this.c + this.nc; c++) {
+        const x = sh.cell(viejo, c);
+        if (x) celdas.set(nuevo + ',' + c, x.f ? Object.assign({}, x, { f: x.f.replace(new RegExp(`(^|[^$A-Z!])(\\$?[A-Z]{1,3})${viejo}(?!\\d)`, 'g'), `$1$2${nuevo}`) }) : x);
+        const v = sh.validaciones.get(viejo + ',' + c);
+        if (v) vals.set(nuevo + ',' + c, v);
+      }
+    });
+    this._each((r, c) => { sh.grid.delete(r + ',' + c); sh.validaciones.delete(r + ',' + c); });
+    celdas.forEach((x, key) => sh.grid.set(key, x));
+    vals.forEach((v, key) => sh.validaciones.set(key, v));
+    sh.ordenada = (sh.ordenada || 0) + 1;
+    return this._w();
+  }
 }
 
 class Filtro {

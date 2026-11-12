@@ -18,7 +18,7 @@ const PROP_DISENO_PENDIENTE_ = 'DISENO_PENDIENTE';
  * versión guardada en la hoja impide que vuelva a hacer falta.
  */
 const MIGRACIONES = {
-  '9.0.0': () => ['Albaranes', 'Trabajos'].forEach(reordenarColumnas_),
+  '10.0.0': () => ordenarAlbaranes_(),
 };
 
 /** Pone la hoja al día con el código. forzarDiseno: aplicar el diseño aunque la versión no haya cambiado (menú). */

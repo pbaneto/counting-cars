@@ -40,6 +40,7 @@ function procesarAlbaranes() {
     if (!fallo) {
       try {
         if (ctx.tocaAbonos) actualizarInformeAbonos_(ctx.piezas);
+        ordenarAlbaranes_();
         SpreadsheetApp.flush();
       } catch (e) { fallo = { nombre: '', e }; }
     }
@@ -215,4 +216,23 @@ function procesarSegundoEscaneo_(ctx, archivo, doc, existente, lineasPiezas) {
   log_('INFO', 'procesarAlbaranes', `${HOJA.ALB}!${existente.fila}`, `${resumen} (albarán ${num})`);
   ctx.tocaAbonos = true;
   return { estado: 'reembolso', duda };
+}
+
+/**
+ * Ordena Albaranes por Fecha albarán (a igual fecha, por Fecha escaneo; sin fecha, al final). Con el sort de Sheets cada
+ * fila se mueve entera: fórmulas, enlaces a los PDF y desplegables van con ella. Si ya está en orden no se toca.
+ */
+function ordenarAlbaranes_() {
+  const t = leerTabla_(HOJA.ALB);
+  if (t.filas.length < 2) return false;
+  const ini = t.fc + 1, fin = t.filas[t.filas.length - 1].fila;
+  const cFa = t.map['Fecha albarán'], cFe = t.map['Fecha escaneo'];
+  const clave = v => (v instanceof Date && !isNaN(v) ? v.getTime() : (v === '' || v == null ? Infinity : NaN));
+  const filas = t.valores.slice(ini - 1, fin).map(r => [clave(r[cFa - 1]), clave(r[cFe - 1])]);
+  const enOrden = filas.every((k, i) => !i || (!isNaN(k[0]) && !isNaN(k[1]) && !isNaN(filas[i - 1][0]) && !isNaN(filas[i - 1][1]) &&
+    (filas[i - 1][0] < k[0] || (filas[i - 1][0] === k[0] && filas[i - 1][1] <= k[1]))));
+  if (enOrden) return false;
+  sinFiltro_(t.sh);
+  t.sh.getRange(ini, 1, fin - ini + 1, t.sh.getLastColumn()).sort([{ column: cFa, ascending: true }, { column: cFe, ascending: true }]);
+  return true;
 }
